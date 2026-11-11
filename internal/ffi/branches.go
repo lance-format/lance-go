@@ -272,25 +272,6 @@ func (d *Dataset) ReplaceBranchMetadata(name string, metadata map[string]string)
 	return nil
 }
 
-func (d *Dataset) jsonString(op string, call func(handle uintptr) *byte) (string, error) {
-	handle := d.handle.Load()
-	if handle == 0 {
-		return "", ErrClosed
-	}
-
-	b := d.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	ptr := call(handle)
-	if ptr == nil {
-		return "", nativeNullError(b, op)
-	}
-	text := goString(ptr)
-	b.freeString(ptr)
-	return text, nil
-}
-
 func branchStorageList(options map[string]string) (*cStringList, error) {
 	keys := make([]string, 0, len(options))
 	for key, value := range options {

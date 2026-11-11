@@ -434,53 +434,30 @@ func (d *Dataset) IndexCount() (uint64, error) {
 	return count, nil
 }
 
-func (d *Dataset) jsonString(op string, call func(uintptr) *byte) ([]byte, error) {
-	handle, err := d.nativeHandle()
-	if err != nil {
-		return nil, err
-	}
-	runtime.LockOSThread()
-	ptr := call(handle)
-	var nativeErr *Error
-	if ptr == nil {
-		nativeErr = d.b.takeError()
-	}
-	runtime.UnlockOSThread()
-	if ptr == nil {
-		if nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: %s returned NULL without setting an error", op)
-	}
-	data := []byte(goString(ptr))
-	d.b.freeString(ptr)
-	return data, nil
-}
-
 // IndexListJSON returns the native user index list JSON.
 func (d *Dataset) IndexListJSON() ([]byte, error) {
-	return d.jsonString("lance_dataset_index_list_json", func(handle uintptr) *byte {
+	return d.jsonBytes("lance_dataset_index_list_json", func(handle uintptr) *byte {
 		return d.b.datasetIndexListJSON(handle)
 	})
 }
 
 // DescribeIndicesJSON returns the native index description JSON.
 func (d *Dataset) DescribeIndicesJSON() ([]byte, error) {
-	return d.jsonString("lance_dataset_describe_indices_json", func(handle uintptr) *byte {
+	return d.jsonBytes("lance_dataset_describe_indices_json", func(handle uintptr) *byte {
 		return d.b.datasetDescribeIndicesJSON(handle)
 	})
 }
 
 // IndexStatisticsJSON returns the native family-specific statistics JSON.
 func (d *Dataset) IndexStatisticsJSON(name string) ([]byte, error) {
-	return d.jsonString("lance_dataset_index_statistics_json", func(handle uintptr) *byte {
+	return d.jsonBytes("lance_dataset_index_statistics_json", func(handle uintptr) *byte {
 		return d.b.datasetIndexStatisticsJSON(handle, name)
 	})
 }
 
 // IndexSegmentsJSON returns the native physical segment list JSON.
 func (d *Dataset) IndexSegmentsJSON() ([]byte, error) {
-	return d.jsonString("lance_dataset_index_segments_json", func(handle uintptr) *byte {
+	return d.jsonBytes("lance_dataset_index_segments_json", func(handle uintptr) *byte {
 		return d.b.datasetIndexSegmentsJSON(handle)
 	})
 }
