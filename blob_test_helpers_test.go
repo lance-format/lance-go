@@ -184,7 +184,3 @@ func collectUint64(t *testing.T, batch arrow.RecordBatch, field string) []uint64
 	}
 	return values
 }
-
-func ptr[T any](value T) *T {
-	return &value
-}
