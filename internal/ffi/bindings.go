@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
@@ -55,6 +56,59 @@ type bindings struct {
 	datasetConfigClose              func(config uintptr)
 	datasetUpdateConfigJSON         func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
 
+	datasetCurrentVersion  func(dataset uintptr) uintptr
+	versionID              func(version uintptr) uint64
+	versionTimestampNS     func(version uintptr) int64
+	versionMetadataCount   func(version uintptr) uint64
+	versionMetadataKeyAt   func(version uintptr, index uint64) *byte
+	versionMetadataValueAt func(version uintptr, index uint64) *byte
+	versionClose           func(version uintptr)
+	datasetVersions        func(dataset uintptr) uintptr
+	versionsCount          func(versions uintptr) uint64
+	versionsAt             func(versions uintptr, index uint64) uintptr
+	versionsIDAt           func(versions uintptr, index uint64) uint64
+	versionsTimestampMSAt  func(versions uintptr, index uint64) int64
+	versionsClose          func(versions uintptr)
+	datasetVersionRefs     func(dataset uintptr) uintptr
+	versionRefsCount       func(refs uintptr) uint64
+	versionRefsIDAt        func(refs uintptr, index uint64) uint64
+	versionRefsClose       func(refs uintptr)
+	refVersionNumber       func(version uint64) uintptr
+	refVersion             func(branch string, hasVersion bool, version uint64) uintptr
+	refTag                 func(tag string) uintptr
+	refClose               func(ref uintptr)
+	datasetCheckoutRef     func(dataset uintptr, ref uintptr) uintptr
+	datasetCheckoutBranch  func(dataset uintptr, branch string) uintptr
+	datasetRestore         func(dataset uintptr, version uint64) uintptr
+
+	datasetTags               func(dataset uintptr) uintptr
+	tagsCount                 func(tags uintptr) uint64
+	tagsAt                    func(tags uintptr, index uint64) uintptr
+	tagsClose                 func(tags uintptr)
+	datasetTagGet             func(dataset uintptr, name string) uintptr
+	datasetTagCreate          func(dataset uintptr, name string, ref uintptr) int32
+	datasetTagUpdate          func(dataset uintptr, name string, ref uintptr) int32
+	datasetTagDelete          func(dataset uintptr, name string) int32
+	datasetTagReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
+	tagName                   func(tag uintptr) *byte
+	tagVersion                func(tag uintptr) uint64
+	tagBranch                 func(tag uintptr, out **byte) int32
+	tagCreatedAtNS            func(tag uintptr, out *int64) int32
+	tagUpdatedAtNS            func(tag uintptr, out *int64) int32
+	tagManifestSize           func(tag uintptr) uint64
+	tagMetadataCount          func(tag uintptr) uint64
+	tagMetadataKeyAt          func(tag uintptr, index uint64) *byte
+	tagMetadataValueAt        func(tag uintptr, index uint64) *byte
+	tagClose                  func(tag uintptr)
+
+	datasetBranchesJSON          func(dataset uintptr) *byte
+	datasetBranchGetJSON         func(dataset uintptr, name string) *byte
+	datasetBranchIdentifierJSON  func(dataset uintptr) *byte
+	datasetBranchCreate          func(dataset uintptr, name string, ref uintptr, storageOpts []uintptr) uintptr
+	datasetBranchDelete          func(dataset uintptr, name string) int32
+	datasetBranchForceDelete     func(dataset uintptr, name string) int32
+	datasetBranchReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
+
 	datasetCloneHandle   func(dataset uintptr) uintptr
 	datasetDelete        func(dataset uintptr, predicate string, outNumDeleted *uint64) int32
 	datasetUpdate        func(dataset uintptr, predicate uintptr, columns []uintptr, values []uintptr, numUpdates uint64, outNumUpdated *uint64) int32
@@ -84,6 +138,24 @@ type bindings struct {
 	scannerSetSubstraitFilter    func(scanner uintptr, data []byte, length uint64) int32
 	scannerSetSubstraitAggregate func(scanner uintptr, data []byte, length uint64) int32
 	scannerAdditionalSQLFilter   func(scanner uintptr, filter string) int32
+	scannerNearest               func(scanner uintptr, column string, queryData unsafe.Pointer, queryLen uint64, elementType int32, k uint32) int32
+	scannerNearestBatch          func(scanner uintptr, column string, queries unsafe.Pointer, dimension uint64, numQueries uint64, elementType int32, k uint32) int32
+	scannerNearestMultiVector    func(scanner uintptr, column string, subvectors unsafe.Pointer, dimension uint64, numVectors uint64, elementType int32, k uint32) int32
+	scannerSetDistanceRange      func(scanner uintptr, lowerDistance *float32, upperDistance *float32) int32
+	scannerSetMetric             func(scanner uintptr, metric int32) int32
+	scannerSetNProbes            func(scanner uintptr, nprobes uint32) int32
+	scannerSetMinimumNProbes     func(scanner uintptr, nprobes uint32) int32
+	scannerSetMaximumNProbes     func(scanner uintptr, nprobes uint32) int32
+	scannerSetSearchEffort       func(scanner uintptr, effort float64) int32
+	scannerSetApproxMode         func(scanner uintptr, mode int32) int32
+	scannerSetQueryParallelism   func(scanner uintptr, parallelism int32) int32
+	scannerSetRefineFactor       func(scanner uintptr, factor uint32) int32
+	scannerSetEF                 func(scanner uintptr, ef uint32) int32
+	scannerSetUseIndex           func(scanner uintptr, useIndex bool) int32
+	scannerSetFastSearch         func(scanner uintptr, fastSearch bool) int32
+	scannerSetPrefilter          func(scanner uintptr, prefilter bool) int32
+	scannerSetRowAddrAllowlist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
+	scannerSetRowAddrBlocklist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
 	scannerSetStatisticsCallback func(scanner uintptr, callback uintptr, ctx uintptr) int32
 	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
@@ -143,6 +215,59 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_config_close", &b.datasetConfigClose},
 		{"lance_dataset_update_config_json", &b.datasetUpdateConfigJSON},
 
+		{"lance_dataset_current_version", &b.datasetCurrentVersion},
+		{"lance_version_id", &b.versionID},
+		{"lance_version_timestamp_ns", &b.versionTimestampNS},
+		{"lance_version_metadata_count", &b.versionMetadataCount},
+		{"lance_version_metadata_key_at", &b.versionMetadataKeyAt},
+		{"lance_version_metadata_value_at", &b.versionMetadataValueAt},
+		{"lance_version_close", &b.versionClose},
+		{"lance_dataset_versions", &b.datasetVersions},
+		{"lance_versions_count", &b.versionsCount},
+		{"lance_versions_at", &b.versionsAt},
+		{"lance_versions_id_at", &b.versionsIDAt},
+		{"lance_versions_timestamp_ms_at", &b.versionsTimestampMSAt},
+		{"lance_versions_close", &b.versionsClose},
+		{"lance_dataset_version_refs", &b.datasetVersionRefs},
+		{"lance_version_refs_count", &b.versionRefsCount},
+		{"lance_version_refs_id_at", &b.versionRefsIDAt},
+		{"lance_version_refs_close", &b.versionRefsClose},
+		{"lance_ref_version_number", &b.refVersionNumber},
+		{"lance_ref_version", &b.refVersion},
+		{"lance_ref_tag", &b.refTag},
+		{"lance_ref_close", &b.refClose},
+		{"lance_dataset_checkout_ref", &b.datasetCheckoutRef},
+		{"lance_dataset_checkout_branch", &b.datasetCheckoutBranch},
+		{"lance_dataset_restore", &b.datasetRestore},
+
+		{"lance_dataset_tags", &b.datasetTags},
+		{"lance_tags_count", &b.tagsCount},
+		{"lance_tags_at", &b.tagsAt},
+		{"lance_tags_close", &b.tagsClose},
+		{"lance_dataset_tag_get", &b.datasetTagGet},
+		{"lance_dataset_tag_create", &b.datasetTagCreate},
+		{"lance_dataset_tag_update", &b.datasetTagUpdate},
+		{"lance_dataset_tag_delete", &b.datasetTagDelete},
+		{"lance_dataset_tag_replace_metadata", &b.datasetTagReplaceMetadata},
+		{"lance_tag_name", &b.tagName},
+		{"lance_tag_version", &b.tagVersion},
+		{"lance_tag_branch", &b.tagBranch},
+		{"lance_tag_created_at_ns", &b.tagCreatedAtNS},
+		{"lance_tag_updated_at_ns", &b.tagUpdatedAtNS},
+		{"lance_tag_manifest_size", &b.tagManifestSize},
+		{"lance_tag_metadata_count", &b.tagMetadataCount},
+		{"lance_tag_metadata_key_at", &b.tagMetadataKeyAt},
+		{"lance_tag_metadata_value_at", &b.tagMetadataValueAt},
+		{"lance_tag_close", &b.tagClose},
+
+		{"lance_dataset_branches_json", &b.datasetBranchesJSON},
+		{"lance_dataset_branch_get_json", &b.datasetBranchGetJSON},
+		{"lance_dataset_branch_identifier_json", &b.datasetBranchIdentifierJSON},
+		{"lance_dataset_branch_create", &b.datasetBranchCreate},
+		{"lance_dataset_branch_delete", &b.datasetBranchDelete},
+		{"lance_dataset_branch_force_delete", &b.datasetBranchForceDelete},
+		{"lance_dataset_branch_replace_metadata", &b.datasetBranchReplaceMetadata},
+
 		{"lance_dataset_clone_handle", &b.datasetCloneHandle},
 		{"lance_dataset_delete", &b.datasetDelete},
 		{"lance_dataset_update", &b.datasetUpdate},
@@ -172,6 +297,24 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_substrait_filter", &b.scannerSetSubstraitFilter},
 		{"lance_scanner_set_substrait_aggregate", &b.scannerSetSubstraitAggregate},
 		{"lance_scanner_additional_sql_filter", &b.scannerAdditionalSQLFilter},
+		{"lance_scanner_nearest", &b.scannerNearest},
+		{"lance_scanner_nearest_batch", &b.scannerNearestBatch},
+		{"lance_scanner_nearest_multivector", &b.scannerNearestMultiVector},
+		{"lance_scanner_set_distance_range", &b.scannerSetDistanceRange},
+		{"lance_scanner_set_metric", &b.scannerSetMetric},
+		{"lance_scanner_set_nprobes", &b.scannerSetNProbes},
+		{"lance_scanner_set_minimum_nprobes", &b.scannerSetMinimumNProbes},
+		{"lance_scanner_set_maximum_nprobes", &b.scannerSetMaximumNProbes},
+		{"lance_scanner_set_search_effort", &b.scannerSetSearchEffort},
+		{"lance_scanner_set_approx_mode", &b.scannerSetApproxMode},
+		{"lance_scanner_set_query_parallelism", &b.scannerSetQueryParallelism},
+		{"lance_scanner_set_refine_factor", &b.scannerSetRefineFactor},
+		{"lance_scanner_set_ef", &b.scannerSetEF},
+		{"lance_scanner_set_use_index", &b.scannerSetUseIndex},
+		{"lance_scanner_set_fast_search", &b.scannerSetFastSearch},
+		{"lance_scanner_set_prefilter", &b.scannerSetPrefilter},
+		{"lance_scanner_set_row_addr_allowlist", &b.scannerSetRowAddrAllowlist},
+		{"lance_scanner_set_row_addr_blocklist", &b.scannerSetRowAddrBlocklist},
 		{"lance_scanner_set_statistics_callback", &b.scannerSetStatisticsCallback},
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
