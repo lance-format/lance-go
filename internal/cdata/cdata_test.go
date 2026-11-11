@@ -71,7 +71,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := newFixture(t)
+	f := &fixture{}
 	t.Cleanup(f.pinner.Unpin)
 	return f
 }
