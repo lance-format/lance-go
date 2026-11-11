@@ -325,7 +325,6 @@ type bindings struct {
 	datasetReadTransactionByVersion              func(dataset uintptr, version uint64, out *uintptr) int32
 	transactionCommit                            func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
 	transactionCommitBatch                       func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
-	freeBytes                                    func(bytes *byte)
 
 	compactionOptionsNew                              func() uintptr
 	compactionOptionsFree                             func(uintptr)
@@ -673,7 +672,6 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
-		{"lance_free_bytes", &b.freeBytes},
 
 		{"lance_scanner_new", &b.scannerNew},
 		{"lance_scanner_close", &b.scannerClose},
