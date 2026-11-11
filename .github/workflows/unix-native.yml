@@ -463,16 +463,6 @@ jobs:
             exit 1
           fi
 
-      - name: Publish validated native install cache
-        if: steps.native.outputs.cache_state == 'miss'
-        run: |
-          set -euo pipefail
-          final="$RUNNER_TEMP/lance-c-install-cache"
-          rm -rf "$final"
-          mv "$RUNNER_TEMP/lance-c-cache-staging" "$final"
-          test -f "$final/manifest.txt"
-          echo "published validated native install cache"
-
       - name: Stage companion module outside the checkout
         env:
           LANCE_LIBRARY: ${{ steps.native.outputs.library }}
@@ -520,6 +510,16 @@ jobs:
             echo "selector_sha256: $selector_sha"
             echo "selector_activated: false"
           } | tee "$RUNNER_TEMP/evidence/staging.txt"
+
+      - name: Publish validated native install cache
+        if: steps.native.outputs.cache_state == 'miss'
+        run: |
+          set -euo pipefail
+          final="$RUNNER_TEMP/lance-c-install-cache"
+          rm -rf "$final"
+          mv "$RUNNER_TEMP/lance-c-cache-staging" "$final"
+          test -f "$final/manifest.txt"
+          echo "published validated native install cache"
 
       - name: Upload staged companion module
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
