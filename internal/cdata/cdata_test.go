@@ -1160,6 +1160,19 @@ func TestCopyBorrowedRecordBatchOwnsNestedData(t *testing.T) {
 		t.Fatal("producer release did not run")
 	}
 
+	// Mutate the producer's retained buffers to prove the copy owns nested
+	// storage, even while the original Go batch still keeps that memory alive.
+	batch.Column(0).(*array.Int64).Int64Values()[0] = 999
+	dictValues := batch.Column(1).(*array.Dictionary).Dictionary().Data().Buffers()[2].Bytes()
+	for i := range dictValues {
+		dictValues[i] = 'z'
+	}
+	listValuesCopy := batch.Column(2).(*array.List).ListValues().(*array.Int32).Int32Values()
+	for i := range listValuesCopy {
+		listValuesCopy[i] = 999
+	}
+	batch.Column(3).(*array.Struct).Field(0).(*array.Int32).Int32Values()[0] = 999
+
 	if got := copied.Column(0).(*array.Int64).Value(0); got != 11 {
 		t.Errorf("copied id = %d, want 11", got)
 	}

@@ -240,7 +240,7 @@ func copyArrayData(data arrow.ArrayData) (*array.Data, error) {
 	}
 
 	copied := array.NewData(dt, data.Len(), buffers, children, data.NullN(), data.Offset())
-	if dict := data.Dictionary(); dict != nil {
+	if dict := dictionaryData(data); dict != nil {
 		dictData, err := copyArrayData(dict)
 		if err != nil {
 			copied.Release()

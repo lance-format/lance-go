@@ -496,7 +496,7 @@ func TestBatchUDFCheckpointCallbacksAndBorrowedInput(t *testing.T) {
 
 		// The returned column aliases the borrowed-input copy. Export must
 		// retain it before the adapter releases the mapper input.
-		return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows())
+		return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows()), nil
 	}
 
 	next, err := dataset.AddColumnsBatchUDF(ctx, lance.BatchUDF{
@@ -645,7 +645,7 @@ func TestBatchUDFErrorsAndPanicsKeepSourceUsable(t *testing.T) {
 			store := &failingBatchUDFStore{operation: tc.operation, panicValue: tc.panicValue}
 			_, err = dataset.AddColumnsBatchUDF(ctx, lance.BatchUDF{
 				Mapper: func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
-					return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows())
+					return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows()), nil
 				},
 				OutputSchema: outputSchema,
 				Store:        store,
