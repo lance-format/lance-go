@@ -99,6 +99,97 @@ while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
 
+## Raw `.lance` files
+
+The `file` package reads and writes raw Lance files without a dataset or
+manifest. Importing it also initializes the default native bundle on
+`linux/amd64`; `CGO_ENABLED=0` is sufficient. Dataset APIs remain in the root
+`lance` package.
+
+```go
+import (
+    "github.com/lance-format/lance-go/file"
+)
+
+w, err := file.Create(ctx, "data.lance", schema, nil)
+if err != nil {
+    log.Fatal(err)
+}
+if err := w.Write(ctx, batch); err != nil {
+    log.Fatal(err)
+}
+summary, err := w.Finish(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+if err := w.Close(); err != nil {
+    log.Fatal(err)
+}
+
+r, err := file.Open(ctx, "data.lance", nil)
+if err != nil {
+    log.Fatal(err)
+}
+metadata, err := r.Metadata()
+if err != nil {
+    log.Fatal(err)
+}
+info, err := metadata.Info()
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(info.NumRows, info.NumColumns)
+
+rr, err := r.ReadAll(ctx, file.ReadOptions{})
+if err != nil {
+    log.Fatal(err)
+}
+defer rr.Release()
+for rr.Next() {
+    batch := rr.RecordBatch()
+    _ = batch // borrowed until the next Next call
+}
+if err := rr.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Reader` reads all rows, a row range, or explicit row indices; each returns an
+`array.RecordReader`. Batches are borrowed until the next `Next` call; call
+`Retain` before keeping one. `Reader.ReadGlobalBuffer(0)` returns the serialized
+schema and user buffers start at index 1. `Writer` accepts Arrow batches and
+can add schema metadata and global buffers. `Session` provides local
+`contains`, `list`, `list_with_delimiter`, byte-range read, upload, download,
+delete, and scheduler/object-store statistics, plus packed and dedicated blob
+writers that accept raw bytes.
+
+Contracts and limits:
+
+- `Reader`, `Writer`, `Session`, and blob writers are safe for concurrent use.
+  `Close` waits for in-flight calls and is idempotent. Record readers, metadata
+  and statistics snapshots, and blob writers already opened stay usable after
+  their reader or session is closed.
+- Metadata and statistics snapshots copy native-owned strings and bytes.
+  Close each snapshot when finished. `Reader.NumRows` and `Reader.Schema` are
+  convenience calls that create short-lived native snapshots.
+- Option pointers distinguish an unset value from an explicit zero. Batches
+  passed to `Writer.Write` are borrowed for the duration of the call.
+- Contexts are checked before a native call; they cannot interrupt a native
+  blocking call once it starts. No method claims that cancellation stopped I/O.
+- Storage options are static only. Pass `file.NewStorageOptions` to a
+  standalone reader or writer, and close it after those open calls return.
+  Dynamic Go providers, shared `lance.Session` registry reuse, and remote
+  cloud acceptance are not part of this slice.
+- Blob support here is byte-level: write a blob payload and obtain its
+  descriptor array. The descriptor-list `write_blobs` helper is pending.
+- Raw v2.2 projection follows native lance-c behavior. The upstream projection
+  issue (issue 167) is tracked there; this package does not work around it.
+
+Pending gate: real-library worker tests for file roundtrip, range/index reads,
+metadata, global buffers, local session I/O and packed/dedicated blob writers.
+Dynamic providers, shared root sessions, `write_blobs`, and remote object-store
+acceptance remain open.
+
 ## Blob columns
 
 `BlobField` and `BlobFieldWithOptions` return the native `lance.blob.v2` field.
