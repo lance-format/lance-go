@@ -443,6 +443,23 @@ type bindings struct {
 	transactionCommit                            func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
 	transactionCommitBatch                       func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
 
+	namespaceResultClose          func(result *lanceNamespaceResult)
+	namespaceID                   func(namespace uintptr) *byte
+	namespaceRetrieveOpsMetrics   func(namespace uintptr) *byte
+	namespaceResetOpsMetrics      func(namespace uintptr) int32
+	namespaceDirectoryNew         func(propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceRestNew              func(propertiesJSON string, spec *namespaceContextProviderSpec) uintptr
+	namespaceConnectNew           func(implName, propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceClose                func(namespace uintptr)
+	namespaceCall                 func(namespace uintptr, operation, requestJSON string, requestBytes []byte, requestBytesLen uint64, result *lanceNamespaceResult) int32
+	datasetOpenNamespace          func(namespace uintptr, tableIDJSON, storageOptionsJSON string, version uint64, session uintptr) uintptr
+	datasetWriteNamespace         func(namespace uintptr, tableIDJSON string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, params *writeParams, options *writeOptions, storageOptionsJSON string, session uintptr, branch *byte, outDataset *uintptr) int32
+	transactionCommitNamespaceURI func(namespace uintptr, tableIDJSON, uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	restAdapterStart              func(namespace uintptr, host string, port uint16, out *uintptr) int32
+	restAdapterPort               func(adapter uintptr) uint16
+	restAdapterShutdown           func(adapter uintptr)
+	restAdapterClose              func(adapter uintptr)
+
 	compactionOptionsNew                              func() uintptr
 	compactionOptionsFree                             func(uintptr)
 	compactionOptionsSetTargetRowsPerFragment         func(uintptr, uint64) int32
@@ -877,6 +894,23 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
+
+		{"lance_namespace_result_close", &b.namespaceResultClose},
+		{"lance_namespace_id", &b.namespaceID},
+		{"lance_namespace_retrieve_ops_metrics", &b.namespaceRetrieveOpsMetrics},
+		{"lance_namespace_reset_ops_metrics", &b.namespaceResetOpsMetrics},
+		{"lance_namespace_directory_new", &b.namespaceDirectoryNew},
+		{"lance_namespace_rest_new", &b.namespaceRestNew},
+		{"lance_namespace_connect_new", &b.namespaceConnectNew},
+		{"lance_namespace_close", &b.namespaceClose},
+		{"lance_namespace_call", &b.namespaceCall},
+		{"lance_dataset_open_namespace", &b.datasetOpenNamespace},
+		{"lance_dataset_write_namespace", &b.datasetWriteNamespace},
+		{"lance_transaction_commit_namespace_uri", &b.transactionCommitNamespaceURI},
+		{"lance_rest_adapter_start", &b.restAdapterStart},
+		{"lance_rest_adapter_port", &b.restAdapterPort},
+		{"lance_rest_adapter_shutdown", &b.restAdapterShutdown},
+		{"lance_rest_adapter_close", &b.restAdapterClose},
 
 		{"lance_scanner_new", &b.scannerNew},
 		{"lance_scanner_close", &b.scannerClose},

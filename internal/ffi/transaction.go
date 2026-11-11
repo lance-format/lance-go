@@ -503,6 +503,15 @@ type Transaction struct {
 	handle atomic.Uintptr
 }
 
+// NativeHandle returns the native transaction handle for internal call sites
+// that hold an independent transaction lease.
+func (t *Transaction) NativeHandle() uintptr {
+	if t == nil {
+		return 0
+	}
+	return t.handle.Load()
+}
+
 func wrapTransaction(b *bindings, handle uintptr) *Transaction {
 	tx := &Transaction{b: b}
 	tx.handle.Store(handle)

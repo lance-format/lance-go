@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/namespace"
 )
 
 // Code mirrors LanceErrorCode.
@@ -140,6 +141,27 @@ func wrapError(op, uri string, err error) error {
 	if errors.Is(err, ffi.ErrClosed) {
 		return closedError(op, uri)
 	}
+	if errors.Is(err, namespace.ErrClosed) {
+		return closedError(op, uri)
+	}
+	var namespaceErr *namespace.NamespaceError
+	if errors.As(err, &namespaceErr) {
+		return &Error{
+			Op:      op,
+			URI:     uri,
+			Code:    namespaceErrorCode(namespaceErr.Code),
+			Message: fmt.Sprintf("namespace error %d: %s", namespaceErr.Code, namespaceErr.Message),
+		}
+	}
+	var namespaceNative *namespace.NativeError
+	if errors.As(err, &namespaceNative) {
+		return &Error{
+			Op:      op,
+			URI:     uri,
+			Code:    Code(namespaceNative.Code),
+			Message: namespaceNative.Message,
+		}
+	}
 	var native *ffi.Error
 	if errors.As(err, &native) {
 		code := Code(native.Code)
@@ -152,4 +174,32 @@ func wrapError(op, uri string, err error) error {
 		return fmt.Errorf("lance: %s: %w", op, err)
 	}
 	return fmt.Errorf("lance: %s %s: %w", op, uri, err)
+}
+
+func namespaceErrorCode(code namespace.NamespaceErrorCode) Code {
+	switch code {
+	case namespace.ErrorCodeUnsupported:
+		return CodeNotSupported
+	case namespace.ErrorCodeNamespaceNotFound, namespace.ErrorCodeTableNotFound,
+		namespace.ErrorCodeTableIndexNotFound, namespace.ErrorCodeTableTagNotFound,
+		namespace.ErrorCodeTransactionNotFound, namespace.ErrorCodeTableVersionNotFound,
+		namespace.ErrorCodeTableBranchNotFound:
+		return CodeNotFound
+	case namespace.ErrorCodeNamespaceAlreadyExists, namespace.ErrorCodeTableAlreadyExists,
+		namespace.ErrorCodeTableIndexAlreadyExists, namespace.ErrorCodeTableTagAlreadyExists,
+		namespace.ErrorCodeTableBranchAlreadyExists:
+		return CodeAlreadyExists
+	case namespace.ErrorCodeInvalidInput, namespace.ErrorCodeTableColumnNotFound,
+		namespace.ErrorCodeInvalidTableState, namespace.ErrorCodeTableSchemaValidationError,
+		namespace.ErrorCodeNamespaceNotEmpty:
+		return CodeInvalidArgument
+	case namespace.ErrorCodeConcurrentModification:
+		return CodeCommitConflict
+	case namespace.ErrorCodeServiceUnavailable, namespace.ErrorCodeThrottling:
+		return CodeIO
+	case namespace.ErrorCodePermissionDenied, namespace.ErrorCodeUnauthenticated:
+		return CodeInternal
+	default:
+		return CodeInternal
+	}
 }
