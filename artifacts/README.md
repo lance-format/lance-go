@@ -31,11 +31,11 @@ archive.
 | Upstream commit | `07cd7d0cd06d65c5c643972267cc7981decef067` |
 | Header SHA-256 | `12981740fff3c240c7a5f3d46d8b6cd85e64a848d2bf421b1846286b774fbc4b` |
 
-`lance_bundle_linux_amd64.go` in the root package is the generated selector.
+`internal/bundled/lance_bundle_linux_amd64.go` is the generated selector.
 Its build constraint is `!lance_external_lib && linux && amd64`. The `init`
 function registers the descriptor, so a default `linux/amd64` import of the
-root package uses the bundle after `LANCE_LIB_PATH` is absent and before the
-system loader. `LANCE_LIB_PATH` still takes precedence when set. Once a bundle
+root package or the standalone namespace package uses the bundle after
+`LANCE_LIB_PATH` is absent and before the system loader. `LANCE_LIB_PATH` still takes precedence when set. Once a bundle
 is registered, verification, extraction, and `dlopen` errors are returned with
 the bundle module in the error; the loader does not fall back to a system copy.
 
@@ -82,10 +82,10 @@ archive. External builds use only `LANCE_LIB_PATH` and system discovery.
 does not link, load, or execute native code. The generated `go.mod` targets Go
 1.23 and declares no requirements.
 
-`selector/` contains a file for the root package. Its build constraint is
+`selector/` contains a file for `internal/bundled`. Its build constraint is
 `!lance_external_lib && <goos> && <goarch>`. It imports the artifact module
 and registers the descriptor with `internal/loader` in an `init` function. Copy
-the selector into the root package after publishing the artifact module and
+the selector into `internal/bundled` after publishing the artifact module and
 adding the module requirement. That activation step belongs to the release
 process, not to this generator.
 

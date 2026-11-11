@@ -115,6 +115,7 @@ type writeConfig struct {
 	session                  *Session
 	transactionProperties    map[string]string
 	hasTransactionProperties bool
+	branch                   string
 }
 
 // WriteOption configures Write, Create, Append and Overwrite.
@@ -170,6 +171,18 @@ func WithWriteSession(session *Session) WriteOption {
 			return fmt.Errorf("session must not be nil")
 		}
 		config.session = session
+		return nil
+	}
+}
+
+// WithWriteBranch selects a table branch for WriteToNamespace. It is invalid
+// for URI writes.
+func WithWriteBranch(branch string) WriteOption {
+	return func(config *writeConfig) error {
+		if err := validateCString(branch); err != nil {
+			return fmt.Errorf("branch: %w", err)
+		}
+		config.branch = branch
 		return nil
 	}
 }

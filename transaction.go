@@ -1030,6 +1030,9 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}
+	if config.branch != "" {
+		return nil, invalidError("write uncommitted", uri, "WithWriteBranch is valid only for WriteToNamespace")
+	}
 	if config.session != nil && !config.session.acquire() {
 		return nil, closedError("write uncommitted", uri)
 	}

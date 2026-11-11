@@ -7,9 +7,10 @@ official `lance-c` C ABI without cgo.
 
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, vector and full-text search,
-immutable mutations, version history, tags, branches, staged transactions, and
-fragment inspection. It uses Arrow Go v18
-and requires Go 1.23 or newer.
+immutable mutations, version history, tags, branches, staged transactions,
+fragment inspection, and native directory/REST namespaces with managed dataset
+open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
+or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
 and load it automatically after verifying and unpacking it into the user cache.
@@ -24,8 +25,8 @@ coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
 and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Index, blob, maintenance
-and namespace APIs are tracked in
+Windows DLL belongs to the lance-c release process. Index, blob, and
+maintenance APIs are tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
@@ -521,7 +522,8 @@ Windows arm64; neither establishes native Windows DLL support.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
-lance_bundle_linux_amd64.go  generated selector that registers the bundle
+namespace/        typed native namespace API and managed dataset operations
+internal/bundled/ shared zero-config selector registration for root and namespace
 artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles

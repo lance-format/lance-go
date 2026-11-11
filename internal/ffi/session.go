@@ -269,6 +269,13 @@ func (s *Session) readUint64(read func(uintptr, *uint64) int32, name string) (ui
 	return value, nil
 }
 
+// NativeHandle returns the native session handle for internal call sites that
+// hold an independent session lease. The caller must keep the Session open for
+// the duration of the native call.
+func (s *Session) NativeHandle() uintptr {
+	return s.nativeHandle()
+}
+
 func (s *Session) nativeHandle() uintptr {
 	return s.handle.Load()
 }
