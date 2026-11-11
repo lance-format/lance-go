@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"unsafe"
 
 	"github.com/lance-format/lance-go/compaction"
 )
@@ -27,8 +28,8 @@ func (m compactionMetrics) metrics() compaction.Metrics {
 
 // transactionProperties mirrors LanceTransactionProperties.
 type transactionProperties struct {
-	Keys   uintptr
-	Values uintptr
+	Keys   **byte
+	Values **byte
 	Count  uint64
 }
 
@@ -232,8 +233,8 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 	if options.TransactionProperties != nil {
 		properties := transactionProperties{Count: uint64(len(propertyKeys))}
 		if len(propertyKeys) > 0 {
-			properties.Keys = propertyKeysList.ptrs[0]
-			properties.Values = propertyValuesList.ptrs[0]
+			properties.Keys = (**byte)(unsafe.Pointer(&propertyKeysList.ptrs[0]))
+			properties.Values = (**byte)(unsafe.Pointer(&propertyValuesList.ptrs[0]))
 		}
 		rc := b.compactionOptionsSetTransactionProperties(handle, &properties)
 		propertyKeysList.keepAlive()

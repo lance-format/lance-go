@@ -104,7 +104,9 @@ Close sessions explicitly; datasets already opened from a session remain valid.
 
 `CompactFiles` rewrites small fragments through the native V2 compaction API
 and returns a new committed `Dataset` plus fragment and file metrics. The
-receiver keeps its version, rows and open scanners. A nil options pointer uses
+receiver keeps its version, rows and open scanners. Native compaction can commit
+fragment-ID reservations before the rewrite, so a successful operation can advance
+the stored version more than once. A nil options pointer uses
 the dataset configuration; a non-nil `compaction.Options` starts from native
 defaults and applies only the fields that are set.
 

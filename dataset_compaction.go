@@ -10,7 +10,9 @@ import (
 )
 
 // CompactFiles rewrites small fragments in d and returns a new Dataset at the
-// committed compaction version. d is not changed: its version, rows and open
+// committed compaction version. Native compaction may commit fragment-ID
+// reservations before the rewrite, so the version need not advance by one.
+// d is not changed: its version, rows and open
 // scanners keep the pre-compaction snapshot.
 //
 // A nil options value asks native compaction to derive its effective options

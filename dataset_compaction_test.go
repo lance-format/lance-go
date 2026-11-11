@@ -102,8 +102,9 @@ func TestCompactFilesRewritesFragments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compacted Version: %v", err)
 	}
-	if compactedVersion != version+1 {
-		t.Fatalf("compacted version = %d, want %d", compactedVersion, version+1)
+	// Native compaction first reserves fragment IDs, then commits the rewrite.
+	if compactedVersion != version+2 {
+		t.Fatalf("compacted version = %d, want %d", compactedVersion, version+2)
 	}
 	sourceVersion, err := dataset.Version()
 	if err != nil {
