@@ -113,12 +113,12 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 	}
 
 	fail := func(name string) (*compactionOptions, error) {
-		err := b.takeError()
-		if err == nil {
-			err = fmt.Errorf("ffi: %s failed without setting an error", name)
-		}
+		nativeErr := b.takeError()
 		b.compactionOptionsFree(handle)
-		return nil, err
+		if nativeErr != nil {
+			return nil, nativeErr
+		}
+		return nil, fmt.Errorf("ffi: %s failed without setting an error", name)
 	}
 
 	setU64 := func(name string, setter func(uintptr, uint64) int32, value *uint64) error {
