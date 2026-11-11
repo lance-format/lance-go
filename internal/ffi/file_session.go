@@ -17,15 +17,15 @@ type FileSession struct {
 
 // OpenFileSession opens a session over baseURI. A nil storage accessor selects
 // native None; a non-nil accessor must stay open for the duration of this call.
-func OpenFileSession(baseURI string, storage *StorageOptionsAccessor, scheduler *FileSchedulerConfig) (*FileSession, error) {
+func OpenFileSession(baseURI string, storage *StorageOptionsAccessor, session *Session, scheduler *FileSchedulerConfig) (*FileSession, error) {
 	b, err := load()
 	if err != nil {
 		return nil, err
 	}
-	return openFileSession(b, baseURI, storage, scheduler)
+	return openFileSession(b, baseURI, storage, session, scheduler)
 }
 
-func openFileSession(b *bindings, baseURI string, storage *StorageOptionsAccessor, scheduler *FileSchedulerConfig) (*FileSession, error) {
+func openFileSession(b *bindings, baseURI string, storage *StorageOptionsAccessor, session *Session, scheduler *FileSchedulerConfig) (*FileSession, error) {
 	if err := validateCString(baseURI); err != nil {
 		return nil, err
 	}
@@ -35,7 +35,7 @@ func openFileSession(b *bindings, baseURI string, storage *StorageOptionsAccesso
 	}
 
 	runtime.LockOSThread()
-	handle := b.fileSessionNew(baseURI, storage.Handle(), 0, rawScheduler)
+	handle := b.fileSessionNew(baseURI, storage.Handle(), SessionHandle(session), rawScheduler)
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

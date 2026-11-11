@@ -285,6 +285,20 @@ func nativeScannerOptions(config scanConfig) ffi.ScannerOptions {
 			NullOrder: int32(ordering.nullOrder),
 		}
 	}
+	var blobHandling *int32
+	if config.blobHandling != nil {
+		value := int32(*config.blobHandling)
+		blobHandling = &value
+	}
+	var materializationStyle *int32
+	if config.materializationStyle != nil {
+		value := int32(*config.materializationStyle)
+		materializationStyle = &value
+	}
+	var scalarIndexSegment []byte
+	if config.scalarIndexSegment != nil {
+		scalarIndexSegment = append([]byte(nil), config.scalarIndexSegment[:]...)
+	}
 	return ffi.ScannerOptions{
 		Columns:              config.columns,
 		Filter:               config.filter,
@@ -292,6 +306,22 @@ func nativeScannerOptions(config scanConfig) ffi.ScannerOptions {
 		Offset:               config.offset,
 		BatchSize:            config.batchSize,
 		BatchSizeBytes:       config.batchSizeBytes,
+		IOBufferSize:         config.ioBufferSize,
+		BatchReadahead:       config.batchReadahead,
+		FragmentReadahead:    config.fragmentReadahead,
+		TargetParallelism:    config.targetParallelism,
+		ScanInOrder:          config.scanInOrder,
+		UseScalarIndex:       config.useScalarIndex,
+		StrictBatchSize:      config.strictBatchSize,
+		UseStats:             config.useStats,
+		IncludeDeletedRows:   config.includeDeletedRows,
+		BlobHandling:         blobHandling,
+		MaterializationStyle: materializationStyle,
+		MaterializationEarly: config.materializationEarly,
+		FragmentIDs:          config.fragmentIDs,
+		FragmentIDsSet:       config.fragmentIDsSet,
+		DisableScoring:       config.disableScoring,
+		ScalarIndexSegment:   scalarIndexSegment,
 		Projection:           projection,
 		OrderBy:              orderBy,
 		RowID:                config.rowID,
