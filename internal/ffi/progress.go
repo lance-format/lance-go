@@ -43,6 +43,20 @@ func (s *progressState) set(fn func(ProgressObservation)) {
 	s.mu.Unlock()
 }
 
+// registerProgressObserver installs fn in the handle registry and returns the
+// static native callback plus its context. release retires the observer and
+// must run after the native operation returns; native drains in-flight calls
+// before returning.
+func registerProgressObserver(fn func(ProgressObservation)) (callback, ctx uintptr, state *progressState, release func()) {
+	if fn == nil {
+		return 0, 0, nil, func() {}
+	}
+	state = &progressState{}
+	state.set(fn)
+	id := handle.New(state)
+	return progressCallback(), uintptr(id), state, func() { handle.Remove(id) }
+}
+
 // progressCallback is the single static native callback shared by every index
 // segment build and metadata merge. Per-operation observers travel through the
 // integer handle registry, so creating a builder never creates a new callback.

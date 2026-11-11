@@ -630,6 +630,20 @@ the index; use that result or reopen the dataset to search the new index.
 `Metric` and `VectorMetric` name the same `index.Metric` type, so index creation
 and query options accept the same metric values.
 
+`WithIndexProgress` observes ordinary index creation through any of the public
+create methods; nil preserves the previous behavior. Observations are advisory:
+native code owns event delivery, stage names, counts and the build outcome, and
+the observer cannot cancel the build. The observer runs on native worker threads,
+may be called concurrently, must be fast and thread-safe, and must not call back
+into Lance, including the dataset being indexed. A panic is recovered. The
+observer is retired and in-flight calls are drained before the create method
+returns, including when native reports an error.
+
+Create methods return a new dataset snapshot and leave the receiver unchanged.
+Native Lance commits the index and then reloads metadata, so an error can occur
+after a version was published. Reopen the dataset to determine the committed
+state before retrying; the binding does not claim rollback.
+
 `WithRowIDAllowlist` and `WithRowIDBlocklist` restrict a scan by stable
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
 no IDs selects no rows. The IDs are not positions within a batch or fragment.
