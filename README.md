@@ -197,8 +197,10 @@ applies.
 | `WithVectorDistanceRange` | Restricts a single-query search to `lower <= distance < upper`; either bound may be nil. |
 
 `WithVectorFastSearch(true)` can return no rows when the dataset has no usable
-vector index. Index creation is not exposed by this module yet; the vector
-index settings apply to datasets whose index was created elsewhere.
+vector index. `CreateVectorIndex` returns a new dataset snapshot containing
+the index; use that result or reopen the dataset to search the new index.
+`Metric` and `VectorMetric` name the same `index.Metric` type, so index creation
+and query options accept the same metric values.
 
 `WithRowIDAllowlist` and `WithRowIDBlocklist` restrict a scan by stable
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with

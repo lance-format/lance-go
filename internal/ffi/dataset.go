@@ -37,3 +37,30 @@ func (d *Dataset) Close() {
 
 	d.b.datasetClose(handle)
 }
+
+func (d *Dataset) jsonString(op string, call func(handle uintptr) *byte) (string, error) {
+	handle := d.handle.Load()
+	if handle == 0 {
+		return "", ErrClosed
+	}
+
+	b := d.b
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	ptr := call(handle)
+	if ptr == nil {
+		return "", nativeNullError(b, op)
+	}
+	text := goString(ptr)
+	b.freeString(ptr)
+	return text, nil
+}
+
+func (d *Dataset) jsonBytes(op string, call func(uintptr) *byte) ([]byte, error) {
+	text, err := d.jsonString(op, call)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(text), nil
+}
