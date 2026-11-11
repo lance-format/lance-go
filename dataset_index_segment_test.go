@@ -535,8 +535,10 @@ func TestIndexSegmentProgressAndMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("metadata covering fields: %v", err)
 	}
-	if len(coveringFields) != 1 {
-		t.Fatalf("metadata covering fields = %v, want one field", coveringFields)
+	// The indexed text field is in FieldIDs; this index carries no additional
+	// covering columns.
+	if len(coveringFields) != 0 {
+		t.Fatalf("metadata covering fields = %v, want no covering columns", coveringFields)
 	}
 	coverage, err := metadata.FragmentIDs()
 	if err != nil {

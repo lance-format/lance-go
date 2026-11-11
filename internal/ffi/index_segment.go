@@ -491,17 +491,12 @@ func BuildRQModel(dimension, numBits uint32) ([]byte, error) {
 // borrowed while the data type is imported, then released exactly once; the
 // array is consumed by ImportArray, which also releases it on failure.
 func importModelArray(array *cdata.ArrowArray, schema *cdata.ArrowSchema) (arrow.Array, arrow.Field, error) {
-	imported, err := cdata.ImportSchema(schema)
+	field, err := cdata.ImportField(schema)
 	cdata.ReleaseSchema(schema)
 	if err != nil {
 		cdata.ReleaseArray(array)
 		return nil, arrow.Field{}, err
 	}
-	if imported == nil || imported.NumFields() != 1 {
-		cdata.ReleaseArray(array)
-		return nil, arrow.Field{}, fmt.Errorf("ffi: trained model schema must contain exactly one field")
-	}
-	field := imported.Field(0)
 	value, err := cdata.ImportArray(array, field.Type)
 	if err != nil {
 		return nil, arrow.Field{}, err
