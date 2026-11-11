@@ -55,6 +55,14 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
+[[ -n "$out_dir" ]] || die "output directory must not be empty"
+# Absolute operands also keep names beginning with '-' from becoming options
+# to the platform's dirname, mkdir, mv, or find commands.
+case "$out_dir" in
+/*) ;;
+*) out_dir="$PWD/$out_dir" ;;
+esac
+
 [[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output already exists: $out_dir; choose a new --out directory"
 
 for cmd in git cmake cargo; do
@@ -84,6 +92,10 @@ upstream_url=${LANCE_C_UPSTREAM_URL:-$(read_pin upstreamRepo)}
 upstream_commit=$(read_pin upstreamCommit)
 header_sha256=$(read_pin upstreamHeaderSHA256)
 work_dir=${LANCE_C_WORK_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/lance-c-build}
+case "$work_dir" in
+/*) ;;
+*) work_dir="$PWD/$work_dir" ;;
+esac
 jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 
 [[ $upstream_commit =~ ^[0-9a-f]{40}$ ]] || die "pinned upstreamCommit is not a full SHA-1: $upstream_commit"
@@ -134,8 +146,8 @@ actual_header_sha=$(sha256_file "$installed_header")
 [[ $actual_header_sha == "$header_sha256" ]] ||
 	die "installed header sha256 is $actual_header_sha, want $header_sha256"
 
-[[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output appeared during build: $out_dir"
 mkdir -p "$(dirname "$out_dir")"
+[[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output appeared during build: $out_dir"
 mv "$stage_dir" "$out_dir"
 
 lib_path=$(find "$out_dir" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
