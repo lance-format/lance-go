@@ -87,6 +87,54 @@ A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
 
+## Compaction and cleanup
+
+`CompactFiles` rewrites small fragments through the native V2 compaction API
+and returns a new committed `Dataset` plus fragment and file metrics. The
+receiver keeps its version, rows and open scanners. A nil options pointer uses
+the dataset configuration; a non-nil `compaction.Options` starts from native
+defaults and applies only the fields that are set.
+
+For distributed work, `PlanCompaction` captures an immutable plan. Plans, tasks
+and rewrite results expose native JSON with `JSON`, and
+`CompactionPlanFromJSON`, `CompactionTaskFromJSON` and
+`RewriteResultFromJSON` restore them. `CompactionTask.Execute` writes new data
+files without publishing metadata; pass its result to `CommitCompaction` to
+publish it. Plan and task options include the exact data storage version
+resolved by native planning.
+
+```go
+targetRows := uint64(1 << 20)
+plan, err := ds.PlanCompaction(ctx, &compaction.Options{
+    TargetRowsPerFragment: &targetRows,
+})
+if err != nil {
+    return err
+}
+task, err := plan.Task(0)
+if err != nil {
+    return err
+}
+result, err := task.Execute(ctx, ds)
+if err != nil {
+    return err
+}
+taskOptions := task.Options()
+committed, _, err := ds.CommitCompaction(ctx,
+    []*lance.RewriteResult{result}, &taskOptions)
+if err != nil {
+    return err
+}
+defer committed.Close()
+```
+
+`CleanupOldVersions`, `Cleanup` and `CleanupExplain` expose native old-version
+deletion. Cleanup is destructive storage maintenance: it does not take a
+snapshot lease, does not change the current dataset version, and cannot roll
+back files already deleted after a later failure. An explanation observes the
+current state and is not a reservation; `Cleanup` re-evaluates references when
+it executes.
+
 A scanner is single-use. Each batch yielded by `Records` is borrowed until
 iteration advances: call `Retain` before keeping it and later call `Release`.
 Ending iteration, including an early break, closes the scanner. Alternatively,
