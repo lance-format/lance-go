@@ -1,4 +1,4 @@
-//go:build !lance_external_lib && (linux || darwin)
+//go:build !lance_external_lib && (linux || darwin || windows)
 
 package loader
 
@@ -85,7 +85,8 @@ func makePrivateDir(dir string) error {
 	return nil
 }
 
-// verifyCachedLibrary checks the exact bytes that will be passed to dlopen.
+// verifyCachedLibrary checks the exact bytes that will be passed to the
+// platform loader.
 // It returns errCacheMismatch for a replaceable entry and os.ErrNotExist when
 // no entry exists yet.
 func verifyCachedLibrary(path string, b *Bundle) error {
@@ -164,8 +165,8 @@ func extractBundle(b *Bundle, dir, target string) error {
 		return fmt.Errorf("decompressed sha256 is %s, want %s", got, b.UncompressedSHA256)
 	}
 
-	if err := tmp.Chmod(0o500); err != nil {
-		return fmt.Errorf("set cached library permissions: %w", err)
+	if err := protectCachedLibrary(tmp); err != nil {
+		return fmt.Errorf("protect cached library: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("sync cached library: %w", err)

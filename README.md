@@ -8,13 +8,15 @@ official `lance-c` C ABI without cgo.
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, bounded immutable
 mutations, version history, tags, and branches. It uses Arrow Go v18 and
-requires Go 1.23 or newer. Supply the pinned
-native library as described below; bundled artifacts and zero-configuration
-installation are still pending.
+requires Go 1.23 or newer. Supply the pinned native library as described
+below; bundled artifacts and zero-configuration installation are still pending.
 
-Linux amd64 has native test coverage. Linux/macOS amd64 and arm64 are
-cross-compiled in CI; macOS runtime behavior and Windows support remain pending.
-Index, blob, maintenance and namespace APIs are tracked in
+Linux amd64 has native test coverage. Linux and macOS on amd64 and arm64, plus
+Windows arm64, are cross-compiled in CI. Windows amd64 also runs the loader,
+cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
+and real Windows DLL acceptance remain pending; acceptance of a packaged
+Windows DLL belongs to the lance-c release process. Index, blob, maintenance
+and namespace APIs are tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 ## Read a dataset
@@ -61,8 +63,8 @@ older versions. `WriteParams` exposes the options available in the pinned C ABI.
 
 `Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
 snapshot and return a new committed `Dataset`. The receiver keeps its version
-and any open scanners. `MergeInsert` and `Merge` consume the source reader once
-it is exported, including when the native call fails.
+and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
+The caller retains ownership and releases the reader after the call.
 
 A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
@@ -118,10 +120,16 @@ lineage of the receiver's branch.
 1. `LANCE_LIB_PATH`, which must point at an existing regular file. When set,
    it is the only candidate. A bad value fails with the path in the error
    instead of falling back to another library.
-2. Otherwise the platform soname (`liblance_c.so` on Linux,
-   `liblance_c.dylib` on macOS) is opened through the system dynamic loader,
-   honoring `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, ldconfig and the usual
-   system directories.
+2. Otherwise, in the default build, a compiled-in artifact bundle registered
+   by a generated platform selector is verified and unpacked into the user
+   cache. Cache, extraction and loading errors fail loudly; the loader does
+   not fall back to a system copy.
+3. Otherwise the platform library name (`liblance_c.so` on Linux,
+   `liblance_c.dylib` on macOS, `lance_c.dll` on Windows) is opened through
+   the platform loader. Unix honors `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
+   ldconfig and the usual system directories. Windows applies the process's
+   DLL search policy, which can include the application, system and current
+   directories and `PATH`.
 
 The library is never unloaded. `lance-c` owns a Tokio runtime, thread-local
 error state and handles that may outlive a dataset, so unloading while native
@@ -130,14 +138,16 @@ after a successful load has no effect in that process.
 
 Build tags:
 
-- Default builds carry no embedded artifacts yet, so they use the discovery
-  order above.
-- `-tags lance_external_lib` marks a build that must never embed artifacts.
-  The tag currently only changes the diagnostics; it becomes load-bearing
-  when the artifact modules land.
+- Default builds include the artifact bundle, cache and decompression path,
+  but ship no compiled-in artifacts. Without a generated selector they use
+  the environment and system-loader steps.
+- `-tags lance_external_lib` compiles out the bundle, cache and decompression
+  path. Only explicit `LANCE_LIB_PATH` and platform discovery remain.
 
-All Go code is `CGO_ENABLED=0` compatible. `purego` is used only for
-`dlopen`/`dlsym` and call trampolines.
+All Go code is `CGO_ENABLED=0` compatible. `purego` provides the Unix
+`dlopen`/`dlsym` calls and the callback trampolines on every platform. Windows
+uses `golang.org/x/sys/windows` for `LoadLibrary`, `GetProcAddress` and
+`LockFileEx`, because purego v0.10 does not export those loading entry points.
 
 ## Building liblance_c
 
@@ -211,16 +221,23 @@ fails instead of skipping.
 
 ```console
 gofmt -l .
+go mod tidy -diff
 go vet ./...
 CGO_ENABLED=0 go build ./...
 CGO_ENABLED=0 go build -tags lance_external_lib ./...
 go test ./...
+go test -tags lance_external_lib ./...
 
 export LANCE_LIB_PATH="$PWD/dist/lance-c/lib/liblance_c.so"   # or .dylib
 CGO_ENABLED=0 go test -count=1 -v ./...
 CGO_ENABLED=0 go test -count=1 -tags lance_external_lib ./...
 CGO_ENABLED=1 go test -count=1 -race ./...
 ```
+
+On Windows, the same package tests run with `CGO_ENABLED=0`; set
+`LANCE_LIB_PATH` to a real `lance_c.dll` to run native loader tests. The
+Windows CI job currently proves compilation and the loader/cache/callback
+unit tests, not a packaged DLL.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -233,8 +250,9 @@ Go's race detector.
 The CI workflow runs on pull requests and pushes to `main`. It builds the
 pinned native library on Linux and requires the native tests to run rather
 than skip. A separate job uses that library with Go's race detector. The
-cross-build matrix checks Linux and macOS on amd64 and arm64; it does not
-establish native runtime support on those other platforms.
+cross-build matrix checks Linux and macOS on amd64 and arm64. A separate
+Windows workflow tests Windows amd64 and cross-builds Windows arm64; neither
+establishes native Windows DLL support.
 
 ## Layout
 
@@ -242,7 +260,7 @@ establish native runtime support on those other platforms.
 *.go              public Dataset, Session, Write, Scanner, mutation and option APIs
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
-internal/loader/  discovery, dlopen, symbol lookup, process-wide singleton
+internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
 scripts/          build-lance-c.sh, check-abi-symbols.go
 ```
