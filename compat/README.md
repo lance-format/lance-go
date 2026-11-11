@@ -1,7 +1,8 @@
 # Phase 5 cross-language compatibility suite
 
 This directory is an opt-in compatibility check for the Lance SDKs used by
-lance-go. It is not part of the Go package and is not run by `go test`.
+lance-go. The Go CLI is compiled by `go test ./...`, but the four-language
+runner is opt-in and is not executed by that command.
 
 Each language has a small `produce` / `read` / `append` CLI:
 
@@ -24,7 +25,8 @@ float32 bit patterns for floats. No float JSON representation is used.
 
 ## Storage format
 
-The accepted common storage format for this change is Lance 2.1. Every SDK
+The common storage format selected for this suite is Lance 2.1. Runtime
+compatibility remains unverified until the complete matrix passes. Every SDK
 receives an explicit format; no SDK is allowed to fall back to its own default.
 The runner records the requested format in `metadata.txt`. The same bounded
 fixture is wired for an opt-in `--storage-version 2.2` run, but 2.2 is outside
@@ -58,7 +60,7 @@ From the repository root:
 ```bash
 go build -o /tmp/lance-compat-go ./compat/go
 (cd compat/java && mvn -q -DskipTests package)
-cargo build --release --manifest-path compat/rust/Cargo.toml
+cargo build --locked --release --manifest-path compat/rust/Cargo.toml
 ```
 
 The Rust build must use the normal cargo target/cache selected by the local
@@ -77,7 +79,7 @@ python3 compat/run.py \
   --go-cmd "/tmp/lance-compat-go" \
   --python-cmd "compat/.venv/bin/python compat/python/compat.py" \
   --java-cmd "java -jar compat/java/target/lance-compat-java.jar" \
-  --rust-cmd "cargo run --quiet --release --manifest-path compat/rust/Cargo.toml --"
+  --rust-cmd "cargo run --locked --quiet --release --manifest-path compat/rust/Cargo.toml --"
 ```
 
 The default commands use `go run`, the system `python3`, the shaded Java jar,
