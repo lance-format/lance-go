@@ -107,11 +107,14 @@ type AutoCleanupParams struct {
 }
 
 type writeConfig struct {
-	mode            WriteMode
-	params          WriteParams
-	autoCleanup     *AutoCleanupParams
-	skipAutoCleanup bool
-	storageOptions  map[string]string
+	mode                     WriteMode
+	params                   WriteParams
+	autoCleanup              *AutoCleanupParams
+	skipAutoCleanup          bool
+	storageOptions           map[string]string
+	session                  *Session
+	transactionProperties    map[string]string
+	hasTransactionProperties bool
 }
 
 // WriteOption configures Write, Create, Append and Overwrite.
@@ -155,6 +158,38 @@ func WithAutoCleanup(params AutoCleanupParams) WriteOption {
 func WithSkipAutoCleanup(skip bool) WriteOption {
 	return func(config *writeConfig) error {
 		config.skipAutoCleanup = skip
+		return nil
+	}
+}
+
+// WithWriteSession pins the write to a session. It is valid only for
+// WriteUncommitted.
+func WithWriteSession(session *Session) WriteOption {
+	return func(config *writeConfig) error {
+		if session == nil {
+			return fmt.Errorf("session must not be nil")
+		}
+		config.session = session
+		return nil
+	}
+}
+
+// WithWriteTransactionProperties attaches properties to the transaction
+// created by WriteUncommitted. Passing nil records a present, empty map.
+func WithWriteTransactionProperties(properties map[string]string) WriteOption {
+	return func(config *writeConfig) error {
+		copied := make(map[string]string, len(properties))
+		for key, value := range properties {
+			if err := validateCString(key); err != nil {
+				return fmt.Errorf("transaction property key: %w", err)
+			}
+			if err := validateCString(value); err != nil {
+				return fmt.Errorf("transaction property %q: %w", key, err)
+			}
+			copied[key] = value
+		}
+		config.transactionProperties = copied
+		config.hasTransactionProperties = true
 		return nil
 	}
 }

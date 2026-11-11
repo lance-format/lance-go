@@ -66,40 +66,10 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 		return nil, invalidError("scan", d.uri, "%v", err)
 	}
 
-	projection := make([]ffi.ProjectionColumn, len(config.projection))
-	for i, column := range config.projection {
-		projection[i] = ffi.ProjectionColumn{OutputName: column.name, Expression: column.expression}
-	}
-	orderBy := make([]ffi.ColumnOrdering, len(config.orderBy))
-	for i, ordering := range config.orderBy {
-		orderBy[i] = ffi.ColumnOrdering{
-			Column:    ordering.column,
-			Direction: int32(ordering.direction),
-			NullOrder: int32(ordering.nullOrder),
-		}
-	}
-
-	native, err := ffi.NewScanner(d.native, ffi.ScannerOptions{
-		Columns:              config.columns,
-		Filter:               config.filter,
-		Limit:                config.limit,
-		Offset:               config.offset,
-		BatchSize:            config.batchSize,
-		BatchSizeBytes:       config.batchSizeBytes,
-		Projection:           projection,
-		OrderBy:              orderBy,
-		RowID:                config.rowID,
-		RowAddress:           config.rowAddress,
-		SubstraitFilter:      config.substraitFilter,
-		SubstraitAggregate:   config.substraitAggregate,
-		AdditionalSQLFilters: config.additionalSQLFilters,
-		Vector:               config.ffiVectorOptions(),
-	}, func(native *ffi.Scanner) error {
+	native, err := ffi.NewScanner(d.native, nativeScannerOptions(config), func(native *ffi.Scanner) error {
 		return applyFTSScan(native, &config)
 	})
-	// Native nearest setters copy the query buffer before returning. Keep the
-	// owning scanConfig, including its typed vector slices, reachable until the
-	// last native copy has completed.
+	// Native query setters copy their input before returning.
 	runtime.KeepAlive(&config)
 	if err != nil {
 		return nil, wrapError("scan", d.uri, err)
@@ -301,3 +271,34 @@ func (r *scannerReader) Err() error {
 }
 
 var _ array.RecordReader = (*scannerReader)(nil)
+
+func nativeScannerOptions(config scanConfig) ffi.ScannerOptions {
+	projection := make([]ffi.ProjectionColumn, len(config.projection))
+	for i, column := range config.projection {
+		projection[i] = ffi.ProjectionColumn{OutputName: column.name, Expression: column.expression}
+	}
+	orderBy := make([]ffi.ColumnOrdering, len(config.orderBy))
+	for i, ordering := range config.orderBy {
+		orderBy[i] = ffi.ColumnOrdering{
+			Column:    ordering.column,
+			Direction: int32(ordering.direction),
+			NullOrder: int32(ordering.nullOrder),
+		}
+	}
+	return ffi.ScannerOptions{
+		Columns:              config.columns,
+		Filter:               config.filter,
+		Limit:                config.limit,
+		Offset:               config.offset,
+		BatchSize:            config.batchSize,
+		BatchSizeBytes:       config.batchSizeBytes,
+		Projection:           projection,
+		OrderBy:              orderBy,
+		RowID:                config.rowID,
+		RowAddress:           config.rowAddress,
+		SubstraitFilter:      config.substraitFilter,
+		SubstraitAggregate:   config.substraitAggregate,
+		AdditionalSQLFilters: config.additionalSQLFilters,
+		Vector:               config.ffiVectorOptions(),
+	}
+}

@@ -316,6 +316,12 @@ func NewScanner(ds *Dataset, opts ScannerOptions, initialize func(*Scanner) erro
 	}
 	runtime.UnlockOSThread()
 
+	return newScanner(b, scannerHandle, opts, initialize)
+}
+
+// newScanner takes ownership of a native scanner and configures search before
+// resolving its schema. Every failed construction closes the native handle.
+func newScanner(b *bindings, scannerHandle uintptr, opts ScannerOptions, initialize func(*Scanner) error) (*Scanner, error) {
 	s := &Scanner{
 		b:         b,
 		closeCh:   make(chan struct{}),

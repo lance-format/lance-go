@@ -47,26 +47,13 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		}
 	}
 
-	nativeOptions := ffi.WriteOptions{
-		Mode: ffi.WriteMode(config.mode),
-		Params: ffi.WriteParams{
-			MaxRowsPerFile:     config.params.MaxRowsPerFile,
-			MaxRowsPerGroup:    config.params.MaxRowsPerGroup,
-			MaxBytesPerFile:    config.params.MaxBytesPerFile,
-			DataStorageVersion: config.params.DataStorageVersion,
-			EnableStableRowIDs: config.params.EnableStableRowIDs,
-		},
-		SkipAutoCleanup: config.skipAutoCleanup,
+	if config.session != nil {
+		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted")
 	}
-	if config.autoCleanup != nil {
-		seconds := int64(config.autoCleanup.OlderThan / time.Second)
-		nanos := int32(config.autoCleanup.OlderThan - time.Duration(seconds)*time.Second)
-		nativeOptions.AutoCleanup = &ffi.AutoCleanupParams{
-			Interval:         config.autoCleanup.Interval,
-			OlderThanSeconds: seconds,
-			OlderThanNanos:   nanos,
-		}
+	if config.hasTransactionProperties {
+		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")
 	}
+	nativeOptions := nativeWriteOptions(config)
 
 	native, err := ffi.Write(uri, reader, nativeOptions, config.storageOptions)
 	if err != nil {
@@ -100,4 +87,28 @@ func withMode(mode WriteMode, opts []WriteOption) []WriteOption {
 	// a conflicting WithWriteMode passed by the caller.
 	all = append(all, WithWriteMode(mode))
 	return all
+}
+
+func nativeWriteOptions(config writeConfig) ffi.WriteOptions {
+	nativeOptions := ffi.WriteOptions{
+		Mode: ffi.WriteMode(config.mode),
+		Params: ffi.WriteParams{
+			MaxRowsPerFile:     config.params.MaxRowsPerFile,
+			MaxRowsPerGroup:    config.params.MaxRowsPerGroup,
+			MaxBytesPerFile:    config.params.MaxBytesPerFile,
+			DataStorageVersion: config.params.DataStorageVersion,
+			EnableStableRowIDs: config.params.EnableStableRowIDs,
+		},
+		SkipAutoCleanup: config.skipAutoCleanup,
+	}
+	if config.autoCleanup != nil {
+		seconds := int64(config.autoCleanup.OlderThan / time.Second)
+		nanos := int32(config.autoCleanup.OlderThan - time.Duration(seconds)*time.Second)
+		nativeOptions.AutoCleanup = &ffi.AutoCleanupParams{
+			Interval:         config.autoCleanup.Interval,
+			OlderThanSeconds: seconds,
+			OlderThanNanos:   nanos,
+		}
+	}
+	return nativeOptions
 }
