@@ -7,18 +7,28 @@ official `lance-c` C ABI without cgo.
 
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, and row selection. It uses Arrow Go v18
-and requires Go 1.23 or newer. Supply the pinned native library as described
-below; bundled artifacts and zero-configuration installation are still pending.
+and requires Go 1.23 or newer.
 
-Linux amd64 has native test coverage. Linux/macOS amd64 and arm64 are
-cross-compiled in CI; macOS runtime behavior and Windows support remain pending.
-Immutable mutation, index, blob, maintenance and namespace APIs are tracked in
-[issue #1](https://github.com/lance-format/lance-go/issues/1).
+Default `linux/amd64` builds include a verified compressed `lance-c` payload
+and load it automatically after verifying and unpacking it into the user cache.
+The payload is a normal Go module dependency, so building or testing fetches it
+through the Go module proxy; it is not a download-free installation. Other
+targets still need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
+
+The bundled `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39
+and requires libc, libm, libgcc_s and the dynamic loader. Older glibc, musl,
+Windows, and other targets have no bundle and are not claimed to work. Linux
+amd64 has native test coverage, including the bundled default path. Linux/macOS
+amd64 and arm64 are cross-compiled in CI; macOS runtime behavior and Windows
+support remain pending. Immutable mutation, index, blob, maintenance and
+namespace APIs are tracked in [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 ## Read a dataset
 
-After building the native library, set `LANCE_LIB_PATH` to its installed path
-and run your Go program with `CGO_ENABLED=0`:
+On `linux/amd64`, a default build needs no environment variable: the first
+call loads the bundled artifact. For other targets, build the native library
+and set `LANCE_LIB_PATH` to its installed path. Run your Go program with
+`CGO_ENABLED=0`:
 
 ```go
 package main
@@ -81,10 +91,24 @@ committed dataset, avoiding an error that could encourage duplicate writes.
 1. `LANCE_LIB_PATH`, which must point at an existing regular file. When set,
    it is the only candidate. A bad value fails with the path in the error
    instead of falling back to another library.
-2. Otherwise the platform soname (`liblance_c.so` on Linux,
+2. Otherwise, in a default `linux/amd64` build, the artifact bundle registered
+   by the generated selector. The compressed payload is verified, unpacked
+   into the private user cache, verified again, and loaded. Once a bundle is
+   registered for the running target, cache, extraction, or `dlopen` errors
+   fail with the bundle module in the error; the loader does not fall back to
+   a system copy.
+3. Otherwise the platform soname (`liblance_c.so` on Linux,
    `liblance_c.dylib` on macOS) is opened through the system dynamic loader,
    honoring `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, ldconfig and the usual
    system directories.
+
+The bundle cache is
+`<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`; setting
+`XDG_CACHE_HOME` moves it on Linux. Cached bytes are checked by exact size and
+SHA-256 before `dlopen`. Extraction writes a temporary file, verifies the
+decompressed size and hash, syncs it, and publishes it with an atomic rename
+under a cross-process lock. A corrupt regular entry is replaced; failed
+extraction publishes nothing.
 
 The library is never unloaded. `lance-c` owns a Tokio runtime, thread-local
 error state and handles that may outlive a dataset, so unloading while native
@@ -93,11 +117,14 @@ after a successful load has no effect in that process.
 
 Build tags:
 
-- Default builds carry no embedded artifacts yet, so they use the discovery
-  order above.
-- `-tags lance_external_lib` marks a build that must never embed artifacts.
-  The tag currently only changes the diagnostics; it becomes load-bearing
-  when the artifact modules land.
+- Default builds for `linux/amd64` compile the generated selector, the artifact
+  package, and its compressed payload into the binary. Other targets have no
+  selector, so they use explicit or system discovery.
+- `-tags lance_external_lib` excludes the selector, bundle/cache/decompression
+  code, and the artifact package from compilation and embedding. The artifact
+  module requirement remains in `go.mod` and in the module graph; commands
+  that load all modules, such as `go mod tidy`, may still download its archive.
+  External builds use only `LANCE_LIB_PATH` and system discovery.
 
 All Go code is `CGO_ENABLED=0` compatible. `purego` is used only for
 `dlopen`/`dlsym` and call trampolines.
@@ -136,9 +163,13 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 875c2569ac3467b56a721db0cf9e4dff9b4b2cc5:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show ab5c2d39c8b912fff19a05486732dde4b49c3f33:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
+
+The published `artifacts/linux-amd64` module records the same upstream commit
+and header SHA-256. Packaging verifies the header against this pin; a library
+built from a different commit is not detectable at runtime.
 
 The checker refuses a header whose SHA-256 differs from the pin, then verifies
 that every bound symbol is declared, that C and Go agree on arity, and that
@@ -168,9 +199,9 @@ locked thread until the error has been consumed.
 
 ## Testing
 
-Unit tests run without the native library. Native tests skip unless
-`LANCE_LIB_PATH` names a built `liblance_c`; a configured but broken library
-fails instead of skipping.
+Unit tests run without a native library. On `linux/amd64` the default build
+registers the published bundle, so the public tests run without
+`LANCE_LIB_PATH`; a configured but broken library fails instead of skipping.
 
 ```console
 gofmt -l .
@@ -192,16 +223,22 @@ C layouts, producer ownership, release callbacks and stream reader lifetimes.
 The race lane also enables Go's pointer checks; native Rust internals are outside
 Go's race detector.
 
-The CI workflow runs on pull requests and pushes to `main`. It builds the
-pinned native library on Linux and requires the native tests to run rather
-than skip. A separate job uses that library with Go's race detector. The
-cross-build matrix checks Linux and macOS on amd64 and arm64; it does not
-establish native runtime support on those other platforms.
+The CI workflow runs on pull requests and pushes to `main`. Its default Go lane
+runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
+`XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
+cache entry's SHA-256. That cache entry can only be created by the registered
+bundle, so the check cannot pass by silently loading a system library. A
+separate job builds the pinned native library, and a race job uses that library
+with Go's race detector. The cross-build matrix checks Linux and macOS on amd64
+and arm64; it does not establish native runtime support on those other
+platforms.
 
 ## Layout
 
 ```text
 *.go              public Dataset, Session, Write, Scanner and option APIs
+lance_bundle_linux_amd64.go  generated selector that registers the bundle
+artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, dlopen, symbol lookup, process-wide singleton
