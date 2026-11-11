@@ -51,6 +51,20 @@ func TestStorageOptionListSortsKeys(t *testing.T) {
 	}
 }
 
+func TestPresentCStringListKeepsEmptyListDistinctFromNull(t *testing.T) {
+	list, err := newPresentCStringList(nil)
+	if err != nil {
+		t.Fatalf("newPresentCStringList: %v", err)
+	}
+	if list.ptrs == nil {
+		t.Fatal("present empty list uses a nil pointer slice")
+	}
+	if len(list.ptrs) != 1 || list.ptrs[0] != 0 {
+		t.Fatalf("present empty list pointers = %#v, want one NULL entry", list.ptrs)
+	}
+	list.keepAlive()
+}
+
 func TestBuildSessionCacheSpec(t *testing.T) {
 	raw, keep, err := buildSessionCacheSpec(CacheSpec{Kind: CacheSpecURI, URI: "memory://index"})
 	if err != nil {
