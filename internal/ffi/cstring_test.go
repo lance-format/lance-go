@@ -83,7 +83,7 @@ func TestBuildSessionCacheSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config cache spec: %v", err)
 	}
-	if raw.BackendKind == 0 || raw.OptionKeys == 0 || raw.OptionValues == 0 || raw.OptionCount != 2 {
+	if raw.BackendKind == 0 || raw.OptionKeys == nil || raw.OptionValues == nil || raw.OptionCount != 2 {
 		t.Fatalf("config cache spec = %+v", raw)
 	}
 	keep.keepAlive()
