@@ -324,6 +324,7 @@ type bindings struct {
 	packedBlobWriterBlobID             func(writer uintptr) uint32
 	packedBlobWriterPath               func(writer uintptr) *byte
 	packedBlobWriterWriteBlob          func(writer uintptr, data *byte, length uint64) int32
+	packedBlobWriterWriteBlobs         func(writer uintptr, payloads *cdata.ArrowArray, schema *cdata.ArrowSchema) int32
 	packedBlobWriterFinishArray        func(writer uintptr, fieldName string, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
 	packedBlobWriterClose              func(writer uintptr)
 	dedicatedBlobWriterBlobID          func(writer uintptr) uint32
@@ -898,6 +899,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_packed_blob_writer_blob_id", &b.packedBlobWriterBlobID},
 		{"lance_packed_blob_writer_path", &b.packedBlobWriterPath},
 		{"lance_packed_blob_writer_write_blob", &b.packedBlobWriterWriteBlob},
+		{"lance_packed_blob_writer_write_blobs", &b.packedBlobWriterWriteBlobs},
 		{"lance_packed_blob_writer_finish_array", &b.packedBlobWriterFinishArray},
 		{"lance_packed_blob_writer_close", &b.packedBlobWriterClose},
 		{"lance_dedicated_blob_writer_blob_id", &b.dedicatedBlobWriterBlobID},

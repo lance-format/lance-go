@@ -8,6 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 
+	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
 )
 
@@ -32,6 +33,10 @@ type ReaderOptions struct {
 	// StorageOptions is nil for native defaults. Session.OpenReader rejects a
 	// non-nil value because session readers use the session store.
 	StorageOptions *StorageOptions
+	// Session shares an existing Lance session's caches with a standalone
+	// reader. Nil uses no shared cache. Session.OpenReader rejects a non-nil
+	// value because session readers use the file session's cache and store.
+	Session *lance.Session
 }
 
 func (o *ReaderOptions) ffiOptions() (*ffi.FileReaderOptions, *ffi.FileSchedulerConfig, error) {
@@ -89,7 +94,12 @@ func Open(ctx context.Context, uri string, opts *ReaderOptions) (*Reader, error)
 	}
 	defer unlockStorage()
 
-	native, err := ffi.OpenFileReader(uri, accessor, rawOptions, scheduler)
+	session, releaseSession, err := acquireLanceSession("open file", uri, readerSession(opts))
+	if err != nil {
+		return nil, err
+	}
+	defer releaseSession()
+	native, err := ffi.OpenFileReader(uri, accessor, rawOptions, session, scheduler)
 	if err != nil {
 		return nil, wrapError("open file", uri, err)
 	}
@@ -101,6 +111,13 @@ func storageOptions(opts *ReaderOptions) *StorageOptions {
 		return nil
 	}
 	return opts.StorageOptions
+}
+
+func readerSession(opts *ReaderOptions) *lance.Session {
+	if opts == nil {
+		return nil
+	}
+	return opts.Session
 }
 
 func (r *Reader) acquire(op string) (*ffi.FileReader, func(), error) {

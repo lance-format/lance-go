@@ -895,20 +895,17 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	if err != nil {
 		return nil, invalidError("commit", uri, "%v", err)
 	}
-	if config.session != nil && !config.session.acquire() {
-		return nil, closedError("commit", uri)
+	session, releaseSession, err := acquireSession("commit", uri, config.session)
+	if err != nil {
+		return nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 	if !tx.res.acquire() {
 		return nil, closedError("commit", uri)
 	}
 	defer tx.res.release()
 
-	native, err := ffi.Commit(uri, tx.native, ffiCommitOptions(config))
+	native, err := ffi.Commit(uri, tx.native, ffiCommitOptions(config, session))
 	if err != nil {
 		return nil, wrapError("commit", uri, err)
 	}
@@ -950,20 +947,17 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 			tx.res.release()
 		}
 	}()
-	if config.session != nil && !config.session.acquire() {
-		return nil, nil, closedError("commit batch", uri)
+	session, releaseSession, err := acquireSession("commit batch", uri, config.session)
+	if err != nil {
+		return nil, nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 
 	nativeTxs := make([]*ffi.Transaction, len(txs))
 	for i, tx := range txs {
 		nativeTxs[i] = tx.native
 	}
-	nativeDataset, nativeTransaction, err := ffi.CommitBatch(uri, nativeTxs, ffiCommitOptions(config))
+	nativeDataset, nativeTransaction, err := ffi.CommitBatch(uri, nativeTxs, ffiCommitOptions(config, session))
 	if err != nil {
 		return nil, nil, wrapError("commit batch", uri, err)
 	}
@@ -983,7 +977,7 @@ func parseCommitOptions(opts []CommitOption) (commitConfig, error) {
 	return config, nil
 }
 
-func ffiCommitOptions(config commitConfig) ffi.CommitOptions {
+func ffiCommitOptions(config commitConfig, session *ffi.Session) ffi.CommitOptions {
 	return ffi.CommitOptions{
 		UseStableRowIDs:       config.useStableRowIDs,
 		EnableV2ManifestPaths: config.enableV2ManifestPaths,
@@ -997,7 +991,7 @@ func ffiCommitOptions(config commitConfig) ffi.CommitOptions {
 		SkipAutoCleanup:    config.skipAutoCleanup,
 		DataStorageVersion: config.dataStorageVersion,
 		StorageOptions:     config.storageOptions,
-		Session:            sessionNative(config.session),
+		Session:            session,
 	}
 }
 
@@ -1030,21 +1024,18 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}
-	if config.session != nil && !config.session.acquire() {
-		return nil, closedError("write uncommitted", uri)
+	session, releaseSession, err := acquireSession("write uncommitted", uri, config.session)
+	if err != nil {
+		return nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 
 	native, err := ffi.WriteUncommitted(uri, reader, ffi.WriteUncommittedOptions{
 		Write:                 nativeWriteOptions(config),
 		StorageOptions:        config.storageOptions,
 		TransactionProperties: config.transactionProperties,
 		HasProperties:         config.hasTransactionProperties,
-		Session:               sessionNative(config.session),
+		Session:               session,
 	})
 	if err != nil {
 		return nil, wrapError("write uncommitted", uri, err)
@@ -1089,11 +1080,4 @@ func newDataset(native *ffi.Dataset, uri string) *Dataset {
 	dataset := &Dataset{native: native, uri: uri}
 	dataset.res = newResource(native.Close)
 	return dataset
-}
-
-func sessionNative(session *Session) *ffi.Session {
-	if session == nil {
-		return nil
-	}
-	return session.native
 }
