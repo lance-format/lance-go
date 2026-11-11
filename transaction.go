@@ -1052,8 +1052,14 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}
+	if config.schema != nil {
+		return nil, invalidError("write uncommitted", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	if config.branch != "" {
 		return nil, invalidError("write uncommitted", uri, "WithWriteBranch is valid only for WriteToNamespace")
+	}
+	if config.params.hasNativeOptions() {
+		return writeUncommittedNative(uri, reader, config)
 	}
 	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
 	if err != nil {

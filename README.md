@@ -80,6 +80,16 @@ The caller owns the reader and releases it after the write. `Append` creates
 an absent dataset; `Overwrite` commits a replacement version while preserving
 older versions. `WriteParams` exposes the options available in the pinned C ABI.
 
+`WriteParams` also exposes native write options for V2 manifest selection,
+initial and target bases, per-base storage parameters, external blob handling,
+dataset file-writer controls, sessions and write progress. These fields use the
+native write-options entry point; `WithWriteParams` copies their values and
+the slices and maps they contain. Progress callbacks may run on native worker
+threads, and native write errors do not guarantee rollback. Namespace writes
+reject these fields because the namespace ABI accepts only the older write
+options structure. A commit-lock handle is not represented in Go yet, and
+fragment-create entry points remain on the older options structure.
+
 `Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
 snapshot and return a new committed `Dataset`. The receiver keeps its version
 and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
@@ -109,7 +119,8 @@ restored with `ParseTransaction`, or built directly from an `Operation`.
 dataset; `CommitTransactionBatch` atomically commits append transactions.
 `Dataset.ReadTransaction` and `ReadTransactionByVersion` read transactions
 that the manifest references. Committing is explicit: closing a transaction
-does not publish it or delete uncommitted data files.
+does not publish it or delete uncommitted data files. A failed staged write
+does not publish a version, but may leave uncommitted data files.
 
 ```go
 tx, err := lance.WriteUncommitted(ctx, "data.lance", reader)
@@ -146,6 +157,20 @@ property maps normalize to absent, Overwrite schemas may omit metadata, and an
 Unknown operation can be inspected but not serialized or committed. Public
 writes reassign field IDs; `NativeSchema.Project` preserves the selected
 schema's IDs, which can therefore be nonconsecutive.
+
+`CreateFragment` writes one detached fragment with an explicit ID;
+`WriteFragments` splits a stream using the file-layout write options. Neither
+publishes a version. Combine returned fragments in `NewAppendOperation`, then
+use `NewTransaction` and `CommitTransaction` to publish them. Closing metadata
+does not delete uncommitted files. `WithFragmentSchema` preserves native field
+IDs. Cleanup, stable row ID generation and transaction properties belong to
+publication; fragment creation rejects those settings. The fragment ABI accepts only static
+storage options, so `WithWriteStorageOptionsAccessor` and `WithWriteBranch` are
+also rejected before writing files. Use commit options for
+stable row IDs and cleanup policy. A failed write releases its retained reader
+reference but may have prefetched input; the caller still releases its reader.
+`Dataset.CreateFragmentFromFile` accepts an optional physical-row hint: legacy
+files use it, while V2 files use their stored row count.
 
 `Dataset.FragmentIDs` and `Dataset.OpenFragment` expose fragment snapshots.
 A bound fragment supports `Scan`, `Take`, `CountRows` and `Delete` without the
@@ -507,9 +532,11 @@ interrupted.
 descriptor mode keeps other binary columns inline; `BlobHandlingAllBinary`
 materializes every blob column as binary payloads, while
 `BlobHandlingAllDescriptions` returns descriptors for every column carrying
-blob metadata. Raw packed/dedicated file writers are not exposed yet. The
-lance-c#167 raw v2.2 projection gap is not worked around here; blob reads use
-native descriptors.
+blob metadata. `file.Session.OpenPackedBlobWriter` and
+`file.Session.OpenDedicatedBlobWriter` write blob payload files and return
+prepared descriptors through `FinishArray`. The
+[raw v2.2 projection gap](https://github.com/lance-format/lance-c/issues/167)
+remains an upstream reader limitation; blob reads use native descriptors.
 
 ## Vector search
 
@@ -604,6 +631,20 @@ vector index. `CreateVectorIndex` returns a new dataset snapshot containing
 the index; use that result or reopen the dataset to search the new index.
 `Metric` and `VectorMetric` name the same `index.Metric` type, so index creation
 and query options accept the same metric values.
+
+`WithIndexProgress` observes ordinary index creation through any of the public
+create methods; nil preserves the previous behavior. Observations are advisory:
+native code owns event delivery, stage names, counts and the build outcome, and
+the observer cannot cancel the build. The observer runs on native worker threads,
+may be called concurrently, must be fast and thread-safe, and must not call back
+into Lance, including the dataset being indexed. A panic is recovered. The
+observer is retired and in-flight calls are drained before the create method
+returns, including when native reports an error.
+
+Create methods return a new dataset snapshot and leave the receiver unchanged.
+Native Lance commits the index and then reloads metadata, so an error can occur
+after a version was published. Reopen the dataset to determine the committed
+state before retrying; the binding does not claim rollback.
 
 `WithRowIDAllowlist` and `WithRowIDBlocklist` restrict a scan by stable
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
@@ -812,6 +853,16 @@ namespace-managed writes. Opened datasets and REST adapters retain native
 ownership and remain usable after their namespace is closed.
 
 `namespace.NewRest` takes native properties such as `uri`.
+`namespace.NewCustom` adapts a Go `namespace.CustomClient` for native
+`DescribeTable`, `DescribeTableVersion`, `CreateTableVersion`, and
+`ListTableVersions` calls. The native operation string selects the client
+method, so overlapping request fields cannot misroute a call. The namespace
+retains the client until the final native owner is released; it does not close
+the client. Callbacks run synchronously on the native caller's goroutine
+without context propagation and must be safe for concurrent use. A callback
+must not close the namespace that invoked it, because Close waits for in-flight
+callbacks. Other namespace operations keep the native `Unsupported` error.
+
 `WithDynamicContextProvider` supplies per-operation request context. The native
 contract logs provider errors or panics and continues with empty context; do
 not rely on provider failure to deny a request. Context cancellation is checked
@@ -820,9 +871,7 @@ before synchronous native calls and does not interrupt an operation in flight.
 Models preserve absent, explicit-null and concrete values using pointers to
 `namespace.Nullable[T]`. Native namespace errors retain their separate error
 code space, including code zero (`Unsupported`). The standalone `namespace`
-package activates the same platform bundle as the root package. Custom Go
-namespace implementations require the upstream callback interface tracked in
-[lance-c#180](https://github.com/lance-format/lance-c/issues/180).
+package activates the same platform bundle as the root package.
 
 ## How loading works
 
@@ -907,13 +956,14 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 07cd7d0cd06d65c5c643972267cc7981decef067:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show 88c07cf8ccafebf579e769416251be370b45180e:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
-The published `artifacts/linux-amd64` module records the same upstream commit
-and header SHA-256. Packaging verifies the header against this pin; a library
-built from a different commit is not detectable at runtime.
+Packaging verifies the header against this pin; a library built from a
+different commit is not detectable at runtime. The `artifacts/linux-amd64`
+module must be regenerated when this pin changes and carries the previous pin
+until that happens.
 
 The checker refuses a header whose SHA-256 differs from the pin, then verifies
 that every bound symbol is declared, that C and Go agree on arity, and that

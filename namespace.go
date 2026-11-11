@@ -111,11 +111,17 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 			return nil, invalidError("write namespace", "", "%v", err)
 		}
 	}
+	if config.schema != nil {
+		return nil, invalidError("write namespace", "", "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	if config.hasTransactionProperties {
 		return nil, invalidError("write namespace", "", "WithWriteTransactionProperties is not supported")
 	}
 	if config.storageOptionsAccessor != nil {
 		return nil, invalidError("write namespace", "", "WithWriteStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
+	}
+	if field := config.params.firstNativeOptionField(); field != "" {
+		return nil, invalidError("write namespace", "", "WriteParams.%s is not supported for namespace writes", field)
 	}
 	session, releaseSession, err := acquireSession("write namespace", "", config.session)
 	if err != nil {

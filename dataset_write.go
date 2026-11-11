@@ -47,14 +47,14 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		}
 	}
 
-	if config.session != nil {
-		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted")
-	}
-	if config.hasTransactionProperties {
-		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")
+	if config.schema != nil {
+		return nil, invalidError("write", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
 	}
 	if config.branch != "" {
 		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
+	}
+	if config.params.hasNativeOptions() || config.session != nil || config.hasTransactionProperties {
+		return writeNativeDataset(uri, reader, config)
 	}
 	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
 	if err != nil {
