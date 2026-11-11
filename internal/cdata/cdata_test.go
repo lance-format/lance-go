@@ -868,10 +868,14 @@ func TestStreamErrorReporting(t *testing.T) {
 	if p == 0 {
 		t.Fatal("get_last_error returned nil")
 	}
-	if got := goString((*byte)(unsafe.Pointer(p))); !strings.Contains(got, "reader failed") {
+	if got := goString((*byte)(pointerFromUintptr(p))); !strings.Contains(got, "reader failed") {
 		t.Errorf("last error = %q", got)
 	}
 	_, _, _ = purego.SyscallN(stream.Release, uintptr(unsafe.Pointer(&stream)))
+}
+
+func pointerFromUintptr(p uintptr) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
 }
 
 func goString(p *byte) string {
