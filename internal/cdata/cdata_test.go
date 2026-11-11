@@ -354,8 +354,8 @@ func TestImportSchemaForeignFixture(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ImportSchema: %v", err)
 	}
-	if schema.Metadata().GetValue("k") != "v" {
-		t.Errorf("root metadata k = %q", schema.Metadata().GetValue("k"))
+	if got, ok := schema.Metadata().GetValue("k"); !ok || got != "v" {
+		t.Errorf("root metadata k = %q, %v", got, ok)
 	}
 	points := schema.Field(0)
 	fl, ok := points.Type.(*arrow.FixedSizeListType)

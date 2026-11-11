@@ -50,6 +50,21 @@ func checkedBytesForBits(bits int64) (int64, error) {
 	return bits >> 3, nil
 }
 
+// validateSchema checks that every field has a supported type. Arrow Go does
+// not expose Schema.Validate; NewSchema also panics on a nil field type, so
+// callers validate before constructing or exporting a schema.
+func validateSchema(schema *arrow.Schema) error {
+	if schema == nil {
+		return invalidf("nil schema")
+	}
+	for i, field := range schema.Fields() {
+		if err := validateDataType(field.Type); err != nil {
+			return fmt.Errorf("cdata: schema field %d (%q): %w", i, field.Name, err)
+		}
+	}
+	return nil
+}
+
 func toInt(v int64, what string) (int, error) {
 	if v < 0 || v > maxIntValue() {
 		return 0, invalidf("%s is outside the native int range: %d", what, v)

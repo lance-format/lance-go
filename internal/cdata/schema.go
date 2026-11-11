@@ -289,7 +289,7 @@ func ParseFormat(format string) (arrow.DataType, error) {
 			return &arrow.TimestampType{Unit: unit, TimeZone: strings.TrimPrefix(format, prefix)}, nil
 		}
 	}
-	return "", unsupportedf("format %q", format)
+	return nil, unsupportedf("format %q", format)
 }
 
 // ImportSchema imports an ArrowSchema as a record batch schema. The source
@@ -334,7 +334,7 @@ func ImportSchema(src *ArrowSchema) (*arrow.Schema, error) {
 		fields[i] = field
 	}
 	schema := arrow.NewSchema(fields, metadataPointer(md))
-	if err := schema.Validate(); err != nil {
+	if err := validateSchema(schema); err != nil {
 		return nil, invalidf("invalid imported schema: %v", err)
 	}
 	return schema, nil
@@ -403,7 +403,7 @@ func ExportSchema(schema *arrow.Schema, dst *ArrowSchema) error {
 		return invalidf("nil destination ArrowSchema")
 	}
 	*dst = ArrowSchema{}
-	if err := schema.Validate(); err != nil {
+	if err := validateSchema(schema); err != nil {
 		return invalidf("invalid schema: %v", err)
 	}
 
@@ -666,7 +666,7 @@ func importType(src *ArrowSchema) (arrow.DataType, error) {
 		}, nil
 	}
 
-	switch t := dt.(type) {
+	switch dt.(type) {
 	case *arrow.StructType:
 		n, err := childCount(src.NChildren)
 		if err != nil {

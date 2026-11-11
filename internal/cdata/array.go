@@ -83,7 +83,7 @@ func ImportRecordBatch(src *ArrowArray, schema *arrow.Schema) (arrow.RecordBatch
 	if schema == nil {
 		return nil, invalidf("nil schema")
 	}
-	if err := schema.Validate(); err != nil {
+	if err := validateSchema(schema); err != nil {
 		return nil, invalidf("invalid schema: %v", err)
 	}
 	if src.Release == 0 {
@@ -187,6 +187,10 @@ func newImportAllocator(src *ArrowArray) *importAllocator {
 }
 
 func (a *importAllocator) Allocate(size int) []byte {
+	return make([]byte, size)
+}
+
+func (a *importAllocator) Reallocate(size int, _ []byte) []byte {
 	return make([]byte, size)
 }
 
@@ -647,19 +651,23 @@ func ExportRecordBatch(batch arrow.RecordBatch, dst *ArrowArray) error {
 
 	n := batch.NumCols()
 	if n > 0 {
-		e.children = make([]*arrayExporter, n)
-		e.cChildren = make([]*ArrowArray, n)
+		if n > int64(maxIntValue()) {
+			return invalidf("record batch has too many columns: %d", n)
+		}
+		count := int(n)
+		e.children = make([]*arrayExporter, count)
+		e.cChildren = make([]*ArrowArray, count)
 		e.pinner.Pin(&e.cChildren[0])
 		e.value.Children = &e.cChildren[0]
-		for i := 0; i < n; i++ {
-			col := batch.Column(i).Data()
+		for i := int64(0); i < n; i++ {
+			col := batch.Column(int(i)).Data()
 			child, err := exportNode(col, col.DataType())
 			if err != nil {
 				e.freeTree()
 				return fmt.Errorf("cdata: export record batch column %d: %w", i, err)
 			}
-			e.children[i] = child
-			e.cChildren[i] = &child.value
+			e.children[int(i)] = child
+			e.cChildren[int(i)] = &child.value
 		}
 	}
 	e.value.NChildren = int64(n)
@@ -766,8 +774,8 @@ func exportNode(data arrow.ArrayData, dt arrow.DataType) (*arrayExporter, error)
 				e.freeTree()
 				return nil, err
 			}
-			e.children[i] = child
-			e.cChildren[i] = &child.value
+			e.children[int(i)] = child
+			e.cChildren[int(i)] = &child.value
 		}
 	}
 	if dictData := data.Dictionary(); dictData != nil {
