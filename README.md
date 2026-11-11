@@ -6,10 +6,10 @@ official `lance-c` C ABI without cgo.
 ## Status
 
 The core API supports dataset creation, append/overwrite, metadata, shared
-sessions, projected and filtered scans, row selection, and bounded immutable
-mutations. It uses Arrow Go v18 and requires Go 1.23 or newer. Supply the pinned
-native library as described below; bundled artifacts and zero-configuration
-installation are still pending.
+sessions, projected and filtered scans, row selection, vector search, and
+bounded immutable mutations. It uses Arrow Go v18 and requires Go 1.23 or
+newer. Supply the pinned native library as described below; bundled artifacts
+and zero-configuration installation are still pending.
 
 Linux amd64 has native test coverage. Linux and macOS on amd64 and arm64, plus
 Windows arm64, are cross-compiled in CI. Windows amd64 also runs the loader,
@@ -82,6 +82,98 @@ Scan cancellation parks and wakes the goroutine without holding an OS thread
 while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
+
+## Vector search
+
+`WithNearest` performs exact k-nearest-neighbor search when the dataset has no
+vector index, and returns rows ordered by `_distance`. Build the query with one
+of the typed constructors; the constructor copies the input:
+
+```go
+query := lance.NewFloat32Vector([]float32{0.1, 0.2, 0.3, 0.4})
+scan, err := ds.Scan(
+    lance.WithNearest("embedding", query, 10),
+    lance.WithVectorMetric(lance.VectorMetricL2),
+)
+if err != nil {
+    log.Fatal(err)
+}
+for batch, err := range scan.Records(ctx) {
+    // batch also contains the dataset columns and `_distance`.
+}
+```
+
+`NewFloat16Vector` takes IEEE 754 binary16 bit patterns in `uint16` values,
+not pre-converted `float16.Num` values. `NewFloat64Vector`, `NewUInt8Vector`
+and `NewInt8Vector` cover the remaining element types. The query type and
+dimension must match the column, which must be a fixed-size list of that
+primitive type.
+
+For independent queries, pass a row-major matrix and its dimension:
+
+```go
+queries := lance.NewFloat32Vector([]float32{
+    0.1, 0.2, 0.3, 0.4,
+    0.5, 0.6, 0.7, 0.8,
+})
+scan, err := ds.Scan(lance.WithNearestBatch("embedding", queries, 4, 10))
+// Results carry `query_index`; rows from different queries are not globally ordered.
+```
+
+Batch search accepts at most 128 queries and 64 MiB of query data, and
+`numQueries * k * refineFactor` (using 1 when unset) must not exceed 100000.
+It cannot be combined with `WithLimit` or `WithOffset`; apply a window per
+`query_index` in the caller instead.
+
+A multi-vector column stores a list of vectors per row. Pass one or more query
+subvectors as a row-major matrix:
+
+```go
+subvectors := lance.NewFloat32Vector([]float32{
+    0.1, 0.2, 0.3, 0.4,
+    0.5, 0.6, 0.7, 0.8,
+})
+scan, err := ds.Scan(lance.WithNearestMultiVector("embeddings", subvectors, 4, 10))
+```
+
+Multi-vector scores sum, for each query subvector, its smallest distance to any
+stored subvector. Multi-vector search accepts float16, float32 and float64
+queries, at most 128 subvectors, and at most 100000 candidates for both
+`numVectors * k` and `k * refineFactor`. L2 is the default metric for
+multi-vector search.
+
+Distances are returned as `float32` in `_distance`. L2 is squared Euclidean
+distance, cosine is `1 - cosine_similarity`, dot is `1 - dot_product`, and
+Hamming is only valid for `uint8` columns.
+
+### Query settings
+
+These options configure native vector search. A setting is only sent when it
+is set; otherwise the native default, dataset metric or index configuration
+applies.
+
+| Option | Effect |
+| --- | --- |
+| `WithVectorMetric` | Overrides the dataset or index metric. |
+| `WithVectorNProbes` | Probes a fixed number of IVF partitions; cannot be combined with the min/max variants. |
+| `WithVectorMinNProbes`, `WithVectorMaxNProbes` | Bounds the adaptive IVF probe count. |
+| `WithVectorEF` | Sets the HNSW `ef` search parameter. |
+| `WithVectorRefineFactor` | Re-ranks `k * factor` candidates using stored vectors; positive. |
+| `WithVectorSearchEffort` | Trades accuracy for speed in `[0,1]`; overrides a fixed nprobes value, while explicit min/max bounds remain effective. |
+| `WithVectorApproxMode` | Selects fast, normal or accurate index search. |
+| `WithVectorQueryParallelism` | Sets parallel query batches; `-1` lets native code choose. |
+| `WithVectorUseIndex` | Allows or disallows vector index use. |
+| `WithVectorFastSearch` | Index-only search with weak consistency; never falls back to an exact scan. |
+| `WithVectorPrefilter` | Applies the SQL filter before ranking instead of after. |
+| `WithVectorDistanceRange` | Restricts a single-query search to `lower <= distance < upper`; either bound may be nil. |
+
+`WithVectorFastSearch(true)` can return no rows when the dataset has no usable
+vector index. Index creation is not exposed by this module yet; the vector
+index settings apply to datasets whose index was created elsewhere.
+
+`WithRowIDAllowlist` and `WithRowIDBlocklist` restrict a scan by stable
+`_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
+no IDs selects no rows. The IDs are not positions within a batch or fragment.
 
 ## How loading works
 

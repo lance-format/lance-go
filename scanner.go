@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -61,6 +62,9 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 	if len(config.columns) > 0 && len(config.projection) > 0 {
 		return nil, invalidError("scan", d.uri, "columns and expression projection cannot both be set")
 	}
+	if err := config.validateVector(); err != nil {
+		return nil, invalidError("scan", d.uri, "%v", err)
+	}
 
 	projection := make([]ffi.ProjectionColumn, len(config.projection))
 	for i, column := range config.projection {
@@ -89,7 +93,12 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 		SubstraitFilter:      config.substraitFilter,
 		SubstraitAggregate:   config.substraitAggregate,
 		AdditionalSQLFilters: config.additionalSQLFilters,
+		Vector:               config.ffiVectorOptions(),
 	})
+	// Native nearest setters copy the query buffer before returning. Keep the
+	// owning scanConfig, including its typed vector slices, reachable until the
+	// last native copy has completed.
+	runtime.KeepAlive(&config)
 	if err != nil {
 		return nil, wrapError("scan", d.uri, err)
 	}

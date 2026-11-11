@@ -50,6 +50,58 @@ type ScannerOptions struct {
 	SubstraitFilter      []byte
 	SubstraitAggregate   []byte
 	AdditionalSQLFilters []string
+	Vector               VectorOptions
+}
+
+// NearestMode identifies the shape of a nearest-query input.
+type NearestMode int32
+
+const (
+	// NearestSingle is one query vector of Count elements.
+	NearestSingle NearestMode = 0
+	// NearestBatch is Count row-major query vectors of Dimension elements.
+	NearestBatch NearestMode = 1
+	// NearestMultiVector is Count row-major subvectors of Dimension elements.
+	NearestMultiVector NearestMode = 2
+)
+
+// NearestQuery describes one raw nearest-query input. Data points to
+// Count*Dimension elements for batch and multi-vector queries, or to Count
+// elements for a single query. The native setter copies the data before it
+// returns, but the caller must keep Data alive until then.
+type NearestQuery struct {
+	Column    string
+	Data      unsafe.Pointer
+	DataType  int32
+	K         uint32
+	Mode      NearestMode
+	Dimension int
+	Count     int
+}
+
+// VectorOptions configures vector search and row masks. A nil pointer leaves
+// the corresponding native default in place. Row masks use stable _rowid
+// values; a set-but-empty mask therefore selects or excludes no rows.
+type VectorOptions struct {
+	Nearest          *NearestQuery
+	Metric           *int32
+	NProbes          *uint32
+	MinNProbes       *uint32
+	MaxNProbes       *uint32
+	EF               *uint32
+	RefineFactor     *uint32
+	SearchEffort     *float64
+	ApproxMode       *int32
+	QueryParallelism *int32
+	UseIndex         *bool
+	FastSearch       *bool
+	Prefilter        *bool
+	LowerDistance    *float32
+	UpperDistance    *float32
+	RowAllowlist     []uint64
+	RowAllowlistSet  bool
+	RowBlocklist     []uint64
+	RowBlocklistSet  bool
 }
 
 // ScanMetric is one native scanner metric.
@@ -383,7 +435,149 @@ func (s *Scanner) configure(opts ScannerOptions) error {
 			return err
 		}
 	}
+	return s.configureVector(opts.Vector)
+}
+
+// configureVector applies vector options in an order that preserves the
+// caller's intent. In particular, the distance range is applied after the
+// nearest query so that replacing the nearest query cannot silently clear it.
+func (s *Scanner) configureVector(opts VectorOptions) error {
+	defer runtime.KeepAlive(opts)
+	if opts.RowAllowlistSet {
+		if err := s.setter("lance_scanner_set_row_addr_allowlist", func(handle uintptr) int32 {
+			return s.b.scannerSetRowAddrAllowlist(handle, opts.RowAllowlist, uint64(len(opts.RowAllowlist)))
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.RowBlocklistSet {
+		if err := s.setter("lance_scanner_set_row_addr_blocklist", func(handle uintptr) int32 {
+			return s.b.scannerSetRowAddrBlocklist(handle, opts.RowBlocklist, uint64(len(opts.RowBlocklist)))
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.FastSearch != nil {
+		if err := s.setter("lance_scanner_set_fast_search", func(handle uintptr) int32 {
+			return s.b.scannerSetFastSearch(handle, *opts.FastSearch)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.Metric != nil {
+		if err := s.setter("lance_scanner_set_metric", func(handle uintptr) int32 {
+			return s.b.scannerSetMetric(handle, *opts.Metric)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.Nearest != nil {
+		if err := s.setNearest(opts.Nearest); err != nil {
+			return err
+		}
+	}
+	if opts.LowerDistance != nil || opts.UpperDistance != nil {
+		if err := s.setter("lance_scanner_set_distance_range", func(handle uintptr) int32 {
+			return s.b.scannerSetDistanceRange(handle, opts.LowerDistance, opts.UpperDistance)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.NProbes != nil {
+		if err := s.setter("lance_scanner_set_nprobes", func(handle uintptr) int32 {
+			return s.b.scannerSetNProbes(handle, *opts.NProbes)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.MinNProbes != nil {
+		if err := s.setter("lance_scanner_set_minimum_nprobes", func(handle uintptr) int32 {
+			return s.b.scannerSetMinimumNProbes(handle, *opts.MinNProbes)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.MaxNProbes != nil {
+		if err := s.setter("lance_scanner_set_maximum_nprobes", func(handle uintptr) int32 {
+			return s.b.scannerSetMaximumNProbes(handle, *opts.MaxNProbes)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.SearchEffort != nil {
+		if err := s.setter("lance_scanner_set_search_effort", func(handle uintptr) int32 {
+			return s.b.scannerSetSearchEffort(handle, *opts.SearchEffort)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.ApproxMode != nil {
+		if err := s.setter("lance_scanner_set_approx_mode", func(handle uintptr) int32 {
+			return s.b.scannerSetApproxMode(handle, *opts.ApproxMode)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.QueryParallelism != nil {
+		if err := s.setter("lance_scanner_set_query_parallelism", func(handle uintptr) int32 {
+			return s.b.scannerSetQueryParallelism(handle, *opts.QueryParallelism)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.RefineFactor != nil {
+		if err := s.setter("lance_scanner_set_refine_factor", func(handle uintptr) int32 {
+			return s.b.scannerSetRefineFactor(handle, *opts.RefineFactor)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.EF != nil {
+		if err := s.setter("lance_scanner_set_ef", func(handle uintptr) int32 {
+			return s.b.scannerSetEF(handle, *opts.EF)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.UseIndex != nil {
+		if err := s.setter("lance_scanner_set_use_index", func(handle uintptr) int32 {
+			return s.b.scannerSetUseIndex(handle, *opts.UseIndex)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.Prefilter != nil {
+		if err := s.setter("lance_scanner_set_prefilter", func(handle uintptr) int32 {
+			return s.b.scannerSetPrefilter(handle, *opts.Prefilter)
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *Scanner) setNearest(query *NearestQuery) error {
+	if err := validateCString(query.Column); err != nil {
+		return fmt.Errorf("ffi: nearest column: %w", err)
+	}
+	var err error
+	switch query.Mode {
+	case NearestSingle:
+		err = s.setter("lance_scanner_nearest", func(handle uintptr) int32 {
+			return s.b.scannerNearest(handle, query.Column, query.Data, uint64(query.Count), query.DataType, query.K)
+		})
+	case NearestBatch:
+		err = s.setter("lance_scanner_nearest_batch", func(handle uintptr) int32 {
+			return s.b.scannerNearestBatch(handle, query.Column, query.Data, uint64(query.Dimension), uint64(query.Count), query.DataType, query.K)
+		})
+	case NearestMultiVector:
+		err = s.setter("lance_scanner_nearest_multivector", func(handle uintptr) int32 {
+			return s.b.scannerNearestMultiVector(handle, query.Column, query.Data, uint64(query.Dimension), uint64(query.Count), query.DataType, query.K)
+		})
+	default:
+		return fmt.Errorf("ffi: unknown nearest mode %d", query.Mode)
+	}
+	return err
 }
 
 func (s *Scanner) setProjection(columns []ProjectionColumn) error {
