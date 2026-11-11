@@ -51,14 +51,28 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		return nil, invalidError("write", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
 	}
 	if config.session != nil {
-		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted, CreateFragment and WriteFragments")
+		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted, WriteToNamespace, CreateFragment and WriteFragments")
 	}
 	if config.hasTransactionProperties {
 		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")
 	}
+	if config.branch != "" {
+		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
+	}
+	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStorage()
+
 	nativeOptions := nativeWriteOptions(config)
 
-	native, err := ffi.Write(uri, reader, nativeOptions, config.storageOptions)
+	var native *ffi.Dataset
+	if storageAccessor != nil {
+		native, err = ffi.WriteWithAccessor(uri, reader, nativeOptions, storageAccessor)
+	} else {
+		native, err = ffi.Write(uri, reader, nativeOptions, config.storageOptions)
+	}
 	if err != nil {
 		return nil, wrapError("write", uri, err)
 	}

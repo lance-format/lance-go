@@ -45,9 +45,11 @@ func copyStorageOptions(options map[string]string) (map[string]string, error) {
 }
 
 type openConfig struct {
-	version        uint64
-	storageOptions map[string]string
-	session        *Session
+	version                uint64
+	storageOptions         map[string]string
+	storageOptionsSet      bool
+	storageOptionsAccessor *StorageOptionsAccessor
+	session                *Session
 }
 
 // OpenOption configures Open.
@@ -69,6 +71,20 @@ func WithStorageOptions(options map[string]string) OpenOption {
 			return err
 		}
 		config.storageOptions = copied
+		config.storageOptionsSet = options != nil
+		return nil
+	}
+}
+
+// WithStorageOptionsAccessor supplies a reusable dynamic storage-options
+// accessor. It is mutually exclusive with WithStorageOptions and is safe to
+// close after Open returns; native datasets retain their own reference.
+func WithStorageOptionsAccessor(accessor *StorageOptionsAccessor) OpenOption {
+	return func(config *openConfig) error {
+		if accessor == nil {
+			return fmt.Errorf("storage options accessor must not be nil")
+		}
+		config.storageOptionsAccessor = accessor
 		return nil
 	}
 }
@@ -116,9 +132,12 @@ type writeConfig struct {
 	autoCleanup              *AutoCleanupParams
 	skipAutoCleanup          bool
 	storageOptions           map[string]string
+	storageOptionsSet        bool
+	storageOptionsAccessor   *StorageOptionsAccessor
 	session                  *Session
 	transactionProperties    map[string]string
 	hasTransactionProperties bool
+	branch                   string
 }
 
 // WriteOption configures Write, Create, Append and Overwrite.
@@ -167,13 +186,25 @@ func WithSkipAutoCleanup(skip bool) WriteOption {
 }
 
 // WithWriteSession pins the write to a session. It is valid only for
-// WriteUncommitted, CreateFragment and WriteFragments.
+// WriteUncommitted, WriteToNamespace, CreateFragment and WriteFragments.
 func WithWriteSession(session *Session) WriteOption {
 	return func(config *writeConfig) error {
 		if session == nil {
 			return fmt.Errorf("session must not be nil")
 		}
 		config.session = session
+		return nil
+	}
+}
+
+// WithWriteBranch selects a table branch for WriteToNamespace. It is invalid
+// for URI writes.
+func WithWriteBranch(branch string) WriteOption {
+	return func(config *writeConfig) error {
+		if err := validateCString(branch); err != nil {
+			return fmt.Errorf("branch: %w", err)
+		}
+		config.branch = branch
 		return nil
 	}
 }
@@ -201,7 +232,7 @@ func WithWriteTransactionProperties(properties map[string]string) WriteOption {
 // WithFragmentSchema sets the schema used by CreateFragment and WriteFragments.
 // The native schema preserves field IDs that are not represented in an Arrow
 // schema. It is invalid for Write, Create, Append, Overwrite and
-// WriteUncommitted.
+// WriteUncommitted or WriteToNamespace.
 func WithFragmentSchema(schema *NativeSchema) WriteOption {
 	return func(config *writeConfig) error {
 		if schema == nil {
@@ -220,6 +251,19 @@ func WithWriteStorageOptions(options map[string]string) WriteOption {
 			return err
 		}
 		config.storageOptions = copied
+		config.storageOptionsSet = options != nil
+		return nil
+	}
+}
+
+// WithWriteStorageOptionsAccessor supplies a reusable dynamic accessor for a
+// dataset write. It is mutually exclusive with WithWriteStorageOptions.
+func WithWriteStorageOptionsAccessor(accessor *StorageOptionsAccessor) WriteOption {
+	return func(config *writeConfig) error {
+		if accessor == nil {
+			return fmt.Errorf("storage options accessor must not be nil")
+		}
+		config.storageOptionsAccessor = accessor
 		return nil
 	}
 }

@@ -1,6 +1,7 @@
 package ffi
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 
@@ -71,10 +72,90 @@ func Write(uri string, reader array.RecordReader, opts WriteOptions, storageOpti
 	if err != nil {
 		return nil, err
 	}
-	return writeDataset(b, uri, reader, opts, storageOptions)
+	return writeDataset(b, uri, reader, opts, storageOptions, nil)
 }
 
-func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string) (*Dataset, error) {
+// WriteWithAccessor writes reader using a reusable storage-options accessor.
+// The accessor is mutually exclusive with static storage options and is
+// retained by the returned dataset for later I/O.
+func WriteWithAccessor(uri string, reader array.RecordReader, opts WriteOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	b, err := load()
+	if err != nil {
+		return nil, err
+	}
+	return writeDataset(b, uri, reader, opts, nil, accessor)
+}
+
+// buildWriteParameters converts public write options into the native layout
+// shared by URI writes and namespace writes. The returned string list must stay
+// alive for the duration of the native call.
+func buildWriteParameters(opts WriteOptions) (writeOptions, *cStringList, error) {
+	if opts.Mode < WriteModeCreate || opts.Mode > WriteModeOverwrite {
+		return writeOptions{}, nil, fmt.Errorf("ffi: invalid write mode %d", opts.Mode)
+	}
+	if opts.Params.DataStorageVersion != "" {
+		if err := validateCString(opts.Params.DataStorageVersion); err != nil {
+			return writeOptions{}, nil, err
+		}
+	}
+	var versionList *cStringList
+	var err error
+	if opts.Params.DataStorageVersion != "" {
+		versionList, err = newCStringList([]string{opts.Params.DataStorageVersion})
+		if err != nil {
+			return writeOptions{}, nil, err
+		}
+	} else {
+		versionList = &cStringList{}
+	}
+
+	var rawOptions writeOptions
+	rawOptions.Params.MaxRowsPerFile = opts.Params.MaxRowsPerFile
+	rawOptions.Params.MaxRowsPerGroup = opts.Params.MaxRowsPerGroup
+	rawOptions.Params.MaxBytesPerFile = opts.Params.MaxBytesPerFile
+	rawOptions.Params.EnableStableRowIDs = opts.Params.EnableStableRowIDs
+	if len(versionList.ptrs) > 0 {
+		rawOptions.Params.DataStorageVersion = &versionList.bufs[0][0]
+	}
+	if opts.AutoCleanup != nil {
+		if opts.AutoCleanup.OlderThanNanos < -999999999 || opts.AutoCleanup.OlderThanNanos > 999999999 {
+			return writeOptions{}, nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
+		}
+		cleanup := &autoCleanupParams{
+			Interval:         opts.AutoCleanup.Interval,
+			OlderThanSeconds: opts.AutoCleanup.OlderThanSeconds,
+			OlderThanNanos:   opts.AutoCleanup.OlderThanNanos,
+		}
+		rawOptions.AutoCleanup = cleanup
+	}
+	rawOptions.SkipAutoCleanup = opts.SkipAutoCleanup
+	return rawOptions, versionList, nil
+}
+
+// storageOptionsJSON encodes storage options for native entry points that take
+// a JSON object instead of a NULL-terminated string array. Nil and empty maps
+// both become an empty string, which native code treats as absent.
+func storageOptionsJSON(options map[string]string) (string, error) {
+	if len(options) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(options)
+	if err != nil {
+		return "", fmt.Errorf("ffi: encode storage options: %w", err)
+	}
+	if err := validateCString(string(encoded)); err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	if storageOptions != nil && accessor != nil {
+		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if accessor != nil && accessor.Handle() == 0 {
+		return nil, ErrClosed
+	}
 	if reader == nil {
 		return nil, fmt.Errorf("ffi: record reader must not be nil")
 	}
@@ -82,17 +163,14 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	if schema == nil {
 		return nil, fmt.Errorf("ffi: record reader schema must not be nil")
 	}
-	if opts.Mode < WriteModeCreate || opts.Mode > WriteModeOverwrite {
-		return nil, fmt.Errorf("ffi: invalid write mode %d", opts.Mode)
-	}
 	if err := validateCString(uri); err != nil {
 		return nil, err
 	}
-	rawOptions, versionList, err := buildWriteOptions(opts.Params, opts.AutoCleanup, opts.SkipAutoCleanup)
+	storageList, err := storageOptionList(storageOptions)
 	if err != nil {
 		return nil, err
 	}
-	storageList, err := storageOptionList(storageOptions)
+	rawOptions, versionList, err := buildWriteParameters(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +194,13 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 
 	runtime.LockOSThread()
 	var handle uintptr
-	rc := b.datasetWriteWithOptions(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, storageList.ptrs, &handle)
+	var rc int32
+	if accessor != nil {
+		rc = b.datasetWriteWithOptionsAndAccessor(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, accessor.Handle(), &handle)
+		runtime.KeepAlive(accessor)
+	} else {
+		rc = b.datasetWriteWithOptions(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, storageList.ptrs, &handle)
+	}
 	streamConsumed = true
 	versionList.keepAlive()
 	storageList.keepAlive()
@@ -137,44 +221,4 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	ds := &Dataset{b: b}
 	ds.handle.Store(handle)
 	return ds, nil
-}
-
-// buildWriteOptions converts Go write parameters to the native C layout. The
-// returned version list must stay alive until after the native call.
-func buildWriteOptions(params WriteParams, autoCleanup *AutoCleanupParams, skipAutoCleanup bool) (writeOptions, *cStringList, error) {
-	versionList := &cStringList{}
-	if params.DataStorageVersion != "" {
-		if err := validateCString(params.DataStorageVersion); err != nil {
-			return writeOptions{}, nil, err
-		}
-		list, err := newCStringList([]string{params.DataStorageVersion})
-		if err != nil {
-			return writeOptions{}, nil, err
-		}
-		versionList = list
-	}
-
-	rawOptions := writeOptions{
-		Params: writeParams{
-			MaxRowsPerFile:     params.MaxRowsPerFile,
-			MaxRowsPerGroup:    params.MaxRowsPerGroup,
-			MaxBytesPerFile:    params.MaxBytesPerFile,
-			EnableStableRowIDs: params.EnableStableRowIDs,
-		},
-		SkipAutoCleanup: skipAutoCleanup,
-	}
-	if len(versionList.ptrs) > 0 {
-		rawOptions.Params.DataStorageVersion = &versionList.bufs[0][0]
-	}
-	if autoCleanup != nil {
-		if autoCleanup.OlderThanNanos < -999999999 || autoCleanup.OlderThanNanos > 999999999 {
-			return writeOptions{}, nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
-		}
-		rawOptions.AutoCleanup = &autoCleanupParams{
-			Interval:         autoCleanup.Interval,
-			OlderThanSeconds: autoCleanup.OlderThanSeconds,
-			OlderThanNanos:   autoCleanup.OlderThanNanos,
-		}
-	}
-	return rawOptions, versionList, nil
 }

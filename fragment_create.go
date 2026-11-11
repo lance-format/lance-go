@@ -15,7 +15,8 @@ import (
 // does not commit: WithAutoCleanup, WithSkipAutoCleanup(true), stable row ID
 // generation and transaction properties are rejected. Configure publication
 // with CommitTransaction options, including WithCommitStableRowIDs and
-// WithCommitSkipAutoCleanup.
+// WithCommitSkipAutoCleanup. The native fragment API accepts static storage
+// options only; WithWriteStorageOptionsAccessor and WithWriteBranch are rejected.
 type FragmentCreateOption = WriteOption
 
 // CreateFragment writes one uncommitted fragment from reader and returns
@@ -178,6 +179,12 @@ func parseFragmentCreateConfig(op, uri string, opts []WriteOption) (writeConfig,
 	}
 	if config.hasTransactionProperties {
 		return config, invalidError(op, uri, "WithWriteTransactionProperties is not supported by fragment creation")
+	}
+	if config.storageOptionsAccessor != nil {
+		return config, invalidError(op, uri, "WithWriteStorageOptionsAccessor is not supported by fragment creation; use static storage options")
+	}
+	if config.branch != "" {
+		return config, invalidError(op, uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
 	return config, nil
 }

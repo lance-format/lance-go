@@ -8,7 +8,8 @@ official `lance-c` C ABI without cgo.
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, vector and full-text search,
 immutable row/schema mutations, version history, tags, branches, staged transactions,
-fragment inspection, and Blob reads. It uses Arrow Go v18 and requires Go 1.23
+fragment inspection, Blob reads, and native directory/REST namespaces with managed
+dataset open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
 or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
@@ -24,8 +25,8 @@ coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
 and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Index, maintenance
-and namespace APIs are tracked in
+Windows DLL belongs to the lance-c release process. Remaining API parity and
+platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
@@ -152,7 +153,9 @@ publishes a version. Combine returned fragments in `NewAppendOperation`, then
 use `NewTransaction` and `CommitTransaction` to publish them. Closing metadata
 does not delete uncommitted files. `WithFragmentSchema` preserves native field
 IDs. Cleanup, stable row ID generation and transaction properties belong to
-publication; fragment creation rejects those settings. Use commit options for
+publication; fragment creation rejects those settings. The fragment ABI accepts only static
+storage options, so `WithWriteStorageOptionsAccessor` and `WithWriteBranch` are
+also rejected before writing files. Use commit options for
 stable row IDs and cleanup policy. A failed write releases its retained reader
 reference but may have prefetched input; the caller still releases its reader.
 `Dataset.CreateFragmentFromFile` accepts an optional physical-row hint: legacy
@@ -275,6 +278,94 @@ while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
 
+## Storage options providers
+
+Static options and a dynamic accessor are mutually exclusive. Passing
+`WithStorageOptions` together with `WithStorageOptionsAccessor` (or the write
+and commit equivalents) returns `ErrInvalidArgument` regardless of option
+order. The static path is unchanged.
+
+A provider supplies credentials and endpoint options when native code asks for
+them. Native owns caching, expiration, refresh timing and fallback; Go must not
+run a refresh loop or add a second credential cache.
+
+```go
+type vendingProvider struct{}
+
+func (vendingProvider) StorageOptionsProviderID() string { return "tenant-a/read" }
+
+func (vendingProvider) FetchStorageOptions(ctx context.Context) (map[string]string, error) {
+    return fetchCredentials(ctx) // nil means native None
+}
+
+// Optional. Without this method native force refresh falls back to Fetch.
+func (vendingProvider) ForceFetchStorageOptions(ctx context.Context) (map[string]string, error) {
+    return fetchCredentials(ctx)
+}
+
+accessor, err := lance.NewStorageOptionsAccessor(nil, vendingProvider{})
+if err != nil {
+    log.Fatal(err)
+}
+defer accessor.Close()
+
+ds, err := lance.Write(ctx, "data.lance", reader,
+    lance.WithWriteStorageOptionsAccessor(accessor))
+```
+
+`StorageOptionsProviderID` is the native identity of the provider
+configuration and credential scope. Providers with the same ID share native
+equality and object-store registry entries. Use a distinct, stable ID for each
+tenant, role or credential scope; never put secrets in the ID.
+
+`FetchStorageOptions` and optional `ForceFetchStorageOptions` may run
+concurrently on native worker threads. The callback boundary preserves typed
+error codes; an ordinary error maps to an internal callback error and a panic
+becomes a callback error. The Rust accessor wraps provider fetch failures as
+IO errors, so `Snapshot` returns `*lance.Error` matching `lance.ErrIO`, with the
+provider message retained. Do not log returned values or error text that
+contains credentials. The callback context is background-scoped and valid only
+for that call: it is not a request context and cannot cancel native I/O.
+
+`StorageOptionsAccessor` is reusable across datasets, raw files and file
+sessions. It stores optional initial options and a provider. A nil initial map
+means native None; a non-nil map, including an empty one, means an explicit
+initial set. Valid initial options are cached without fetching; once expired,
+a provider result replaces them rather than merging maps. An absent provider
+result falls back to the initial options. At the callback boundary a fetch returning nil means None and an
+empty map means Some(empty); native then applies its fallback, so a resolved
+snapshot with a provider but no initial options is Some(empty). `Snapshot` returns an
+independent Go map and preserves whether native resolved Some or None.
+`Close` stops new local acquisitions and waits for in-flight snapshots and
+native calls that already acquired the accessor. Native datasets, readers,
+writers and sessions retain their own native reference, so they remain usable
+after the caller closes its accessor and do not block `Close`. A provider has no Close hook; the adapter context is
+released when the final native owner is dropped, while the caller still owns
+the Go provider value.
+
+Do not call `Close` on an accessor or its owner from inside its own callback.
+Callbacks may be invoked while an operation is using the accessor; external
+synchronization must not depend on `Close` returning from that callback.
+
+For raw files, pass either `file.NewStorageOptions` (static) or
+`file.NewStorageOptionsWithProvider` to `ReaderOptions`, `WriterOptions` or
+`SessionOptions`. To reuse a root `StorageOptionsAccessor`, wrap it with
+`file.NewStorageOptionsFromAccessor`; ownership of the accessor transfers to
+the returned `file.StorageOptions`. Readers, writers and sessions retain the
+accessor; close the caller-owned `StorageOptions` after the open calls return.
+A `file.Session` rejects per-call Session, StorageOptions and Scheduler
+overrides.
+
+A transaction returned by `WriteUncommitted` does not retain the accessor.
+Pass the same accessor again to `CommitTransaction` or
+`CommitTransactionBatch`; datasets returned by those calls do retain it.
+
+`NewNamespaceStorageOptionsAccessor` builds a table-scoped accessor backed by a
+native namespace. It uses the namespace's credential vending and retains the
+namespace natively, so the accessor remains usable after the public namespace
+is closed. It does not add a Go credential cache or issue duplicate namespace
+requests.
+
 ## Raw `.lance` files
 
 The `file` package reads and writes raw Lance files without a dataset or
@@ -352,10 +443,12 @@ Contracts and limits:
   passed to `Writer.Write` are borrowed for the duration of the call.
 - Contexts are checked before a native call; they cannot interrupt a native
   blocking call once it starts. No method claims that cancellation stopped I/O.
-- Storage options are static only. Pass `file.NewStorageOptions` to a
-  standalone reader or writer, and close it after those open calls return.
-  Dynamic Go providers and remote cloud acceptance remain outside the verified
-  local-file scope.
+- Storage options may be static or dynamic. Pass `file.NewStorageOptions` or
+  `file.NewStorageOptionsWithProvider` to a standalone reader or writer, and
+  close the caller-owned `StorageOptions` after those open calls return.
+  Readers, writers and sessions retain the native accessor. Dynamic provider
+  tests use local fixtures and provider counters; real cloud authentication
+  and remote object-store acceptance are separate and are not claimed here.
 - `PackedBlobWriter.WriteBlobs` borrows a Binary, LargeBinary, or
   FixedSizeBinary Arrow array and appends its payloads in order. Null and empty
   values remain distinct. Sliced arrays and repeated calls are supported; the
@@ -388,7 +481,7 @@ if err != nil {
 defer r.Close()
 ```
 
-Remote object-store acceptance and dynamic Go storage providers remain open.
+Real cloud authentication and remote object-store acceptance remain open.
 
 ## Blob columns
 
@@ -705,6 +798,46 @@ Native protobuf persistence normalizes empty property maps to absent on readback
 Registering bases does not route new writes to them. The pinned C API does not
 expose write placement, so `AddBases` only records and lists the registry.
 
+## Native namespaces
+
+The `namespace` package exposes typed namespace requests and responses through
+native Directory, REST and Connect implementations. A Directory namespace can
+manage local tables:
+
+```go
+ns, err := namespace.NewDirectory(map[string]string{"root": "./catalog"})
+if err != nil {
+    return err
+}
+defer ns.Close()
+
+ds, err := lance.OpenFromNamespace(ctx, ns, []string{"events"},
+    lance.WithSession(session))
+if err != nil {
+    return err
+}
+defer ds.Close()
+```
+
+Use `WriteToNamespace` to create or append Arrow batches, and
+`CommitTransactionToNamespace` to publish a staged transaction through the
+catalog. Readers remain caller-owned. `WithWriteBranch` applies only to
+namespace-managed writes. Opened datasets and REST adapters retain native
+ownership and remain usable after their namespace is closed.
+
+`namespace.NewRest` takes native properties such as `uri`.
+`WithDynamicContextProvider` supplies per-operation request context. The native
+contract logs provider errors or panics and continues with empty context; do
+not rely on provider failure to deny a request. Context cancellation is checked
+before synchronous native calls and does not interrupt an operation in flight.
+
+Models preserve absent, explicit-null and concrete values using pointers to
+`namespace.Nullable[T]`. Native namespace errors retain their separate error
+code space, including code zero (`Unsupported`). The standalone `namespace`
+package activates the same platform bundle as the root package. Custom Go
+namespace implementations require the upstream callback interface tracked in
+[lance-c#180](https://github.com/lance-format/lance-c/issues/180).
+
 ## How loading works
 
 `internal/loader` resolves the native library once per process:
@@ -873,7 +1006,8 @@ Windows arm64; neither establishes native Windows DLL support.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
-lance_bundle_linux_amd64.go  generated selector that registers the bundle
+namespace/        typed native namespace API and managed dataset operations
+internal/bundled/ shared zero-config selector registration for root and namespace
 artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles

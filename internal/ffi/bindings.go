@@ -22,6 +22,7 @@ type bindings struct {
 
 	datasetOpen              func(uri string, storageOpts []uintptr, version uint64) uintptr
 	datasetOpenWithSession   func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
+	datasetOpenWithOptions   func(uri string, options *datasetOpenOptions, session uintptr) uintptr
 	datasetClose             func(dataset uintptr)
 	datasetVersion           func(dataset uintptr) uint64
 	datasetCountRows         func(dataset uintptr) uint64
@@ -227,7 +228,8 @@ type bindings struct {
 	sessionGetSizeBytes      func(session uintptr, out *uint64) int32
 	sessionGetApproxNumItems func(session uintptr, out *uint64) int32
 
-	datasetWriteWithOptions func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptions            func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptionsAndAccessor func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, outDataset *uintptr) int32
 
 	scannerNew                          func(dataset uintptr, columns []uintptr, filter uintptr) uintptr
 	scannerClose                        func(scanner uintptr)
@@ -282,8 +284,17 @@ type bindings struct {
 	scannerSchema                       func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext                     func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
 
-	storageAccessorNew   func(initial *storageOptionsInput, provider uintptr) uintptr
-	storageAccessorClose func(accessor uintptr)
+	storageProviderNew        func(spec *storageOptionsProviderSpec) uintptr
+	storageProviderClose      func(provider uintptr)
+	storageProviderID         func(provider uintptr) *byte
+	storageAccessorNew        func(initial *storageOptionsInput, provider uintptr) uintptr
+	storageAccessorClose      func(accessor uintptr)
+	storageAccessorSnapshot   func(accessor uintptr) uintptr
+	storageSnapshotHasOptions func(snapshot uintptr) int32
+	storageSnapshotCount      func(snapshot uintptr) uint64
+	storageSnapshotKeyAt      func(snapshot uintptr, index uint64) *byte
+	storageSnapshotValueAt    func(snapshot uintptr, index uint64) *byte
+	storageSnapshotClose      func(snapshot uintptr)
 
 	fileSessionNew                     func(baseURI string, storageOptions uintptr, session uintptr, scheduler *fileSchedulerConfig) uintptr
 	fileSessionClose                   func(session uintptr)
@@ -399,6 +410,7 @@ type bindings struct {
 	dataFileBaseID           func(file uintptr, outSet *bool, outBaseID *uint32) int32
 
 	datasetWriteUncommittedStream                func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	datasetWriteUncommittedStreamWithAccessor    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, out *uintptr) int32
 	transactionClose                             func(transaction uintptr)
 	operationClose                               func(operation uintptr)
 	dataReplacementGroupClose                    func(group uintptr)
@@ -445,7 +457,27 @@ type bindings struct {
 	datasetReadTransaction                       func(dataset uintptr, out *uintptr) int32
 	datasetReadTransactionByVersion              func(dataset uintptr, version uint64, out *uintptr) int32
 	transactionCommit                            func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	transactionCommitWithAccessor                func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, out *uintptr) int32
 	transactionCommitBatch                       func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+	transactionCommitBatchWithAccessor           func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+
+	namespaceResultClose          func(result *lanceNamespaceResult)
+	namespaceID                   func(namespace uintptr) *byte
+	namespaceRetrieveOpsMetrics   func(namespace uintptr) *byte
+	namespaceResetOpsMetrics      func(namespace uintptr) int32
+	namespaceDirectoryNew         func(propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceRestNew              func(propertiesJSON string, spec *namespaceContextProviderSpec) uintptr
+	namespaceConnectNew           func(implName, propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceClose                func(namespace uintptr)
+	namespaceCall                 func(namespace uintptr, operation, requestJSON string, requestBytes []byte, requestBytesLen uint64, result *lanceNamespaceResult) int32
+	datasetOpenNamespace          func(namespace uintptr, tableIDJSON, storageOptionsJSON string, version uint64, session uintptr) uintptr
+	datasetWriteNamespace         func(namespace uintptr, tableIDJSON string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, params *writeParams, options *writeOptions, storageOptionsJSON string, session uintptr, branch *byte, outDataset *uintptr) int32
+	transactionCommitNamespaceURI func(namespace uintptr, tableIDJSON, uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	namespaceStorageProviderNew   func(namespace uintptr, tableIDJSON string) uintptr
+	restAdapterStart              func(namespace uintptr, host string, port uint16, out *uintptr) int32
+	restAdapterPort               func(adapter uintptr) uint16
+	restAdapterShutdown           func(adapter uintptr)
+	restAdapterClose              func(adapter uintptr)
 
 	compactionOptionsNew                              func() uintptr
 	compactionOptionsFree                             func(uintptr)
@@ -595,6 +627,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_free_bytes", &b.freeBytes},
 		{"lance_dataset_open", &b.datasetOpen},
 		{"lance_dataset_open_with_session", &b.datasetOpenWithSession},
+		{"lance_dataset_open_with_options", &b.datasetOpenWithOptions},
 		{"lance_dataset_close", &b.datasetClose},
 		{"lance_dataset_version", &b.datasetVersion},
 		{"lance_dataset_count_rows", &b.datasetCountRows},
@@ -793,6 +826,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_session_get_approx_num_items", &b.sessionGetApproxNumItems},
 
 		{"lance_dataset_write_with_options", &b.datasetWriteWithOptions},
+		{"lance_dataset_write_with_options_and_accessor", &b.datasetWriteWithOptionsAndAccessor},
 
 		{"lance_dataset_schema_clone", &b.datasetSchemaClone},
 		{"lance_schema_close", &b.schemaClose},
@@ -838,6 +872,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_file_base_id", &b.dataFileBaseID},
 
 		{"lance_dataset_write_uncommitted_stream", &b.datasetWriteUncommittedStream},
+		{"lance_dataset_write_uncommitted_stream_with_accessor", &b.datasetWriteUncommittedStreamWithAccessor},
 		{"lance_transaction_close", &b.transactionClose},
 		{"lance_operation_close", &b.operationClose},
 		{"lance_data_replacement_group_close", &b.dataReplacementGroupClose},
@@ -884,7 +919,27 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction", &b.datasetReadTransaction},
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
+		{"lance_transaction_commit_with_accessor", &b.transactionCommitWithAccessor},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
+		{"lance_transaction_commit_batch_with_accessor", &b.transactionCommitBatchWithAccessor},
+
+		{"lance_namespace_result_close", &b.namespaceResultClose},
+		{"lance_namespace_id", &b.namespaceID},
+		{"lance_namespace_retrieve_ops_metrics", &b.namespaceRetrieveOpsMetrics},
+		{"lance_namespace_reset_ops_metrics", &b.namespaceResetOpsMetrics},
+		{"lance_namespace_directory_new", &b.namespaceDirectoryNew},
+		{"lance_namespace_rest_new", &b.namespaceRestNew},
+		{"lance_namespace_connect_new", &b.namespaceConnectNew},
+		{"lance_namespace_close", &b.namespaceClose},
+		{"lance_namespace_call", &b.namespaceCall},
+		{"lance_dataset_open_namespace", &b.datasetOpenNamespace},
+		{"lance_dataset_write_namespace", &b.datasetWriteNamespace},
+		{"lance_transaction_commit_namespace_uri", &b.transactionCommitNamespaceURI},
+		{"lance_namespace_storage_options_provider_new", &b.namespaceStorageProviderNew},
+		{"lance_rest_adapter_start", &b.restAdapterStart},
+		{"lance_rest_adapter_port", &b.restAdapterPort},
+		{"lance_rest_adapter_shutdown", &b.restAdapterShutdown},
+		{"lance_rest_adapter_close", &b.restAdapterClose},
 
 		{"lance_scanner_new", &b.scannerNew},
 		{"lance_scanner_close", &b.scannerClose},
@@ -939,8 +994,17 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
 
+		{"lance_storage_options_provider_new", &b.storageProviderNew},
+		{"lance_storage_options_provider_close", &b.storageProviderClose},
+		{"lance_storage_options_provider_id", &b.storageProviderID},
 		{"lance_storage_options_accessor_new", &b.storageAccessorNew},
 		{"lance_storage_options_accessor_close", &b.storageAccessorClose},
+		{"lance_storage_options_accessor_snapshot", &b.storageAccessorSnapshot},
+		{"lance_storage_options_snapshot_has_options", &b.storageSnapshotHasOptions},
+		{"lance_storage_options_snapshot_count", &b.storageSnapshotCount},
+		{"lance_storage_options_snapshot_key_at", &b.storageSnapshotKeyAt},
+		{"lance_storage_options_snapshot_value_at", &b.storageSnapshotValueAt},
+		{"lance_storage_options_snapshot_close", &b.storageSnapshotClose},
 
 		{"lance_file_session_new", &b.fileSessionNew},
 		{"lance_file_session_close", &b.fileSessionClose},

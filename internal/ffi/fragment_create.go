@@ -244,7 +244,12 @@ func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options
 
 	versionList := &cStringList{}
 	if options.Write != nil {
-		nativeWrite, versions, err := buildWriteOptions(options.Write.Params, options.Write.AutoCleanup, options.Write.SkipAutoCleanup)
+		nativeWrite, versions, err := buildWriteParameters(WriteOptions{
+			Mode:            options.Mode,
+			Params:          options.Write.Params,
+			AutoCleanup:     options.Write.AutoCleanup,
+			SkipAutoCleanup: options.Write.SkipAutoCleanup,
+		})
 		if err != nil {
 			return fragmentCreateOptions{}, nil, nil, err
 		}

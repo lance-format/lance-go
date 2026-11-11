@@ -448,6 +448,8 @@ func goClass(expr ast.Expr) (string, error) {
 			return "int32", nil
 		case "uint32":
 			return "uint32", nil
+		case "uint16":
+			return "uint16", nil
 		case "uint8":
 			return "uint8", nil
 		case "float32":
@@ -494,6 +496,8 @@ func cClass(typ string) string {
 		return "int64"
 	case "uint32_t":
 		return "uint32"
+	case "uint16_t":
+		return "uint16"
 	case "uint8_t":
 		return "uint8"
 	case "float":

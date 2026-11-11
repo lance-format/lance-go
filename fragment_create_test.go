@@ -921,14 +921,17 @@ func copyFile(t *testing.T, src, dst string) {
 	}
 }
 
-func TestFragmentCreationRejectsCommitOptions(t *testing.T) {
+func TestFragmentCreationRejectsUnsupportedOptions(t *testing.T) {
 	for _, option := range []struct {
 		name  string
 		value lance.FragmentCreateOption
+		want  string
 	}{
-		{"cleanup", lance.WithAutoCleanup(lance.AutoCleanupParams{})},
-		{"skip cleanup", lance.WithSkipAutoCleanup(true)},
-		{"stable row IDs", lance.WithWriteParams(lance.WriteParams{EnableStableRowIDs: true})},
+		{"cleanup", lance.WithAutoCleanup(lance.AutoCleanupParams{}), "apply at commit"},
+		{"skip cleanup", lance.WithSkipAutoCleanup(true), "apply at commit"},
+		{"stable row IDs", lance.WithWriteParams(lance.WriteParams{EnableStableRowIDs: true}), "apply at commit"},
+		{"storage accessor", lance.WithWriteStorageOptionsAccessor(&lance.StorageOptionsAccessor{}), "WithWriteStorageOptionsAccessor is not supported"},
+		{"namespace branch", lance.WithWriteBranch("branch"), "WithWriteBranch is valid only for WriteToNamespace"},
 	} {
 		for _, many := range []bool{false, true} {
 			name := option.name + "/single"
@@ -955,13 +958,25 @@ func TestFragmentCreationRejectsCommitOptions(t *testing.T) {
 					}
 					err = callErr
 				}
-				if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "apply at commit") {
-					t.Fatalf("fragment creation error = %v, want commit-only option rejection", err)
+				if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), option.want) {
+					t.Fatalf("fragment creation error = %v, want unsupported option rejection", err)
 				}
 				if _, err := os.Stat(uri); !os.IsNotExist(err) {
 					t.Fatalf("fragment creation wrote output before option validation: %v", err)
 				}
 			})
 		}
+	}
+}
+
+func TestFragmentSchemaRejectedForNamespaceWrite(t *testing.T) {
+	reader, err := array.NewRecordReader(testSchema(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Release()
+	_, err = lance.WriteToNamespace(context.Background(), nil, []string{"table"}, reader, lance.WithFragmentSchema(&lance.NativeSchema{}))
+	if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "WithFragmentSchema is valid only") {
+		t.Fatalf("namespace write error = %v, want fragment-only schema rejection before namespace acquisition", err)
 	}
 }
