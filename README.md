@@ -23,6 +23,13 @@ amd64 and arm64 are cross-compiled in CI; macOS runtime behavior and Windows
 support remain pending. Immutable mutation, index, blob, maintenance and
 namespace APIs are tracked in [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
+Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
+creates a temporary dataset, closes and reopens it, and checks the scanned rows:
+
+```sh
+CGO_ENABLED=0 go run ./examples/roundtrip
+```
+
 ## Read a dataset
 
 On `linux/amd64`, a default build needs no environment variable: the first
