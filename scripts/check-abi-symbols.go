@@ -10,7 +10,7 @@
 // on value/pointer classification, that every function field in the bindings
 // struct has a symbol entry, and that the header bytes match the pinned
 // SHA-256. It cannot detect a same-size integer type confusion beyond the
-// int32/uint32/uint64 classes it models.
+// signed and unsigned integer classes it models.
 package main
 
 import (
@@ -442,6 +442,8 @@ func goClass(expr ast.Expr) (string, error) {
 			return "pointer", nil
 		case "uint64":
 			return "uint64", nil
+		case "int64":
+			return "int64", nil
 		case "int32":
 			return "int32", nil
 		case "uint32":
@@ -476,10 +478,14 @@ func cClass(typ string) string {
 	switch typ {
 	case "void":
 		return "void"
-	case "int", "int32_t", "LanceErrorCode":
+	case "int", "int32_t", "LanceErrorCode", "LancePollStatus":
 		return "int32"
+	case "LanceWaker", "LanceScanStatisticsCallback":
+		return "pointer"
 	case "uint64_t", "size_t":
 		return "uint64"
+	case "int64_t":
+		return "int64"
 	case "uint32_t":
 		return "uint32"
 	case "uint8_t":

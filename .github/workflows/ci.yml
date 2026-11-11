@@ -204,7 +204,10 @@ jobs:
             TestLoadRealLibrary \
             TestLoadConcurrentSingleInstance \
             TestNativeErrorSemantics \
-            TestOpenDatasetReportsNativeErrors; do
+            TestOpenDatasetReportsNativeErrors \
+            TestCreateReopenMetadataAndScan \
+            TestWriteEmptyDatasetAndSlicedNullableBatch \
+            TestExportStreamBorrowsReaderBatch; do
             if ! grep -Fq -- "--- PASS: $test" "$RUNNER_TEMP/native-tests.log"; then
               echo "required native test $test did not pass; native tests must not be skipped" >&2
               exit 1
@@ -284,7 +287,10 @@ jobs:
             TestLoadRealLibrary \
             TestLoadConcurrentSingleInstance \
             TestNativeErrorSemantics \
-            TestOpenDatasetReportsNativeErrors; do
+            TestOpenDatasetReportsNativeErrors \
+            TestCreateReopenMetadataAndScan \
+            TestWriteEmptyDatasetAndSlicedNullableBatch \
+            TestExportStreamBorrowsReaderBatch; do
             if ! grep -Fq -- "--- PASS: $test" "$RUNNER_TEMP/native-race-tests.log"; then
               echo "required native test $test did not pass under the race detector" >&2
               exit 1
