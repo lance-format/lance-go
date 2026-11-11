@@ -3,6 +3,7 @@ package ffi
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,22 @@ type ScannerOptions struct {
 	Offset               *int64
 	BatchSize            *int64
 	BatchSizeBytes       *uint64
+	IOBufferSize         *uint64
+	BatchReadahead       *uint64
+	FragmentReadahead    *uint64
+	TargetParallelism    *uint64
+	ScanInOrder          *bool
+	UseScalarIndex       *bool
+	StrictBatchSize      *bool
+	UseStats             *bool
+	IncludeDeletedRows   *bool
+	BlobHandling         *int32
+	MaterializationStyle *int32
+	MaterializationEarly []string
+	FragmentIDs          []uint64
+	FragmentIDsSet       bool
+	DisableScoring       bool
+	ScalarIndexSegment   []byte
 	Projection           []ProjectionColumn
 	OrderBy              []ColumnOrdering
 	RowID                *bool
@@ -358,6 +375,7 @@ func newScanner(b *bindings, scannerHandle uintptr, opts ScannerOptions, initial
 }
 
 func (s *Scanner) configure(opts ScannerOptions) error {
+	defer runtime.KeepAlive(opts)
 	if opts.Limit != nil {
 		if *opts.Limit < 0 {
 			return fmt.Errorf("ffi: scan limit must not be negative")
@@ -398,6 +416,13 @@ func (s *Scanner) configure(opts ScannerOptions) error {
 			return err
 		}
 	}
+	if opts.StrictBatchSize != nil {
+		if err := s.setter("lance_scanner_set_strict_batch_size", func(handle uintptr) int32 {
+			return s.b.scannerSetStrictBatchSize(handle, *opts.StrictBatchSize)
+		}); err != nil {
+			return err
+		}
+	}
 	if len(opts.Projection) > 0 {
 		if err := s.setProjection(opts.Projection); err != nil {
 			return err
@@ -418,6 +443,131 @@ func (s *Scanner) configure(opts ScannerOptions) error {
 	if opts.RowAddress != nil {
 		if err := s.setter("lance_scanner_with_row_address", func(handle uintptr) int32 {
 			return s.b.scannerWithRowAddress(handle, *opts.RowAddress)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.IOBufferSize != nil {
+		if *opts.IOBufferSize == 0 || *opts.IOBufferSize > math.MaxInt64 {
+			return fmt.Errorf("ffi: scan I/O buffer size must be in [1, %d]", int64(math.MaxInt64))
+		}
+		if err := s.setter("lance_scanner_set_io_buffer_size", func(handle uintptr) int32 {
+			return s.b.scannerSetIOBufferSize(handle, *opts.IOBufferSize)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.BatchReadahead != nil {
+		if *opts.BatchReadahead == 0 {
+			return fmt.Errorf("ffi: scan batch readahead must be positive")
+		}
+		if err := s.setter("lance_scanner_set_batch_readahead", func(handle uintptr) int32 {
+			return s.b.scannerSetBatchReadahead(handle, *opts.BatchReadahead)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.FragmentReadahead != nil {
+		if *opts.FragmentReadahead == 0 {
+			return fmt.Errorf("ffi: scan fragment readahead must be positive")
+		}
+		if err := s.setter("lance_scanner_set_fragment_readahead", func(handle uintptr) int32 {
+			return s.b.scannerSetFragmentReadahead(handle, *opts.FragmentReadahead)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.TargetParallelism != nil {
+		if *opts.TargetParallelism == 0 {
+			return fmt.Errorf("ffi: scan target parallelism must be positive")
+		}
+		if err := s.setter("lance_scanner_set_target_parallelism", func(handle uintptr) int32 {
+			return s.b.scannerSetTargetParallelism(handle, *opts.TargetParallelism)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.ScanInOrder != nil {
+		if err := s.setter("lance_scanner_set_scan_in_order", func(handle uintptr) int32 {
+			return s.b.scannerSetScanInOrder(handle, *opts.ScanInOrder)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.UseScalarIndex != nil {
+		if err := s.setter("lance_scanner_set_use_scalar_index", func(handle uintptr) int32 {
+			return s.b.scannerSetUseScalarIndex(handle, *opts.UseScalarIndex)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.UseStats != nil {
+		if err := s.setter("lance_scanner_set_use_stats", func(handle uintptr) int32 {
+			return s.b.scannerSetUseStats(handle, *opts.UseStats)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.IncludeDeletedRows != nil {
+		if err := s.setter("lance_scanner_set_include_deleted_rows", func(handle uintptr) int32 {
+			return s.b.scannerSetIncludeDeletedRows(handle, *opts.IncludeDeletedRows)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.BlobHandling != nil {
+		switch *opts.BlobHandling {
+		case 0, 1, 2:
+		default:
+			return fmt.Errorf("ffi: invalid blob handling %d", *opts.BlobHandling)
+		}
+		if err := s.setter("lance_scanner_set_blob_handling", func(handle uintptr) int32 {
+			return s.b.scannerSetBlobHandling(handle, *opts.BlobHandling)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.MaterializationStyle != nil {
+		switch *opts.MaterializationStyle {
+		case 0, 1, 2:
+			if len(opts.MaterializationEarly) != 0 {
+				return fmt.Errorf("ffi: materialization style %d does not accept early-except columns", *opts.MaterializationStyle)
+			}
+		case 3:
+		default:
+			return fmt.Errorf("ffi: invalid materialization style %d", *opts.MaterializationStyle)
+		}
+		list, err := newCStringList(opts.MaterializationEarly)
+		if err != nil {
+			return fmt.Errorf("ffi: materialization early-except columns: %w", err)
+		}
+		defer list.keepAlive()
+		if err := s.setter("lance_scanner_set_materialization_style", func(handle uintptr) int32 {
+			return s.b.scannerSetMaterializationStyle(handle, *opts.MaterializationStyle, list.ptrs, uint64(len(opts.MaterializationEarly)))
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.FragmentIDsSet {
+		if err := s.setter("lance_scanner_set_fragment_ids", func(handle uintptr) int32 {
+			return s.b.scannerSetFragmentIDs(handle, opts.FragmentIDs, uint64(len(opts.FragmentIDs)))
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.DisableScoring {
+		if err := s.setter("lance_scanner_disable_scoring_autoprojection", func(handle uintptr) int32 {
+			return s.b.scannerDisableScoringAutoprojection(handle)
+		}); err != nil {
+			return err
+		}
+	}
+	if opts.ScalarIndexSegment != nil {
+		if len(opts.ScalarIndexSegment) != 16 {
+			return fmt.Errorf("ffi: scalar index segment must be 16 bytes")
+		}
+		if err := s.setter("lance_scanner_set_scalar_index_segment", func(handle uintptr) int32 {
+			return s.b.scannerSetScalarIndexSegment(handle, opts.ScalarIndexSegment)
 		}); err != nil {
 			return err
 		}

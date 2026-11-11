@@ -2,8 +2,11 @@ package lance
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
+
+	"github.com/lance-format/lance-go/index"
 )
 
 func validateCString(value string) error {
@@ -235,6 +238,35 @@ type ProjectionColumn struct {
 	Expression string
 }
 
+// BlobHandling controls how blob columns are represented by a scan.
+type BlobHandling int32
+
+const (
+	// BlobHandlingDescriptors returns blob columns as descriptors and leaves
+	// other binary columns inline. This is the native default.
+	BlobHandlingDescriptors BlobHandling = 0
+	// BlobHandlingAllBinary materializes every blob column as binary payloads.
+	BlobHandlingAllBinary BlobHandling = 1
+	// BlobHandlingAllDescriptions returns every string or binary column with
+	// blob metadata as a descriptor.
+	BlobHandlingAllDescriptions BlobHandling = 2
+)
+
+// MaterializationStyle controls when projected columns are loaded.
+type MaterializationStyle int32
+
+const (
+	// MaterializationHeuristic lets the native planner choose per column.
+	MaterializationHeuristic MaterializationStyle = 0
+	// MaterializationAllLate loads projected columns as late as possible.
+	MaterializationAllLate MaterializationStyle = 1
+	// MaterializationAllEarly loads projected columns as early as possible.
+	MaterializationAllEarly MaterializationStyle = 2
+	// MaterializationAllEarlyExcept loads all projected columns early except
+	// the columns named in WithMaterializationStyle.
+	MaterializationAllEarlyExcept MaterializationStyle = 3
+)
+
 type scanConfig struct {
 	columns              []string
 	filter               *string
@@ -242,6 +274,22 @@ type scanConfig struct {
 	offset               *int64
 	batchSize            *int64
 	batchSizeBytes       *uint64
+	ioBufferSize         *uint64
+	batchReadahead       *uint64
+	fragmentReadahead    *uint64
+	targetParallelism    *uint64
+	scanInOrder          *bool
+	useScalarIndex       *bool
+	strictBatchSize      *bool
+	useStats             *bool
+	includeDeletedRows   *bool
+	blobHandling         *BlobHandling
+	materializationStyle *MaterializationStyle
+	materializationEarly []string
+	fragmentIDs          []uint64
+	fragmentIDsSet       bool
+	disableScoring       bool
+	scalarIndexSegment   *index.UUID
 	projection           []ffiProjection
 	orderBy              []ffiOrdering
 	rowID                *bool
@@ -417,6 +465,183 @@ func WithBatchSizeBytes(size uint64) ScanOption {
 		}
 		copied := size
 		config.batchSizeBytes = &copied
+		return nil
+	}
+}
+
+// WithIOBufferSize sets the native scanner I/O buffer size in bytes.
+func WithIOBufferSize(size uint64) ScanOption {
+	return func(config *scanConfig) error {
+		if size == 0 || size > math.MaxInt64 {
+			return fmt.Errorf("I/O buffer size must be in [1, %d]", int64(math.MaxInt64))
+		}
+		copied := size
+		config.ioBufferSize = &copied
+		return nil
+	}
+}
+
+// WithBatchReadahead sets how many batches the native scanner reads ahead.
+func WithBatchReadahead(batches uint64) ScanOption {
+	return func(config *scanConfig) error {
+		if batches == 0 {
+			return fmt.Errorf("batch readahead must be positive")
+		}
+		copied := batches
+		config.batchReadahead = &copied
+		return nil
+	}
+}
+
+// WithFragmentReadahead sets how many fragments the native scanner reads
+// ahead. It has no effect when WithScanInOrder(true).
+func WithFragmentReadahead(fragments uint64) ScanOption {
+	return func(config *scanConfig) error {
+		if fragments == 0 {
+			return fmt.Errorf("fragment readahead must be positive")
+		}
+		copied := fragments
+		config.fragmentReadahead = &copied
+		return nil
+	}
+}
+
+// WithTargetParallelism sets the native scanner's target task parallelism.
+func WithTargetParallelism(tasks uint64) ScanOption {
+	return func(config *scanConfig) error {
+		if tasks == 0 {
+			return fmt.Errorf("target parallelism must be positive")
+		}
+		copied := tasks
+		config.targetParallelism = &copied
+		return nil
+	}
+}
+
+// WithScanInOrder requires fragments to be returned in dataset order. It is
+// enabled by default.
+func WithScanInOrder(enabled bool) ScanOption {
+	return func(config *scanConfig) error {
+		config.scanInOrder = &enabled
+		return nil
+	}
+}
+
+// WithUseScalarIndex controls whether scalar indexes may optimize filters. It
+// is enabled by default and is independent of WithVectorUseIndex.
+func WithUseScalarIndex(enabled bool) ScanOption {
+	return func(config *scanConfig) error {
+		config.useScalarIndex = &enabled
+		return nil
+	}
+}
+
+// WithStrictBatchSize requires every batch except the last to contain exactly
+// the configured batch size. It cannot be combined with WithBatchSizeBytes.
+func WithStrictBatchSize(enabled bool) ScanOption {
+	return func(config *scanConfig) error {
+		config.strictBatchSize = &enabled
+		return nil
+	}
+}
+
+// WithUseStats controls whether file statistics may optimize the scan. It is
+// enabled by default.
+func WithUseStats(enabled bool) ScanOption {
+	return func(config *scanConfig) error {
+		config.useStats = &enabled
+		return nil
+	}
+}
+
+// WithIncludeDeletedRows includes rows deleted from the scanned snapshot.
+// WithRowID(true) is required. Deleted rows have a null _rowid. For filtered
+// scans, use WithUseScalarIndex(false) to prevent index plans that omit
+// tombstoned rows. Explicit scalar index segments are incompatible.
+func WithIncludeDeletedRows(enabled bool) ScanOption {
+	return func(config *scanConfig) error {
+		config.includeDeletedRows = &enabled
+		return nil
+	}
+}
+
+// WithBlobHandling selects how blob columns are represented.
+func WithBlobHandling(handling BlobHandling) ScanOption {
+	return func(config *scanConfig) error {
+		switch handling {
+		case BlobHandlingDescriptors, BlobHandlingAllBinary, BlobHandlingAllDescriptions:
+		default:
+			return fmt.Errorf("invalid blob handling %d", handling)
+		}
+		copied := handling
+		config.blobHandling = &copied
+		return nil
+	}
+}
+
+// WithMaterializationStyle selects when projected columns are loaded.
+// earlyExcept names Lance schema paths to load late when style is
+// MaterializationAllEarlyExcept. An empty exception list with that style loads
+// every projected column early.
+func WithMaterializationStyle(style MaterializationStyle, earlyExcept ...string) ScanOption {
+	early := append([]string(nil), earlyExcept...)
+	return func(config *scanConfig) error {
+		switch style {
+		case MaterializationHeuristic, MaterializationAllLate, MaterializationAllEarly, MaterializationAllEarlyExcept:
+		default:
+			return fmt.Errorf("invalid materialization style %d", style)
+		}
+		if style != MaterializationAllEarlyExcept && len(early) > 0 {
+			return fmt.Errorf("materialization style %d does not accept early-except columns", style)
+		}
+		columns := make([]string, len(early))
+		for i, column := range early {
+			if column == "" {
+				return fmt.Errorf("early-except column must not be empty")
+			}
+			if err := validateCString(column); err != nil {
+				return fmt.Errorf("early-except column: %w", err)
+			}
+			columns[i] = column
+		}
+		copied := style
+		config.materializationStyle = &copied
+		config.materializationEarly = columns
+		return nil
+	}
+}
+
+// WithFragmentIDs restricts the scan to the given fragment IDs. Calling it
+// with no IDs selects no fragments. It replaces the metadata selection staged
+// by Fragment.Scan, including staged deletion metadata.
+func WithFragmentIDs(fragmentIDs ...uint64) ScanOption {
+	copied := append([]uint64(nil), fragmentIDs...)
+	return func(config *scanConfig) error {
+		config.fragmentIDs = append([]uint64(nil), copied...)
+		config.fragmentIDsSet = true
+		return nil
+	}
+}
+
+// WithoutScoringAutoprojection disables automatic _score and _distance output
+// columns for FTS and vector scans. After this option, those columns are
+// returned only when explicitly projected. The setting cannot be undone on
+// the same scanner.
+func WithoutScoringAutoprojection() ScanOption {
+	return func(config *scanConfig) error {
+		config.disableScoring = true
+		return nil
+	}
+}
+
+// WithScalarIndexSegment restricts a scalar-index search to one index segment.
+// The scan must also set at least one explicit fragment ID; those fragments
+// define both the segment read domain and the fallback domain for rows not
+// covered by the segment.
+func WithScalarIndexSegment(segment index.UUID) ScanOption {
+	return func(config *scanConfig) error {
+		copied := segment
+		config.scalarIndexSegment = &copied
 		return nil
 	}
 }
