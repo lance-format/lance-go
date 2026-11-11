@@ -52,6 +52,8 @@ func newPresentCStringList(values []string) (*cStringList, error) {
 	return list, nil
 }
 
+// keepAlive must run after the native call, directly or through defer: ptrs
+// contains integer addresses that do not keep the backing string buffers live.
 func (l *cStringList) keepAlive() {
 	if l == nil {
 		return

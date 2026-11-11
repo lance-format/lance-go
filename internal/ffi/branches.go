@@ -200,7 +200,7 @@ func (d *Dataset) CreateBranch(name string, ref Ref, options *BranchOptions) (*D
 
 	var storageOptions []uintptr
 	if storageList != nil {
-		storageList.keepAlive()
+		defer storageList.keepAlive()
 		storageOptions = storageList.ptrs
 	}
 	created := b.datasetBranchCreate(handle, name, nativeRef, storageOptions)
@@ -263,7 +263,7 @@ func (d *Dataset) ReplaceBranchMetadata(name string, metadata map[string]string)
 
 	var values []uintptr
 	if list != nil {
-		list.keepAlive()
+		defer list.keepAlive()
 		values = list.ptrs
 	}
 	if rc := b.datasetBranchReplaceMetadata(handle, name, values); rc != 0 {

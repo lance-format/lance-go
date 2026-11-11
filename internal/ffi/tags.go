@@ -131,7 +131,7 @@ func (d *Dataset) ReplaceTagMetadata(name string, metadata map[string]string) er
 
 	var values []uintptr
 	if list != nil {
-		list.keepAlive()
+		defer list.keepAlive()
 		values = list.ptrs
 	}
 	if rc := b.datasetTagReplaceMetadata(handle, name, values); rc != 0 {
