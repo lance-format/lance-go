@@ -48,10 +48,9 @@ type WriteProgress struct {
 
 // NativeWriteOptionsSpec mirrors LanceNativeWriteOptionsSpec.
 //
-// CommitLock has no Go representation yet and is always passed as NULL. The
-// namespace write entry point and fragment-create entry points still accept
-// only the older options structure, so callers must reject native-only fields
-// there instead of dropping them.
+// CommitLock is forwarded as NULL when nil. Namespace and fragment-create
+// entry points still accept only the older options structure, so callers must
+// reject native-only fields there instead of dropping them.
 type NativeWriteOptionsSpec struct {
 	WriteOptions                  *WriteOptions
 	TransactionProperties         map[string]string
@@ -68,6 +67,7 @@ type NativeWriteOptionsSpec struct {
 	FileWriterOptions             *FileWriterOptions
 	Session                       *Session
 	StorageOptionsAccessor        *StorageOptionsAccessor
+	CommitLock                    *CommitLock
 	Progress                      *WriteProgress
 }
 
@@ -304,6 +304,7 @@ type nativeWriteOptionsInputs struct {
 	fileWriterKeep    fileWriterOptionsKeepAlive
 	properties        *transactionProperties
 	propertiesKeep    func()
+	commitLock        *CommitLock
 	progressCtx       uint64
 }
 
@@ -325,6 +326,7 @@ func (i *nativeWriteOptionsInputs) keepAlive() {
 	if i.propertiesKeep != nil {
 		i.propertiesKeep()
 	}
+	runtime.KeepAlive(i.commitLock)
 }
 
 func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsInputs, error) {
@@ -432,6 +434,14 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 			return nil, ErrClosed
 		}
 		inputs.raw.StorageOptionsAccessor = handleValue
+	}
+	if spec.CommitLock != nil {
+		handleValue := spec.CommitLock.Handle()
+		if handleValue == 0 {
+			return nil, ErrClosed
+		}
+		inputs.raw.CommitLock = handleValue
+		inputs.commitLock = spec.CommitLock
 	}
 
 	if spec.Progress != nil {

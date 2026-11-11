@@ -20,28 +20,31 @@ type bindings struct {
 	freeString       func(*byte)
 	freeBytes        func(*byte)
 
-	datasetOpen              func(uri string, storageOpts []uintptr, version uint64) uintptr
-	datasetOpenWithSession   func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
-	datasetOpenWithOptions   func(uri string, options *datasetOpenOptions, session uintptr) uintptr
-	datasetClose             func(dataset uintptr)
-	datasetVersion           func(dataset uintptr) uint64
-	datasetCountRows         func(dataset uintptr) uint64
-	datasetCountRowsFiltered func(dataset uintptr, filter string) uint64
-	datasetLatestVersion     func(dataset uintptr) uint64
-	datasetValidate          func(dataset uintptr) int32
-	datasetSchema            func(dataset uintptr, out *cdata.ArrowSchema) int32
-	datasetDataStats         func(dataset uintptr) uintptr
-	dataStatsCount           func(stats uintptr) uint64
-	dataStatsFieldIDAt       func(stats uintptr, index uint64) uint32
-	dataStatsBytesAt         func(stats uintptr, index uint64) uint64
-	dataStatsClose           func(stats uintptr)
-	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	datasetTakeBlobs         func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
-	datasetTakeBlobsIndices  func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
-	datasetTakeBlobsAddrs    func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
-	datasetReadBlobs         func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
-	datasetReadBlobRanges    func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetOpen               func(uri string, storageOpts []uintptr, version uint64) uintptr
+	datasetOpenWithSession    func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
+	datasetOpenWithOptions    func(uri string, options *datasetOpenOptions, session uintptr) uintptr
+	datasetOpenWithCommitLock func(uri string, accessor uintptr, version uint64, session uintptr, lock uintptr, outDataset *uintptr) int32
+	commitLockNew             func(callbacks *commitLockCallbacks) uintptr
+	commitLockClose           func(lock uintptr)
+	datasetClose              func(dataset uintptr)
+	datasetVersion            func(dataset uintptr) uint64
+	datasetCountRows          func(dataset uintptr) uint64
+	datasetCountRowsFiltered  func(dataset uintptr, filter string) uint64
+	datasetLatestVersion      func(dataset uintptr) uint64
+	datasetValidate           func(dataset uintptr) int32
+	datasetSchema             func(dataset uintptr, out *cdata.ArrowSchema) int32
+	datasetDataStats          func(dataset uintptr) uintptr
+	dataStatsCount            func(stats uintptr) uint64
+	dataStatsFieldIDAt        func(stats uintptr, index uint64) uint32
+	dataStatsBytesAt          func(stats uintptr, index uint64) uint64
+	dataStatsClose            func(stats uintptr)
+	datasetTake               func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeRows           func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeBlobs          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
+	datasetTakeBlobsIndices   func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
+	datasetTakeBlobsAddrs     func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
+	datasetReadBlobs          func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetReadBlobRanges     func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
 
 	blobFileSize          func(blob uintptr) uint64
 	blobFileRead          func(blob uintptr, dst *byte, dstLen uint64) int32
@@ -231,11 +234,12 @@ type bindings struct {
 	sessionGetSizeBytes      func(session uintptr, out *uint64) int32
 	sessionGetApproxNumItems func(session uintptr, out *uint64) int32
 
-	datasetWriteWithOptions            func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
-	datasetWriteWithOptionsAndAccessor func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, outDataset *uintptr) int32
-	datasetWriteWithNativeOptions      func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options uintptr, outDataset *uintptr) int32
-	nativeWriteOptionsNew              func(spec *nativeWriteOptionsSpec) uintptr
-	nativeWriteOptionsClose            func(options uintptr)
+	datasetWriteWithOptions               func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptionsAndAccessor    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptionsWithCommitLock func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, session uintptr, lock uintptr, outDataset *uintptr) int32
+	datasetWriteWithNativeOptions         func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options uintptr, outDataset *uintptr) int32
+	nativeWriteOptionsNew                 func(spec *nativeWriteOptionsSpec) uintptr
+	nativeWriteOptionsClose               func(options uintptr)
 
 	scannerNew                          func(dataset uintptr, columns []uintptr, filter uintptr) uintptr
 	scannerClose                        func(scanner uintptr)
@@ -417,6 +421,7 @@ type bindings struct {
 
 	datasetWriteUncommittedStream                  func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
 	datasetWriteUncommittedStreamWithAccessor      func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, out *uintptr) int32
+	datasetWriteUncommittedStreamWithCommitLock    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, lock uintptr, out *uintptr) int32
 	datasetWriteUncommittedStreamWithNativeOptions func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options uintptr, out *uintptr) int32
 	transactionClose                               func(transaction uintptr)
 	operationClose                                 func(operation uintptr)
@@ -465,8 +470,10 @@ type bindings struct {
 	datasetReadTransactionByVersion                func(dataset uintptr, version uint64, out *uintptr) int32
 	transactionCommit                              func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
 	transactionCommitWithAccessor                  func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, out *uintptr) int32
+	transactionCommitWithCommitLock                func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, lock uintptr, out *uintptr) int32
 	transactionCommitBatch                         func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
 	transactionCommitBatchWithAccessor             func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+	transactionCommitBatchWithCommitLock           func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, lock uintptr, outDataset *uintptr, outTransaction *uintptr) int32
 
 	namespaceResultClose          func(result *lanceNamespaceResult)
 	namespaceID                   func(namespace uintptr) *byte
@@ -636,6 +643,9 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_open", &b.datasetOpen},
 		{"lance_dataset_open_with_session", &b.datasetOpenWithSession},
 		{"lance_dataset_open_with_options", &b.datasetOpenWithOptions},
+		{"lance_dataset_open_with_commit_lock", &b.datasetOpenWithCommitLock},
+		{"lance_commit_lock_new", &b.commitLockNew},
+		{"lance_commit_lock_close", &b.commitLockClose},
 		{"lance_dataset_close", &b.datasetClose},
 		{"lance_dataset_version", &b.datasetVersion},
 		{"lance_dataset_count_rows", &b.datasetCountRows},
@@ -838,6 +848,7 @@ func (b *bindings) symbols() []symbol {
 
 		{"lance_dataset_write_with_options", &b.datasetWriteWithOptions},
 		{"lance_dataset_write_with_options_and_accessor", &b.datasetWriteWithOptionsAndAccessor},
+		{"lance_dataset_write_with_options_with_commit_lock", &b.datasetWriteWithOptionsWithCommitLock},
 		{"lance_dataset_write_with_native_options", &b.datasetWriteWithNativeOptions},
 		{"lance_native_write_options_new", &b.nativeWriteOptionsNew},
 		{"lance_native_write_options_close", &b.nativeWriteOptionsClose},
@@ -887,6 +898,7 @@ func (b *bindings) symbols() []symbol {
 
 		{"lance_dataset_write_uncommitted_stream", &b.datasetWriteUncommittedStream},
 		{"lance_dataset_write_uncommitted_stream_with_accessor", &b.datasetWriteUncommittedStreamWithAccessor},
+		{"lance_dataset_write_uncommitted_stream_with_commit_lock", &b.datasetWriteUncommittedStreamWithCommitLock},
 		{"lance_dataset_write_uncommitted_stream_with_native_options", &b.datasetWriteUncommittedStreamWithNativeOptions},
 		{"lance_transaction_close", &b.transactionClose},
 		{"lance_operation_close", &b.operationClose},
@@ -935,8 +947,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
 		{"lance_transaction_commit_with_accessor", &b.transactionCommitWithAccessor},
+		{"lance_transaction_commit_with_commit_lock", &b.transactionCommitWithCommitLock},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
 		{"lance_transaction_commit_batch_with_accessor", &b.transactionCommitBatchWithAccessor},
+		{"lance_transaction_commit_batch_with_commit_lock", &b.transactionCommitBatchWithCommitLock},
 
 		{"lance_namespace_result_close", &b.namespaceResultClose},
 		{"lance_namespace_id", &b.namespaceID},

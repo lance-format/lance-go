@@ -7,7 +7,14 @@ import (
 )
 
 func writeNativeDataset(uri string, reader array.RecordReader, config writeConfig) (*Dataset, error) {
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	var err error
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -26,10 +33,13 @@ func writeNativeDataset(uri string, reader array.RecordReader, config writeConfi
 	}
 	defer releaseSession()
 
-	spec, releases, err := nativeWriteOptionsSpec("write", uri, config, session, storageAccessor, true)
+	spec, releases, err := nativeWriteOptionsSpec("write", uri, config, session, storageAccessor)
 	defer releaseAll(releases)
 	if err != nil {
 		return nil, wrapError("write", uri, err)
+	}
+	if config.commitLock != nil {
+		spec.CommitLock = config.commitLock.native
 	}
 	nativeOptions, err := ffi.NewNativeWriteOptions(spec)
 	if err != nil {
@@ -47,7 +57,14 @@ func writeNativeDataset(uri string, reader array.RecordReader, config writeConfi
 }
 
 func writeUncommittedNative(uri string, reader array.RecordReader, config writeConfig) (*Transaction, error) {
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	var err error
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +83,13 @@ func writeUncommittedNative(uri string, reader array.RecordReader, config writeC
 	}
 	defer releaseSession()
 
-	spec, releases, err := nativeWriteOptionsSpec("write uncommitted", uri, config, session, storageAccessor, false)
+	spec, releases, err := nativeWriteOptionsSpec("write uncommitted", uri, config, session, storageAccessor)
 	defer releaseAll(releases)
 	if err != nil {
 		return nil, wrapError("write uncommitted", uri, err)
+	}
+	if config.commitLock != nil {
+		spec.CommitLock = config.commitLock.native
 	}
 	nativeOptions, err := ffi.NewNativeWriteOptions(spec)
 	if err != nil {
@@ -84,15 +104,9 @@ func writeUncommittedNative(uri string, reader array.RecordReader, config writeC
 	return newTransaction(native, uri), nil
 }
 
-func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Session, storageAccessor *ffi.StorageOptionsAccessor, legacyAutoCleanup bool) (ffi.NativeWriteOptionsSpec, []func(), error) {
+func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Session, storageAccessor *ffi.StorageOptionsAccessor) (ffi.NativeWriteOptionsSpec, []func(), error) {
 	releases := []func(){}
 	writeOptions := nativeWriteOptions(config)
-	if legacyAutoCleanup && writeOptions.AutoCleanup == nil {
-		writeOptions.AutoCleanup = &ffi.AutoCleanupParams{
-			Interval:         20,
-			OlderThanSeconds: 14 * 24 * 60 * 60,
-		}
-	}
 
 	spec := ffi.NativeWriteOptionsSpec{
 		WriteOptions:                  &writeOptions,
