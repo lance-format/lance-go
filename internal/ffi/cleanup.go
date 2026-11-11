@@ -229,6 +229,7 @@ func (e *cleanupExplanation) Close() {
 	b.cleanupExplanationClose(handle)
 }
 
+// read copies borrowed strings before Close releases their native owner.
 func (e *cleanupExplanation) read() (*compaction.CleanupExplanation, error) {
 	handle := e.handle
 	if handle == 0 {
@@ -266,7 +267,6 @@ func (e *cleanupExplanation) read() (*compaction.CleanupExplanation, error) {
 			return nil, fmt.Errorf("ffi: lance_cleanup_explanation_candidate_path_at returned NULL without setting an error")
 		}
 		path := goString(pathPtr)
-		b.freeString(pathPtr)
 
 		kind := b.cleanupExplanationCandidateKindAt(handle, i)
 		if err := b.takeError(); err != nil {
@@ -320,7 +320,6 @@ func (e *cleanupExplanation) read() (*compaction.CleanupExplanation, error) {
 			return nil, fmt.Errorf("ffi: lance_cleanup_explanation_referenced_branch_name_at returned NULL without setting an error")
 		}
 		name := goString(namePtr)
-		b.freeString(namePtr)
 
 		version := b.cleanupExplanationReferencedBranchVersionAt(handle, i)
 		if err := b.takeError(); err != nil {
@@ -354,7 +353,6 @@ func (e *cleanupExplanation) read() (*compaction.CleanupExplanation, error) {
 			return nil, fmt.Errorf("ffi: lance_cleanup_explanation_warning_at returned NULL without setting an error")
 		}
 		warning := goString(warningPtr)
-		b.freeString(warningPtr)
 		warnings = append(warnings, warning)
 	}
 
