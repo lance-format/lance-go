@@ -176,7 +176,7 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	native, err := lease.CommitNamespaceURI(tableID, uri, tx.native, ffiCommitOptions(config), session)
+	native, err := lease.CommitNamespaceURI(tableID, uri, tx.native, ffiCommitOptions(config, session), session)
 	if err != nil {
 		return nil, wrapError("commit namespace", uri, err)
 	}
