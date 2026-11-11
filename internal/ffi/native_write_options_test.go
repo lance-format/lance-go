@@ -119,7 +119,7 @@ func TestNativeWriteOptionsBaseListLayout(t *testing.T) {
 	inputs, err := buildNativeWriteOptions(NativeWriteOptionsSpec{
 		InitialBases: []BasePath{
 			{ID: 1, Path: "/base-one", IsDatasetRoot: true},
-			{ID: 2, Path: "/base-two", Name: ptr("two")},
+			{ID: 2, Path: "/base-two", Name: ptrTo("two")},
 		},
 	})
 	if err != nil {

@@ -153,7 +153,7 @@ func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Ses
 	if config.params.Progress != nil {
 		progress := &ffi.WriteProgress{}
 		if begin := config.params.Progress.BeginFragment; begin != nil {
-			progress.BeginFragment = func(event WriteFragmentProgress) error {
+			progress.BeginFragment = func(event ffi.WriteFragmentProgress) error {
 				return begin(WriteFragmentProgress{
 					FragmentID:   event.FragmentID,
 					PhysicalRows: event.PhysicalRows,
@@ -162,7 +162,7 @@ func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Ses
 			}
 		}
 		if complete := config.params.Progress.CompleteFragment; complete != nil {
-			progress.CompleteFragment = func(event WriteFragmentProgress) error {
+			progress.CompleteFragment = func(event ffi.WriteFragmentProgress) error {
 				return complete(WriteFragmentProgress{
 					FragmentID:   event.FragmentID,
 					PhysicalRows: event.PhysicalRows,
@@ -171,7 +171,7 @@ func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Ses
 			}
 		}
 		if stats := config.params.Progress.WriteStats; stats != nil {
-			progress.WriteStats = func(event WriteStats) {
+			progress.WriteStats = func(event ffi.WriteStats) {
 				stats(WriteStats{
 					BytesWritten: event.BytesWritten,
 					RowsWritten:  event.RowsWritten,
