@@ -113,34 +113,7 @@ func (d *Dataset) CreateVectorIndex(ctx context.Context, column string, options 
 // It is equivalent to CreateVectorIndex with params.Options().
 // WithIndexProgress observes the build.
 func (d *Dataset) CreateVectorIndexWithParams(ctx context.Context, column string, params index.VectorParams, opts ...CreateIndexOption) (*Dataset, error) {
-	if err := checkContext(ctx); err != nil {
-		return nil, err
-	}
-	if column == "" {
-		return nil, invalidError("create vector index", d.uri, "column must not be empty")
-	}
-	if err := validateCString(column); err != nil {
-		return nil, invalidError("create vector index", d.uri, "column: %v", err)
-	}
-	config, err := buildCreateIndexConfig(opts)
-	if err != nil {
-		return nil, invalidError("create vector index", d.uri, "%v", err)
-	}
-	if config.progress == nil {
-		native := ffiVectorIndexOptions(params.Options())
-		return d.mutate("create vector index", func(clone *ffi.Dataset) error {
-			return clone.CreateVectorIndex(column, config.name, native, config.replace)
-		})
-	}
-	// Expand legacy parameters through the same additive options path as an
-	// unobserved build. The legacy native entry point treats zero required
-	// fields as errors, while VectorParams historically leaves zero fields at
-	// their additive-option defaults.
-	native := ffiVectorIndexOptions(params.Options())
-	progress := adaptProgress(config.progress)
-	return d.mutate("create vector index", func(clone *ffi.Dataset) error {
-		return clone.CreateVectorIndexWithOptionsAndProgress(column, config.name, native, progress, config.replace)
-	})
+	return d.CreateVectorIndex(ctx, column, params.Options(), opts...)
 }
 
 // CreateScalarIndex builds a scalar index and returns a new Dataset snapshot.
