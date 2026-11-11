@@ -18,6 +18,7 @@ type bindings struct {
 	lastErrorCode    func() int32
 	lastErrorMessage func() *byte
 	freeString       func(*byte)
+	freeBytes        func(*byte)
 
 	datasetOpen              func(uri string, storageOpts []uintptr, version uint64) uintptr
 	datasetOpenWithSession   func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
@@ -129,6 +130,47 @@ type bindings struct {
 	datasetPrewarmIndex                 func(dataset uintptr, name string) int32
 	datasetPrewarmIndexWithOptions      func(dataset uintptr, name string, options *indexPrewarmOptions) int32
 
+	segmentBuilderNewScalar            func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, options *segmentBuildOptions) uintptr
+	segmentBuilderNewScalarWithOptions func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, scalarOptions *scalarIndexOptions, options *segmentBuildOptions) uintptr
+	segmentBuilderNewVectorWithOptions func(dataset uintptr, column string, indexName uintptr, options *vectorIndexOptions, scope *segmentScope) uintptr
+	segmentBuilderExecuteUncommitted   func(builder uintptr, outBytes **byte, outLen *uint64) int32
+	segmentBuilderSetProgressCallback  func(builder uintptr, callback uintptr, ctx uintptr) int32
+	segmentBuilderFree                 func(builder uintptr)
+
+	indexTrainIVFModel            func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainIVFModelWithOptions func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModel             func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModelWithOptions  func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexBuildRQModel             func(dimension uint32, numBits uint32) *byte
+
+	datasetCommitIndexSegments func(dataset uintptr, indexName, column string, segmentBytes []*byte, segmentLens []uint64, segmentCount uint64) int32
+	datasetMergeIndexSegments  func(dataset uintptr, segmentBytes []*byte, segmentLens []uint64, segmentCount uint64, outBytes **byte, outLen *uint64) int32
+	datasetMergeIndexMetadata  func(dataset uintptr, indexUUID *byte, indexType string, hasBatchReadhead bool, batchReadhead uint64, callback uintptr, ctx uintptr) int32
+
+	metadataParse                func(bytes *byte, length uint64, outMetadata *uintptr) int32
+	metadataUUID                 func(metadata uintptr, outUUID *byte) int32
+	metadataName                 func(metadata uintptr) *byte
+	metadataDatasetVersion       func(metadata uintptr) uint64
+	metadataIndexVersion         func(metadata uintptr) int32
+	metadataIndexType            func(metadata uintptr) int32
+	metadataDetailsTypeURL       func(metadata uintptr) *byte
+	metadataFieldCount           func(metadata uintptr) uint64
+	metadataFieldIDs             func(metadata uintptr, outFieldIDs []int32, capacity uint64, outCount *uint64) int32
+	metadataFragmentCount        func(metadata uintptr) uint64
+	metadataFragmentIDs          func(metadata uintptr, outFragmentIDs []uint32, capacity uint64, outCount *uint64) int32
+	metadataClone                func(metadata uintptr) uintptr
+	metadataCloneWithFragmentIDs func(metadata uintptr, hasFragmentIDs bool, fragmentIDs []uint32, fragmentCount uint64) uintptr
+	metadataEncode               func(metadata uintptr, outBytes **byte, outLen *uint64) int32
+	metadataCoveringFieldCount   func(metadata uintptr) uint64
+	metadataCoveringFieldIDAt    func(metadata uintptr, index uint64, outFieldID *int32) int32
+	metadataDetailsValue         func(metadata uintptr, outLen *uint64) *byte
+	metadataFileCount            func(metadata uintptr) uint64
+	metadataFilePathAt           func(metadata uintptr, index uint64) *byte
+	metadataFileSizeAt           func(metadata uintptr, index uint64, outSize *uint64) int32
+	metadataCreatedAt            func(metadata uintptr, outTimestamp *optionalTimestamp) int32
+	metadataBaseID               func(metadata uintptr, outIsSet *bool, outBaseID *uint32) int32
+	metadataFree                 func(metadata uintptr)
+
 	ftsMatchOptionsInit          func(options *ftsMatchOptions)
 	ftsPhraseOptionsInit         func(options *ftsPhraseOptions)
 	ftsMultiMatchOptionsInit     func(options *ftsMultiMatchOptions)
@@ -211,6 +253,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_last_error_code", &b.lastErrorCode},
 		{"lance_last_error_message", &b.lastErrorMessage},
 		{"lance_free_string", &b.freeString},
+		{"lance_free_bytes", &b.freeBytes},
 		{"lance_dataset_open", &b.datasetOpen},
 		{"lance_dataset_open_with_session", &b.datasetOpenWithSession},
 		{"lance_dataset_close", &b.datasetClose},
@@ -319,6 +362,43 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_index_segments", &b.datasetIndexSegments},
 		{"lance_dataset_prewarm_index", &b.datasetPrewarmIndex},
 		{"lance_dataset_prewarm_index_with_options", &b.datasetPrewarmIndexWithOptions},
+		{"lance_index_segment_builder_new_scalar", &b.segmentBuilderNewScalar},
+		{"lance_index_segment_builder_new_scalar_with_options", &b.segmentBuilderNewScalarWithOptions},
+		{"lance_index_segment_builder_new_vector_with_options", &b.segmentBuilderNewVectorWithOptions},
+		{"lance_index_segment_builder_execute_uncommitted", &b.segmentBuilderExecuteUncommitted},
+		{"lance_index_segment_builder_set_progress_callback", &b.segmentBuilderSetProgressCallback},
+		{"lance_index_segment_builder_free", &b.segmentBuilderFree},
+		{"lance_index_train_ivf_model", &b.indexTrainIVFModel},
+		{"lance_index_train_ivf_model_with_options", &b.indexTrainIVFModelWithOptions},
+		{"lance_index_train_pq_model", &b.indexTrainPQModel},
+		{"lance_index_train_pq_model_with_options", &b.indexTrainPQModelWithOptions},
+		{"lance_index_build_rq_model", &b.indexBuildRQModel},
+		{"lance_dataset_commit_index_segments", &b.datasetCommitIndexSegments},
+		{"lance_dataset_merge_index_segments", &b.datasetMergeIndexSegments},
+		{"lance_dataset_merge_index_metadata", &b.datasetMergeIndexMetadata},
+		{"lance_index_segment_metadata_parse", &b.metadataParse},
+		{"lance_index_segment_metadata_uuid", &b.metadataUUID},
+		{"lance_index_segment_metadata_name", &b.metadataName},
+		{"lance_index_segment_metadata_dataset_version", &b.metadataDatasetVersion},
+		{"lance_index_segment_metadata_index_version", &b.metadataIndexVersion},
+		{"lance_index_segment_metadata_index_type", &b.metadataIndexType},
+		{"lance_index_segment_metadata_index_details_type_url", &b.metadataDetailsTypeURL},
+		{"lance_index_segment_metadata_field_count", &b.metadataFieldCount},
+		{"lance_index_segment_metadata_field_ids", &b.metadataFieldIDs},
+		{"lance_index_segment_metadata_fragment_count", &b.metadataFragmentCount},
+		{"lance_index_segment_metadata_fragment_ids", &b.metadataFragmentIDs},
+		{"lance_index_segment_metadata_clone", &b.metadataClone},
+		{"lance_index_segment_metadata_clone_with_fragment_ids", &b.metadataCloneWithFragmentIDs},
+		{"lance_index_segment_metadata_encode", &b.metadataEncode},
+		{"lance_index_segment_metadata_covering_field_count", &b.metadataCoveringFieldCount},
+		{"lance_index_segment_metadata_covering_field_id_at", &b.metadataCoveringFieldIDAt},
+		{"lance_index_segment_metadata_index_details_value", &b.metadataDetailsValue},
+		{"lance_index_segment_metadata_file_count", &b.metadataFileCount},
+		{"lance_index_segment_metadata_file_path_at", &b.metadataFilePathAt},
+		{"lance_index_segment_metadata_file_size_at", &b.metadataFileSizeAt},
+		{"lance_index_segment_metadata_created_at", &b.metadataCreatedAt},
+		{"lance_index_segment_metadata_base_id", &b.metadataBaseID},
+		{"lance_index_segment_metadata_free", &b.metadataFree},
 		{"lance_fts_query_match_options_init", &b.ftsMatchOptionsInit},
 		{"lance_fts_query_phrase_options_init", &b.ftsPhraseOptionsInit},
 		{"lance_fts_query_multi_match_options_init", &b.ftsMultiMatchOptionsInit},

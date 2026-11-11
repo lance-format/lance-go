@@ -206,6 +206,35 @@ and query options accept the same metric values.
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
 no IDs selects no rows. The IDs are not positions within a batch or fragment.
 
+## Distributed index segments
+
+Index shards can be built independently and published together.
+`TrainIVFModel` and `TrainPQModel` return a `*Model` that carries the native
+model provenance, so one trained model can be reused by many builders;
+`BuildRQModel` returns the portable IVF-RQ rotation artifact. Pass those models
+through `index.VectorOptions` and restrict `index.SegmentScope` to the fragments
+of one shard.
+
+`NewVectorSegmentBuilder` and `NewScalarSegmentBuilder` create one uncommitted
+segment. A builder is single-use, including when execution fails, owns a dataset
+snapshot, and must be closed. `Execute` writes the segment's index files to the
+dataset storage and returns transportable metadata describing them; it never
+publishes a version.
+
+`ParseIndexSegmentMetadata` inspects or rewrites the coverage of one segment.
+`MergeIndexSegments` merges uncommitted segment metadata, and
+`MergeIndexMetadata` merges an index's root artifact without publishing a
+version; only inverted indexes support that root merge at this native revision.
+`CommitIndexSegments` publishes a complete set in one version and returns a new
+dataset snapshot, leaving the receiver unchanged. Native validation owns
+compatibility, coverage and replacement rules, so an invalid set, a mismatched
+keyed column, or mixed index types fail without changing a version.
+
+`SegmentBuilder.SetProgress` and `index.MergeMetadataOptions.Progress` observe
+advisory build progress. Observers run on native worker threads, may be called
+concurrently, must not block or call back into Lance, and are recovered from
+panics. Stage names are diagnostic and may change between native releases.
+
 ## Versions, tags and branches
 
 `CurrentVersion` reports the checked-out version with its nanosecond timestamp
