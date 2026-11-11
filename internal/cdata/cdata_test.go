@@ -854,6 +854,56 @@ func TestExportRecordBatchAndStream(t *testing.T) {
 	}
 }
 
+func TestExportStreamBorrowsReaderBatch(t *testing.T) {
+	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer mem.AssertSize(t, 0)
+	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	var batches []arrow.RecordBatch
+	for _, values := range [][]int32{{1, 2}, {3, 4}} {
+		col := fInt32Array(t, mem, values)
+		batches = append(batches, array.NewRecordBatch(schema, []arrow.Array{col}, 2))
+		col.Release()
+	}
+	reader, err := array.NewRecordReader(schema, batches)
+	// Only the reader owns the input batches from this point onward.
+	for _, batch := range batches {
+		batch.Release()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Release()
+	var stream ArrowArrayStream
+	if err := ExportRecordReader(reader, &stream); err != nil {
+		t.Fatal(err)
+	}
+	defer ReleaseStream(&stream)
+	for i := 0; i < 2; i++ {
+		var out ArrowArray
+		if ret, _, _ := purego.SyscallN(stream.GetNext, uintptr(unsafe.Pointer(&stream)), uintptr(unsafe.Pointer(&out))); ret != 0 {
+			t.Fatalf("get_next batch %d returned %d", i, ret)
+		}
+		got, err := ImportRecordBatch(&out, schema)
+		if err != nil {
+			t.Fatalf("import batch %d: %v", i, err)
+		}
+		value := got.Column(0).(*array.Int32).Value(0)
+		got.Release()
+		if want := int32(1 + i*2); value != want {
+			t.Fatalf("batch %d first value = %d, want %d", i, value, want)
+		}
+		// Releasing an exported batch must not destroy the reader's current
+		// batch. That reference belongs to the reader until Next or Release.
+		if cols := reader.RecordBatch().NumCols(); cols != 1 {
+			t.Fatalf("reader batch %d has %d columns after export release, want 1", i, cols)
+		}
+	}
+	var eof ArrowArray
+	if ret, _, _ := purego.SyscallN(stream.GetNext, uintptr(unsafe.Pointer(&stream)), uintptr(unsafe.Pointer(&eof))); ret != 0 || eof.Release != 0 {
+		t.Fatalf("EOF returned status %d, release %d", ret, eof.Release)
+	}
+}
+
 type failingReader struct {
 	schema *arrow.Schema
 }
