@@ -21,6 +21,10 @@ type OpenOptions struct {
 	Version uint64
 	// Session shares caches with other datasets. It may be nil.
 	Session *Session
+	// CommitLock routes commit acquisition and release through an optional
+	// external lock. Static StorageOptions are not accepted on this path;
+	// supply a StorageOptionsAccessor instead.
+	CommitLock *CommitLock
 }
 
 // OpenDatasetWithOptions opens a dataset with storage options, a version and
@@ -43,6 +47,14 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	if opts.StorageOptionsAccessor != nil && opts.StorageOptionsAccessor.Handle() == 0 {
 		return nil, ErrClosed
 	}
+	if opts.CommitLock != nil {
+		if opts.StorageOptions != nil {
+			return nil, fmt.Errorf("ffi: commit lock requires storage options accessor instead of static storage options")
+		}
+		if opts.CommitLock.Handle() == 0 {
+			return nil, ErrClosed
+		}
+	}
 	storageList, err := storageOptionList(opts.StorageOptions)
 	if err != nil {
 		return nil, err
@@ -59,7 +71,21 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	defer runtime.UnlockOSThread()
 
 	var handle uintptr
-	if opts.StorageOptionsAccessor != nil {
+	if opts.CommitLock != nil {
+		var accessorHandle uintptr
+		if opts.StorageOptionsAccessor != nil {
+			accessorHandle = opts.StorageOptionsAccessor.Handle()
+		}
+		rc := b.datasetOpenWithCommitLock(uri, accessorHandle, opts.Version, sessionHandle, opts.CommitLock.Handle(), &handle)
+		runtime.KeepAlive(opts.StorageOptionsAccessor)
+		runtime.KeepAlive(opts.CommitLock)
+		if rc != 0 {
+			if nativeErr := b.takeError(); nativeErr != nil {
+				return nil, nativeErr
+			}
+			return nil, fmt.Errorf("ffi: lance_dataset_open_with_commit_lock failed without setting an error")
+		}
+	} else if opts.StorageOptionsAccessor != nil {
 		rawOptions := datasetOpenOptions{
 			Version:                opts.Version,
 			StorageOptionsAccessor: opts.StorageOptionsAccessor.Handle(),

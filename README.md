@@ -87,8 +87,21 @@ native write-options entry point; `WithWriteParams` copies their values and
 the slices and maps they contain. Progress callbacks may run on native worker
 threads, and native write errors do not guarantee rollback. Namespace writes
 reject these fields because the namespace ABI accepts only the older write
-options structure. A commit-lock handle is not represented in Go yet, and
-fragment-create entry points remain on the older options structure.
+options structure. Fragment-create entry points remain on the older options
+structure.
+
+`NewCommitLock` creates an external commit lock from Go `Acquire`, `Release`
+and optional `Destroy` callbacks. `WithOpenCommitLock` routes opens,
+`WithWriteCommitLock` routes ordinary and staged writes, and `WithCommitLock`
+routes transaction commits through the lock. The callbacks run
+synchronously on native worker threads and may be called concurrently.
+`Acquire` may return a nil lease for stateless coordination; an error with a
+non-nil lease transfers that partial lease to native code for a single
+`Destroy` without `Release`. `Release` may be called repeatedly and can
+report an error after native code has already published the commit. `Close`
+only drops the caller's owner; native datasets retain the lock they need.
+Namespace opens, writes, and commits reject their matching commit-lock
+options; fragment creation rejects `WithWriteCommitLock`.
 
 `Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
 snapshot and return a new committed `Dataset`. The receiver keeps its version

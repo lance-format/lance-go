@@ -7,7 +7,14 @@ import (
 )
 
 func writeNativeDataset(uri string, reader array.RecordReader, config writeConfig) (*Dataset, error) {
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	var err error
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -31,6 +38,9 @@ func writeNativeDataset(uri string, reader array.RecordReader, config writeConfi
 	if err != nil {
 		return nil, wrapError("write", uri, err)
 	}
+	if config.commitLock != nil {
+		spec.CommitLock = config.commitLock.native
+	}
 	nativeOptions, err := ffi.NewNativeWriteOptions(spec)
 	if err != nil {
 		return nil, wrapError("write", uri, err)
@@ -47,7 +57,14 @@ func writeNativeDataset(uri string, reader array.RecordReader, config writeConfi
 }
 
 func writeUncommittedNative(uri string, reader array.RecordReader, config writeConfig) (*Transaction, error) {
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	var err error
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +87,9 @@ func writeUncommittedNative(uri string, reader array.RecordReader, config writeC
 	defer releaseAll(releases)
 	if err != nil {
 		return nil, wrapError("write uncommitted", uri, err)
+	}
+	if config.commitLock != nil {
+		spec.CommitLock = config.commitLock.native
 	}
 	nativeOptions, err := ffi.NewNativeWriteOptions(spec)
 	if err != nil {

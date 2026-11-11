@@ -50,6 +50,7 @@ type openConfig struct {
 	storageOptionsSet      bool
 	storageOptionsAccessor *StorageOptionsAccessor
 	session                *Session
+	commitLock             *CommitLock
 }
 
 // OpenOption configures Open.
@@ -118,8 +119,9 @@ const (
 // EnableV2ManifestPaths, InitialBases, TargetBases, TargetBaseNamesOrPaths,
 // TargetAllBases, BaseStoreParams, AllowExternalBlobOutsideBases,
 // ExternalBlobMode, BlobPackFileSizeThreshold, FileWriterOptions and Progress
-// instead of silently dropping them. A commit-lock handle is not represented
-// in the Go API yet.
+// instead of silently dropping them. A commit lock is supplied separately
+// with WithWriteCommitLock and does not change the presence semantics of these
+// fields.
 type WriteParams struct {
 	MaxRowsPerFile     uint64
 	MaxRowsPerGroup    uint64
@@ -205,6 +207,7 @@ type writeConfig struct {
 	storageOptionsSet        bool
 	storageOptionsAccessor   *StorageOptionsAccessor
 	session                  *Session
+	commitLock               *CommitLock
 	transactionProperties    map[string]string
 	hasTransactionProperties bool
 	branch                   string

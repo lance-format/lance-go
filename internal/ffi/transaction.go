@@ -1164,22 +1164,37 @@ type commitOptions struct {
 
 // Commit publishes one transaction through CommitBuilder::execute.
 func Commit(uri string, tx *Transaction, opts CommitOptions) (*Dataset, error) {
-	return commit(uri, tx, opts, nil)
+	return commit(uri, tx, opts, nil, nil)
 }
 
 // CommitWithAccessor publishes one transaction using a reusable storage
 // options accessor. The returned dataset retains the accessor for later I/O;
 // the transaction metadata does not.
 func CommitWithAccessor(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
-	return commit(uri, tx, opts, accessor)
+	return commit(uri, tx, opts, accessor, nil)
 }
 
-func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
+// CommitWithAccessorAndCommitLock publishes one transaction through an
+// external commit lock. The accessor may be nil; static storage options are
+// not accepted on this path. The returned dataset retains both native owners.
+func CommitWithAccessorAndCommitLock(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor, lock *CommitLock) (*Dataset, error) {
+	return commit(uri, tx, opts, accessor, lock)
+}
+
+func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor, lock *CommitLock) (*Dataset, error) {
 	if opts.StorageOptions != nil && accessor != nil {
 		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
 	}
 	if accessor != nil && accessor.Handle() == 0 {
 		return nil, ErrClosed
+	}
+	if lock != nil {
+		if opts.StorageOptions != nil {
+			return nil, fmt.Errorf("ffi: commit lock requires storage options accessor instead of static storage options")
+		}
+		if lock.Handle() == 0 {
+			return nil, ErrClosed
+		}
 	}
 	if tx == nil {
 		return nil, fmt.Errorf("ffi: transaction must not be nil")
@@ -1203,7 +1218,15 @@ func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOp
 	var out uintptr
 	runtime.LockOSThread()
 	var rc int32
-	if accessor != nil {
+	if lock != nil {
+		var accessorHandle uintptr
+		if accessor != nil {
+			accessorHandle = accessor.Handle()
+		}
+		rc = tx.b.transactionCommitWithCommitLock(uri, handle, raw, accessorHandle, session, lock.Handle(), &out)
+		runtime.KeepAlive(accessor)
+		runtime.KeepAlive(lock)
+	} else if accessor != nil {
 		rc = tx.b.transactionCommitWithAccessor(uri, handle, raw, accessor.Handle(), session, &out)
 		runtime.KeepAlive(accessor)
 	} else {
@@ -1231,21 +1254,36 @@ func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOp
 
 // CommitBatch publishes append transactions through CommitBuilder::execute_batch.
 func CommitBatch(uri string, txs []*Transaction, opts CommitOptions) (*Dataset, *Transaction, error) {
-	return commitBatch(uri, txs, opts, nil)
+	return commitBatch(uri, txs, opts, nil, nil)
 }
 
 // CommitBatchWithAccessor publishes append transactions using a reusable
 // storage options accessor. The returned dataset retains the accessor.
 func CommitBatchWithAccessor(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, *Transaction, error) {
-	return commitBatch(uri, txs, opts, accessor)
+	return commitBatch(uri, txs, opts, accessor, nil)
 }
 
-func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, *Transaction, error) {
+// CommitBatchWithAccessorAndCommitLock publishes append transactions through
+// an external commit lock. The accessor may be nil; static storage options are
+// not accepted on this path.
+func CommitBatchWithAccessorAndCommitLock(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor, lock *CommitLock) (*Dataset, *Transaction, error) {
+	return commitBatch(uri, txs, opts, accessor, lock)
+}
+
+func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor, lock *CommitLock) (*Dataset, *Transaction, error) {
 	if opts.StorageOptions != nil && accessor != nil {
 		return nil, nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
 	}
 	if accessor != nil && accessor.Handle() == 0 {
 		return nil, nil, ErrClosed
+	}
+	if lock != nil {
+		if opts.StorageOptions != nil {
+			return nil, nil, fmt.Errorf("ffi: commit lock requires storage options accessor instead of static storage options")
+		}
+		if lock.Handle() == 0 {
+			return nil, nil, ErrClosed
+		}
 	}
 	b, err := load()
 	if err != nil {
@@ -1281,7 +1319,15 @@ func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *S
 	var outDataset, outTransaction uintptr
 	runtime.LockOSThread()
 	var rc int32
-	if accessor != nil {
+	if lock != nil {
+		var accessorHandle uintptr
+		if accessor != nil {
+			accessorHandle = accessor.Handle()
+		}
+		rc = b.transactionCommitBatchWithCommitLock(uri, handles, uint64(len(handles)), raw, accessorHandle, session, lock.Handle(), &outDataset, &outTransaction)
+		runtime.KeepAlive(accessor)
+		runtime.KeepAlive(lock)
+	} else if accessor != nil {
 		rc = b.transactionCommitBatchWithAccessor(uri, handles, uint64(len(handles)), raw, accessor.Handle(), session, &outDataset, &outTransaction)
 		runtime.KeepAlive(accessor)
 	} else {
@@ -1375,6 +1421,9 @@ type WriteUncommittedOptions struct {
 	TransactionProperties map[string]string
 	HasProperties         bool
 	Session               *Session
+	// CommitLock routes staged commit acquisition through an external lock.
+	// Static StorageOptions are not accepted on this path.
+	CommitLock *CommitLock
 }
 
 type uncommittedWriteOptions struct {
@@ -1400,6 +1449,14 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 	}
 	if accessor != nil && accessor.Handle() == 0 {
 		return nil, ErrClosed
+	}
+	if opts.CommitLock != nil {
+		if opts.StorageOptions != nil {
+			return nil, fmt.Errorf("ffi: commit lock requires storage options accessor instead of static storage options")
+		}
+		if opts.CommitLock.Handle() == 0 {
+			return nil, ErrClosed
+		}
 	}
 	b, err := load()
 	if err != nil {
@@ -1503,7 +1560,15 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 	runtime.LockOSThread()
 	var out uintptr
 	var rc int32
-	if accessor != nil {
+	if opts.CommitLock != nil {
+		var accessorHandle uintptr
+		if accessor != nil {
+			accessorHandle = accessor.Handle()
+		}
+		rc = b.datasetWriteUncommittedStreamWithCommitLock(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, accessorHandle, session, opts.CommitLock.Handle(), &out)
+		runtime.KeepAlive(accessor)
+		runtime.KeepAlive(opts.CommitLock)
+	} else if accessor != nil {
 		rc = b.datasetWriteUncommittedStreamWithAccessor(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, accessor.Handle(), session, &out)
 		runtime.KeepAlive(accessor)
 	} else {
