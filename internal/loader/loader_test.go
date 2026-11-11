@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 package loader
 
@@ -69,7 +69,7 @@ func TestLoadWithoutEnvReportsDiscoveryGuidance(t *testing.T) {
 		t.Fatalf("default discovery error does not point at %s: %v", EnvLibPath, err)
 	}
 	if !strings.Contains(err.Error(), libraryName) {
-		t.Fatalf("default discovery error does not mention the soname %q: %v", libraryName, err)
+		t.Fatalf("default discovery error does not mention the platform library name %q: %v", libraryName, err)
 	}
 }
 

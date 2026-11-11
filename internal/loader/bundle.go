@@ -1,4 +1,4 @@
-//go:build !lance_external_lib && (linux || darwin)
+//go:build !lance_external_lib && (linux || darwin || windows)
 
 package loader
 
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-
-	"github.com/ebitengine/purego"
 )
 
 // Bundle describes one compressed lance-c payload compiled into a generated
@@ -72,9 +70,9 @@ func (b *Bundle) open() (*Library, error) {
 		return nil, fmt.Errorf("loader: bundled artifact %q for %q: %w", b.Module, b.Target, err)
 	}
 
-	handle, err := purego.Dlopen(path, dlopenFlags)
+	handle, err := openLibrary(path)
 	if err != nil {
-		return nil, fmt.Errorf("loader: dlopen bundled artifact %q from %s: %w", b.Module, path, err)
+		return nil, fmt.Errorf("loader: load bundled artifact %q from %s: %w", b.Module, path, err)
 	}
 	return &Library{path: path, handle: handle}, nil
 }

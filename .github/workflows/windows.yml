@@ -1,0 +1,95 @@
+name: Windows
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  test:
+    name: Windows amd64 Go ${{ matrix.go-version }}
+    runs-on: windows-2022
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version:
+          - 1.23.x
+          - stable
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: go.sum
+
+      - name: Record target
+        shell: bash
+        run: go env GOOS GOARCH GOVERSION
+
+      - name: Check module consistency
+        if: matrix.go-version == '1.23.x'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod tidy -diff
+          go mod verify
+
+      - name: Test default build
+        shell: bash
+        run: go test ./... -count=1
+
+      - name: Test external build
+        shell: bash
+        run: go test -tags lance_external_lib ./... -count=1
+
+  cross-arm64:
+    name: Windows arm64 cross-build
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      CGO_ENABLED: "0"
+      GOOS: windows
+      GOARCH: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Record target
+        shell: bash
+        run: go env GOOS GOARCH GOVERSION
+
+      - name: Build default
+        shell: bash
+        run: go build ./...
+
+      - name: Build external
+        shell: bash
+        run: go build -tags lance_external_lib ./...
