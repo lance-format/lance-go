@@ -30,6 +30,7 @@ func requireNative(t *testing.T) {
 }
 
 func testSchema() *arrow.Schema {
+	metadata := arrow.NewMetadata([]string{"owner"}, []string{"lance"})
 	return arrow.NewSchema([]arrow.Field{
 		{
 			Name:     "id",
@@ -43,11 +44,11 @@ func testSchema() *arrow.Schema {
 			Name: "info",
 			Type: arrow.StructOf(
 				arrow.Field{Name: "score", Type: arrow.PrimitiveTypes.Float64, Nullable: true},
-				arrow.Field{Name: "active", Type: arrow.BooleanType, Nullable: true},
+				arrow.Field{Name: "active", Type: arrow.FixedWidthTypes.Boolean, Nullable: true},
 			),
 			Nullable: true,
 		},
-	}, arrow.NewMetadata([]string{"owner"}, []string{"lance"}))
+	}, &metadata)
 }
 
 // testBatch builds four rows with nulls, a nested list, and a struct.
