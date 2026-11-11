@@ -136,7 +136,7 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	}
 
 	for i := uint64(0); i < plan.TaskCount(); i++ {
-		task, err := plan.Task(i)
+		task, err := restored.Task(i)
 		if err != nil {
 			t.Fatalf("Task(%d): %v", i, err)
 		}
@@ -257,7 +257,7 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	if plan.MergeCount() > 0 {
 		merged := make([]*lance.IndexSegmentResult, 0, plan.MergeCount())
 		for i := uint64(0); i < plan.MergeCount(); i++ {
-			merge, err := plan.Merge(i)
+			merge, err := restored.Merge(i)
 			if err != nil {
 				t.Fatalf("Merge(%d): %v", i, err)
 			}
