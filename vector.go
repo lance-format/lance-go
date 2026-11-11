@@ -46,22 +46,18 @@ func (t VectorDataType) width() int {
 
 // VectorMetric selects the distance metric used for vector search. The dataset
 // or index metric is used when it is not set explicitly.
-type VectorMetric int32
+type VectorMetric = Metric
 
 const (
 	// VectorMetricL2 uses squared Euclidean distance.
-	VectorMetricL2 VectorMetric = 0
+	VectorMetricL2 VectorMetric = MetricL2
 	// VectorMetricCosine uses cosine distance.
-	VectorMetricCosine VectorMetric = 1
+	VectorMetricCosine VectorMetric = MetricCosine
 	// VectorMetricDot uses dot-product distance.
-	VectorMetricDot VectorMetric = 2
+	VectorMetricDot VectorMetric = MetricDot
 	// VectorMetricHamming uses Hamming distance for UInt8 vectors.
-	VectorMetricHamming VectorMetric = 3
+	VectorMetricHamming VectorMetric = MetricHamming
 )
-
-func (m VectorMetric) valid() bool {
-	return m >= VectorMetricL2 && m <= VectorMetricHamming
-}
 
 // ApproxMode controls how much accuracy a vector index search trades for speed.
 type ApproxMode int32
@@ -341,7 +337,7 @@ func validateVectorColumn(column string) error {
 // dataset or index metric. Hamming is only valid for UInt8 columns.
 func WithVectorMetric(metric VectorMetric) ScanOption {
 	return func(config *scanConfig) error {
-		if !metric.valid() {
+		if metric < VectorMetricL2 || metric > VectorMetricHamming {
 			return fmt.Errorf("invalid vector metric %d", metric)
 		}
 		config.vector.metric = &metric

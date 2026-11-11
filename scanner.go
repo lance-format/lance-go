@@ -94,6 +94,8 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 		SubstraitAggregate:   config.substraitAggregate,
 		AdditionalSQLFilters: config.additionalSQLFilters,
 		Vector:               config.ffiVectorOptions(),
+	}, func(native *ffi.Scanner) error {
+		return applyFTSScan(native, &config)
 	})
 	// Native nearest setters copy the query buffer before returning. Keep the
 	// owning scanConfig, including its typed vector slices, reachable until the

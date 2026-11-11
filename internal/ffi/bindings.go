@@ -116,6 +116,35 @@ type bindings struct {
 	datasetMerge         func(dataset uintptr, leftOn, rightOn string, source *cdata.ArrowArrayStream) int32
 	datasetTruncateTable func(dataset uintptr) int32
 
+	datasetCreateVectorIndexWithOptions func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, replace bool) int32
+	datasetCreateScalarIndexWithOptions func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, replace bool) int32
+	datasetDropIndex                    func(dataset uintptr, name string) int32
+	datasetIndexCount                   func(dataset uintptr) uint64
+	datasetIndexListJSON                func(dataset uintptr) *byte
+	datasetDescribeIndicesJSON          func(dataset uintptr) *byte
+	datasetIndexStatisticsJSON          func(dataset uintptr, name string) *byte
+	datasetIndexSegmentsJSON            func(dataset uintptr) *byte
+	datasetIndexSegmentCount            func(dataset uintptr, name string) uint64
+	datasetIndexSegments                func(dataset uintptr, name string, outUUIDs []byte, capacity uint64, outCount *uint64) int32
+	datasetPrewarmIndex                 func(dataset uintptr, name string) int32
+	datasetPrewarmIndexWithOptions      func(dataset uintptr, name string, options *indexPrewarmOptions) int32
+
+	ftsMatchOptionsInit          func(options *ftsMatchOptions)
+	ftsPhraseOptionsInit         func(options *ftsPhraseOptions)
+	ftsMultiMatchOptionsInit     func(options *ftsMultiMatchOptions)
+	ftsCombinedFieldsOptionsInit func(options *ftsCombinedFieldsOptions)
+	ftsBoostOptionsInit          func(options *ftsBoostOptions)
+	ftsQueryMatchNew             func(terms string, column uintptr, options *ftsMatchOptions) uintptr
+	ftsQueryPhraseNew            func(terms string, column uintptr, options *ftsPhraseOptions) uintptr
+	ftsQueryMultiMatchNew        func(terms string, columns []uintptr, count uint64, options *ftsMultiMatchOptions) uintptr
+	ftsQueryCombinedFieldsNew    func(terms string, columns []uintptr, count uint64, options *ftsCombinedFieldsOptions) uintptr
+	ftsQueryBooleanNew           func(occurs []int32, queries []uintptr, count uint64) uintptr
+	ftsQueryBoostNew             func(positive, negative uintptr, options *ftsBoostOptions) uintptr
+	ftsQueryClose                func(query uintptr)
+	ftsQueryContextClose         func(context uintptr)
+	datasetPrepareFTSMatchQuery  func(dataset uintptr, column, query string, matchOperator int32, maxFuzzyDistance uint32, coverage int32) uintptr
+	datasetPrepareFTSPhraseQuery func(dataset uintptr, column, query string, slop int32, coverage int32) uintptr
+
 	sessionNew               func(indexCacheSize, metadataCacheSize uint64) uintptr
 	sessionNewWithCacheSpecs func(indexCache, metadataCache *sessionCacheSpec) uintptr
 	sessionClose             func(session uintptr)
@@ -157,6 +186,10 @@ type bindings struct {
 	scannerSetRowAddrAllowlist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
 	scannerSetRowAddrBlocklist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
 	scannerSetStatisticsCallback func(scanner uintptr, callback uintptr, ctx uintptr) int32
+	scannerSetFTSQuery           func(scanner uintptr, query uintptr) int32
+	scannerSetFTSQueryContext    func(scanner uintptr, context uintptr) int32
+	scannerSetMinHashQuery       func(scanner uintptr, column, text string) int32
+	scannerSetFTSIndexSegments   func(scanner uintptr, uuids []byte, count uint64) int32
 	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
 
@@ -274,6 +307,33 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_merge_insert", &b.datasetMergeInsert},
 		{"lance_dataset_merge", &b.datasetMerge},
 		{"lance_dataset_truncate_table", &b.datasetTruncateTable},
+		{"lance_dataset_create_vector_index_with_options", &b.datasetCreateVectorIndexWithOptions},
+		{"lance_dataset_create_scalar_index_with_options", &b.datasetCreateScalarIndexWithOptions},
+		{"lance_dataset_drop_index", &b.datasetDropIndex},
+		{"lance_dataset_index_count", &b.datasetIndexCount},
+		{"lance_dataset_index_list_json", &b.datasetIndexListJSON},
+		{"lance_dataset_describe_indices_json", &b.datasetDescribeIndicesJSON},
+		{"lance_dataset_index_statistics_json", &b.datasetIndexStatisticsJSON},
+		{"lance_dataset_index_segments_json", &b.datasetIndexSegmentsJSON},
+		{"lance_dataset_index_segment_count", &b.datasetIndexSegmentCount},
+		{"lance_dataset_index_segments", &b.datasetIndexSegments},
+		{"lance_dataset_prewarm_index", &b.datasetPrewarmIndex},
+		{"lance_dataset_prewarm_index_with_options", &b.datasetPrewarmIndexWithOptions},
+		{"lance_fts_query_match_options_init", &b.ftsMatchOptionsInit},
+		{"lance_fts_query_phrase_options_init", &b.ftsPhraseOptionsInit},
+		{"lance_fts_query_multi_match_options_init", &b.ftsMultiMatchOptionsInit},
+		{"lance_fts_query_combined_fields_options_init", &b.ftsCombinedFieldsOptionsInit},
+		{"lance_fts_query_boost_options_init", &b.ftsBoostOptionsInit},
+		{"lance_fts_query_match_new", &b.ftsQueryMatchNew},
+		{"lance_fts_query_phrase_new", &b.ftsQueryPhraseNew},
+		{"lance_fts_query_multi_match_new", &b.ftsQueryMultiMatchNew},
+		{"lance_fts_query_combined_fields_new", &b.ftsQueryCombinedFieldsNew},
+		{"lance_fts_query_boolean_new", &b.ftsQueryBooleanNew},
+		{"lance_fts_query_boost_new", &b.ftsQueryBoostNew},
+		{"lance_fts_query_close", &b.ftsQueryClose},
+		{"lance_fts_query_context_close", &b.ftsQueryContextClose},
+		{"lance_dataset_prepare_fts_match_query", &b.datasetPrepareFTSMatchQuery},
+		{"lance_dataset_prepare_fts_phrase_query", &b.datasetPrepareFTSPhraseQuery},
 
 		{"lance_session_new", &b.sessionNew},
 		{"lance_session_new_with_cache_specs", &b.sessionNewWithCacheSpecs},
@@ -316,6 +376,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_row_addr_allowlist", &b.scannerSetRowAddrAllowlist},
 		{"lance_scanner_set_row_addr_blocklist", &b.scannerSetRowAddrBlocklist},
 		{"lance_scanner_set_statistics_callback", &b.scannerSetStatisticsCallback},
+		{"lance_scanner_set_fts_query", &b.scannerSetFTSQuery},
+		{"lance_scanner_set_fts_query_context", &b.scannerSetFTSQueryContext},
+		{"lance_scanner_set_minhash_query", &b.scannerSetMinHashQuery},
+		{"lance_scanner_set_fts_index_segments", &b.scannerSetFTSIndexSegments},
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
 
