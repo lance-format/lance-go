@@ -3,7 +3,6 @@ package ffi
 import (
 	"fmt"
 	"runtime"
-	"sort"
 	"unsafe"
 )
 
@@ -381,8 +380,11 @@ type storageOptionsInput struct {
 	Count  uint64
 }
 
-// StorageOptionsAccessor owns a static native storage-options accessor.
-// Callers serialize Close against every native functions that consumes it.
+// StorageOptionsAccessor owns a native storage-options accessor. The accessor
+// may contain fixed initial options, a dynamic provider, or both. Native
+// owners retain their own references, so closing this handle does not
+// invalidate a dataset, provider-backed store, or returned snapshot.
+// Callers serialize Close against every native call that consumes the handle.
 type StorageOptionsAccessor struct {
 	b      *bindings
 	handle uintptr
@@ -399,50 +401,7 @@ func NewStorageOptionsAccessor(values map[string]string) (*StorageOptionsAccesso
 }
 
 func newStorageOptionsAccessor(b *bindings, values map[string]string) (*StorageOptionsAccessor, error) {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	keyValues := make([]string, len(keys))
-	optionValues := make([]string, len(keys))
-	for i, key := range keys {
-		if key == "" {
-			return nil, fmt.Errorf("ffi: storage option key must not be empty")
-		}
-		keyValues[i] = key
-		optionValues[i] = values[key]
-	}
-	keyList, err := newCStringList(keyValues)
-	if err != nil {
-		return nil, err
-	}
-	valueList, err := newCStringList(optionValues)
-	if err != nil {
-		return nil, err
-	}
-
-	raw := storageOptionsInput{Count: uint64(len(keys))}
-	if len(keyList.ptrs) > 0 {
-		raw.Keys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
-		raw.Values = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
-	}
-
-	runtime.LockOSThread()
-	handle := b.storageAccessorNew(&raw, 0)
-	keyList.keepAlive()
-	valueList.keepAlive()
-	if handle == 0 {
-		nativeErr := b.takeError()
-		runtime.UnlockOSThread()
-		if nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_storage_options_accessor_new returned NULL without setting an error")
-	}
-	runtime.UnlockOSThread()
-	return &StorageOptionsAccessor{b: b, handle: handle}, nil
+	return newStorageOptionsAccessorWithPresence(b, values, true, 0)
 }
 
 // Handle returns the native accessor pointer. The caller must serialize Close.
@@ -453,7 +412,9 @@ func (a *StorageOptionsAccessor) Handle() uintptr {
 	return a.handle
 }
 
-// Close releases the native accessor. It is idempotent.
+// Close releases the caller's native accessor handle. Native owners retain
+// their own references. It is idempotent but not safe to call concurrently
+// with Snapshot or another native use of the same handle.
 func (a *StorageOptionsAccessor) Close() {
 	if a == nil || a.handle == 0 {
 		return
