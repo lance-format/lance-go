@@ -25,6 +25,11 @@ type CommitLease any
 // error does not undo a commit that native code has already published. Destroy
 // is optional and runs exactly once for every lease returned by Acquire,
 // including a nil stateless lease.
+//
+// Callback errors may implement ErrorCode() int32 to select a native error
+// category, including int32(CodeCommitConflict) for the native conflict/retry
+// policy. Wrapped errors retain that classification. Other Go errors use
+// CodeInternal. A conflict classification does not undo a published commit.
 type CommitLockCallbacks struct {
 	Acquire func(version uint64) (CommitLease, error)
 	Release func(lease CommitLease, success bool) error
