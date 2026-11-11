@@ -11,7 +11,7 @@ tracked.
 The root module requires the published data-only module:
 
 ```text
-require github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111113901-866f1797394a
+require github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349
 ```
 
 Its sources and payload are also tracked under `artifacts/linux-amd64/`. Because
@@ -24,12 +24,12 @@ archive.
 | --- | --- |
 | Target | `linux/amd64` |
 | Library | `liblance_c.so` |
-| Compressed size | 75905672 bytes |
-| Compressed SHA-256 | `1433054ae182661830de11d5faa6c1e6027c0746d5b59d87ccd894b35a24b7c0` |
-| Uncompressed size | 286968288 bytes |
-| Uncompressed SHA-256 | `1de1e4bdb6a71a5bd7b14ddb3d18b5d79776abe30efebabc6f40e67b2ace7ba8` |
-| Upstream commit | `ab5c2d39c8b912fff19a05486732dde4b49c3f33` |
-| Header SHA-256 | `7060ee5d8cdf941990154ae6d735d203a17105f441215fc398c00ef06c650190` |
+| Compressed size | 81695913 bytes |
+| Compressed SHA-256 | `33c4ee3249ee73ddf6a07855153abeb42801134f993309718e40bfacdabcd6af` |
+| Uncompressed size | 308280480 bytes |
+| Uncompressed SHA-256 | `dfe3b1135725daeb876998befce18b58117074ffef302850a53f21e8376b7363` |
+| Upstream commit | `07cd7d0cd06d65c5c643972267cc7981decef067` |
+| Header SHA-256 | `12981740fff3c240c7a5f3d46d8b6cd85e64a848d2bf421b1846286b774fbc4b` |
 
 `lance_bundle_linux_amd64.go` in the root package is the generated selector.
 Its build constraint is `!lance_external_lib && linux && amd64`. The `init`
@@ -115,7 +115,7 @@ The commit and header hash written into the generated module are
 packaging-time provenance claims. lance-c exposes no runtime version symbol,
 so the loader cannot prove from the shared library which commit built it. The
 packaging host and the release process must supply a library built from the
-pinned commit. The active bundle was packaged from `ab5c2d39c8b912fff19a05486732dde4b49c3f33`;
+pinned commit. The active bundle was packaged from `07cd7d0cd06d65c5c643972267cc7981decef067`;
 its `artifact.go` records the values in the table above.
 
 ## Runtime cache
@@ -172,8 +172,8 @@ generator uses only that same compression package plus the standard library.
 The root requirement for the artifact module adds these `go.sum` entries:
 
 ```text
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111113901-866f1797394a h1:ONS0APX2hx2QnE1sApwS/XJ2Dqk2ix+VR1WvECRcNow=
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111113901-866f1797394a/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349 h1:ONS0APX2hx2QnE1sApwS/XJ2Dqk2ix+VR1WvECRcNow=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
 ```
 
 `lance_external_lib` builds compile out `bundle.go`, `cache.go`,
@@ -183,16 +183,11 @@ where the platform needs them.
 
 ## Verification status and remaining gates
 
-Packaging established:
-
-- the public proxy archive was downloaded on NieR and its payload compared
-  with the packaged module;
-- the compressed and decompressed sizes and SHA-256 values in the table above;
-- all 565 native symbols are exported and the existing 44 signatures are
-  preserved;
-- a C++ smoke test and an exact binary build from
-  `ab5c2d39c8b912fff19a05486732dde4b49c3f33` succeeded;
-- the runtime baseline is Ubuntu 24.04.5 with glibc 2.39.
+The native build and C++ smoke test at the pinned commit succeeded on NieR.
+The library exports all 613 declared symbols. Packaging round-tripped the
+compressed payload to the stripped native input. The public proxy archive
+was downloaded and its payload compared byte-for-byte with the tracked module.
+The runtime baseline is Ubuntu 24.04.5 with glibc 2.39.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -201,16 +196,14 @@ cache entry's SHA-256. Loader and generator unit tests cover cache reuse and
 corruption, cross-process locking, environment precedence, descriptor
 validation, and synthetic target headers.
 
-Independent public consumers on NieR used fresh module, build and runtime
-caches, with no workspace or local module replacement. On Ubuntu 24.04.5,
-the default consumer created, reopened and scanned a dataset with no
-`LANCE_LIB_PATH`; the extracted library matched the published size and hash.
-A warm run reused the cache. An explicit library path bypassed extraction.
-The external consumer excluded the artifact package and embedded payload,
-used the explicit library successfully, and created no runtime cache entry.
+Independent default/external consumers were previously accepted with the ab5
+artifact. Those results establish the distribution contract, not acceptance
+of this updated native payload. The matching transaction and public bundled
+consumer gates must run against this revision before delivery.
 
-In both scenarios, `go get` downloaded the artifact archive before the target
-build. External mode is not a zero-download contract. Only one artifact target
-is published, so these checks do not establish archive selection across a
-multi-platform release. Broader glibc/musl coverage, macOS runtime support,
-and real Windows DLL build, packaging and cold-cache loading remain pending.
+In the earlier consumer checks, `go get` downloaded the artifact archive before
+the target build in both modes. External mode is not a zero-download contract.
+Only one artifact target is published, so these checks do not establish archive
+selection across a multi-platform release. Broader glibc/musl coverage, macOS
+runtime support, and real Windows DLL build, packaging and cold-cache loading
+remain pending.

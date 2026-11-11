@@ -10,9 +10,6 @@ sessions, projected and filtered scans, row selection, bounded immutable
 mutations, staged transactions, and fragment inspection. It uses Arrow Go v18
 and requires Go 1.23 or newer.
 
-This development branch requires the pinned external library until its matching
-bundled artifact is integrated.
-
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
 and load it automatically after verifying and unpacking it into the user cache.
 The payload is a normal Go module dependency, so building or testing fetches it
@@ -249,7 +246,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 407a751a9cfcaa0e868c005ab7a78ee9be599a31:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show 07cd7d0cd06d65c5c643972267cc7981decef067:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
