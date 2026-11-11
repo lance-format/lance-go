@@ -452,6 +452,8 @@ func goClass(expr ast.Expr) (string, error) {
 			return "uint8", nil
 		case "float32":
 			return "float32", nil
+		case "float64":
+			return "float64", nil
 		case "bool":
 			return "bool", nil
 		}
@@ -480,7 +482,7 @@ func cClass(typ string) string {
 	switch typ {
 	case "void":
 		return "void"
-	case "int", "int32_t", "LanceErrorCode", "LancePollStatus":
+	case "int", "int32_t", "LanceErrorCode", "LancePollStatus", "LanceScalarIndexType", "LanceMetadataUpdateMode", "LanceDataType", "LanceMetricType", "LanceApproxMode":
 		return "int32"
 	case "LanceWaker", "LanceScanStatisticsCallback":
 		return "pointer"
@@ -494,6 +496,8 @@ func cClass(typ string) string {
 		return "uint8"
 	case "float":
 		return "float32"
+	case "double":
+		return "float64"
 	case "bool", "_Bool":
 		return "bool"
 	default:
