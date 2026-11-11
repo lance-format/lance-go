@@ -478,6 +478,63 @@ type bindings struct {
 
 	datasetCommitCompaction func(uintptr, []uintptr, uint64, uintptr, *compactionMetrics) int32
 
+	optimizeIndicesOptionsNew                           func() uintptr
+	optimizeIndicesOptionsFree                          func(uintptr)
+	optimizeIndicesOptionsSetNumIndicesToMerge          func(uintptr, bool, uint64) int32
+	optimizeIndicesOptionsSetEnablePartitionRebalancing func(uintptr, bool) int32
+	optimizeIndicesOptionsSetIndexNames                 func(uintptr, bool, *uintptr, uint64) int32
+	optimizeIndicesOptionsSetRetrain                    func(uintptr, bool) int32
+	optimizeIndicesOptionsSetTransactionProperties      func(uintptr, *transactionProperties) int32
+	optimizeIndicesOptionsSetMaxRowsPerTask             func(uintptr, bool, uint64) int32
+	optimizeIndicesOptionsSetMaxRowsPerSegment          func(uintptr, bool, uint64) int32
+	datasetOptimizeIndices                              func(uintptr, uintptr) int32
+	datasetPlanOptimizeIndices                          func(uintptr, uintptr) uintptr
+	datasetCommitOptimizeIndices                        func(uintptr, []uintptr, uint64, uintptr) int32
+	optimizeIndicesPlanPlanID                           func(uintptr, *byte) int32
+	optimizeIndicesPlanReadVersion                      func(uintptr) uint64
+	optimizeIndicesPlanTaskCount                        func(uintptr) uint64
+	optimizeIndicesPlanMergeCount                       func(uintptr) uint64
+	optimizeIndicesPlanTaskAt                           func(uintptr, uint64) uintptr
+	optimizeIndicesPlanMergeAt                          func(uintptr, uint64) uintptr
+	optimizeIndicesPlanJSON                             func(uintptr) *byte
+	optimizeIndicesPlanFromJSON                         func(string) uintptr
+	optimizeIndicesPlanClose                            func(uintptr)
+	optimizeIndexTaskPlanID                             func(uintptr, *byte) int32
+	optimizeIndexTaskReadVersion                        func(uintptr) uint64
+	optimizeIndexTaskGroup                              func(uintptr) uint32
+	optimizeIndexTaskFragmentCount                      func(uintptr) uint64
+	optimizeIndexTaskFragmentIDAt                       func(uintptr, uint64, *uint32) int32
+	optimizeIndexTaskReference                          func(uintptr) uintptr
+	optimizeIndexTaskOldSegmentCount                    func(uintptr) uint64
+	optimizeIndexTaskOldSegmentAt                       func(uintptr, uint64) uintptr
+	optimizeIndexTaskNumIndicesToMerge                  func(uintptr, *bool, *uint64) int32
+	optimizeIndexTaskEnablePartitionRebalancing         func(uintptr, *bool) int32
+	optimizeIndexTaskRetrain                            func(uintptr, *bool) int32
+	optimizeIndexTaskExecute                            func(uintptr, uintptr, *uintptr) int32
+	optimizeIndexTaskJSON                               func(uintptr) *byte
+	optimizeIndexTaskFromJSON                           func(string) uintptr
+	optimizeIndexTaskClose                              func(uintptr)
+	optimizeIndexMergePlanID                            func(uintptr, *byte) int32
+	optimizeIndexMergeReadVersion                       func(uintptr) uint64
+	optimizeIndexMergeGroup                             func(uintptr) uint32
+	optimizeIndexMergeOldSegmentCount                   func(uintptr) uint64
+	optimizeIndexMergeOldSegmentAt                      func(uintptr, uint64) uintptr
+	optimizeIndexMergeReplaceCount                      func(uintptr) uint64
+	optimizeIndexMergeReplaceUUIDAt                     func(uintptr, uint64, *byte) int32
+	optimizeIndexMergeExecute                           func(uintptr, uintptr, []uintptr, uint64, *uintptr) int32
+	optimizeIndexMergeJSON                              func(uintptr) *byte
+	optimizeIndexMergeFromJSON                          func(string) uintptr
+	optimizeIndexMergeClose                             func(uintptr)
+	indexSegmentResultPlanID                            func(uintptr, *byte) int32
+	indexSegmentResultReadVersion                       func(uintptr) uint64
+	indexSegmentResultGroup                             func(uintptr) uint32
+	indexSegmentResultSegment                           func(uintptr) uintptr
+	indexSegmentResultReplaceCount                      func(uintptr) uint64
+	indexSegmentResultReplaceUUIDAt                     func(uintptr, uint64, *byte) int32
+	indexSegmentResultJSON                              func(uintptr) *byte
+	indexSegmentResultFromJSON                          func(string) uintptr
+	indexSegmentResultClose                             func(uintptr)
+
 	datasetCleanupOldVersions func(uintptr, *cleanupOldVersionsOptions, *removalStats) int32
 	datasetCleanup            func(uintptr, *cleanupPolicy, *cleanupOperationOptions, *removalStats) int32
 	datasetCleanupExplain     func(uintptr, *cleanupPolicy, *cleanupOperationOptions) uintptr
@@ -961,6 +1018,62 @@ func (b *bindings) symbols() []symbol {
 		{"lance_rewrite_result_close", &b.rewriteResultClose},
 
 		{"lance_dataset_commit_compaction", &b.datasetCommitCompaction},
+		{"lance_optimize_indices_options_new", &b.optimizeIndicesOptionsNew},
+		{"lance_optimize_indices_options_free", &b.optimizeIndicesOptionsFree},
+		{"lance_optimize_indices_options_set_num_indices_to_merge", &b.optimizeIndicesOptionsSetNumIndicesToMerge},
+		{"lance_optimize_indices_options_set_enable_partition_rebalancing", &b.optimizeIndicesOptionsSetEnablePartitionRebalancing},
+		{"lance_optimize_indices_options_set_index_names", &b.optimizeIndicesOptionsSetIndexNames},
+		{"lance_optimize_indices_options_set_retrain", &b.optimizeIndicesOptionsSetRetrain},
+		{"lance_optimize_indices_options_set_transaction_properties", &b.optimizeIndicesOptionsSetTransactionProperties},
+		{"lance_optimize_indices_options_set_max_rows_per_task", &b.optimizeIndicesOptionsSetMaxRowsPerTask},
+		{"lance_optimize_indices_options_set_max_rows_per_segment", &b.optimizeIndicesOptionsSetMaxRowsPerSegment},
+		{"lance_dataset_optimize_indices", &b.datasetOptimizeIndices},
+		{"lance_dataset_plan_optimize_indices", &b.datasetPlanOptimizeIndices},
+		{"lance_dataset_commit_optimize_indices", &b.datasetCommitOptimizeIndices},
+		{"lance_optimize_indices_plan_id", &b.optimizeIndicesPlanPlanID},
+		{"lance_optimize_indices_plan_read_version", &b.optimizeIndicesPlanReadVersion},
+		{"lance_optimize_indices_plan_task_count", &b.optimizeIndicesPlanTaskCount},
+		{"lance_optimize_indices_plan_merge_count", &b.optimizeIndicesPlanMergeCount},
+		{"lance_optimize_indices_plan_task_at", &b.optimizeIndicesPlanTaskAt},
+		{"lance_optimize_indices_plan_merge_at", &b.optimizeIndicesPlanMergeAt},
+		{"lance_optimize_indices_plan_json", &b.optimizeIndicesPlanJSON},
+		{"lance_optimize_indices_plan_from_json", &b.optimizeIndicesPlanFromJSON},
+		{"lance_optimize_indices_plan_close", &b.optimizeIndicesPlanClose},
+		{"lance_optimize_index_task_plan_id", &b.optimizeIndexTaskPlanID},
+		{"lance_optimize_index_task_read_version", &b.optimizeIndexTaskReadVersion},
+		{"lance_optimize_index_task_group", &b.optimizeIndexTaskGroup},
+		{"lance_optimize_index_task_fragment_count", &b.optimizeIndexTaskFragmentCount},
+		{"lance_optimize_index_task_fragment_id_at", &b.optimizeIndexTaskFragmentIDAt},
+		{"lance_optimize_index_task_reference", &b.optimizeIndexTaskReference},
+		{"lance_optimize_index_task_old_segment_count", &b.optimizeIndexTaskOldSegmentCount},
+		{"lance_optimize_index_task_old_segment_at", &b.optimizeIndexTaskOldSegmentAt},
+		{"lance_optimize_index_task_num_indices_to_merge", &b.optimizeIndexTaskNumIndicesToMerge},
+		{"lance_optimize_index_task_enable_partition_rebalancing", &b.optimizeIndexTaskEnablePartitionRebalancing},
+		{"lance_optimize_index_task_retrain", &b.optimizeIndexTaskRetrain},
+		{"lance_optimize_index_task_execute", &b.optimizeIndexTaskExecute},
+		{"lance_optimize_index_task_json", &b.optimizeIndexTaskJSON},
+		{"lance_optimize_index_task_from_json", &b.optimizeIndexTaskFromJSON},
+		{"lance_optimize_index_task_close", &b.optimizeIndexTaskClose},
+		{"lance_optimize_index_merge_plan_id", &b.optimizeIndexMergePlanID},
+		{"lance_optimize_index_merge_read_version", &b.optimizeIndexMergeReadVersion},
+		{"lance_optimize_index_merge_group", &b.optimizeIndexMergeGroup},
+		{"lance_optimize_index_merge_old_segment_count", &b.optimizeIndexMergeOldSegmentCount},
+		{"lance_optimize_index_merge_old_segment_at", &b.optimizeIndexMergeOldSegmentAt},
+		{"lance_optimize_index_merge_replace_count", &b.optimizeIndexMergeReplaceCount},
+		{"lance_optimize_index_merge_replace_uuid_at", &b.optimizeIndexMergeReplaceUUIDAt},
+		{"lance_optimize_index_merge_execute", &b.optimizeIndexMergeExecute},
+		{"lance_optimize_index_merge_json", &b.optimizeIndexMergeJSON},
+		{"lance_optimize_index_merge_from_json", &b.optimizeIndexMergeFromJSON},
+		{"lance_optimize_index_merge_close", &b.optimizeIndexMergeClose},
+		{"lance_index_segment_result_plan_id", &b.indexSegmentResultPlanID},
+		{"lance_index_segment_result_read_version", &b.indexSegmentResultReadVersion},
+		{"lance_index_segment_result_group", &b.indexSegmentResultGroup},
+		{"lance_index_segment_result_segment", &b.indexSegmentResultSegment},
+		{"lance_index_segment_result_replace_count", &b.indexSegmentResultReplaceCount},
+		{"lance_index_segment_result_replace_uuid_at", &b.indexSegmentResultReplaceUUIDAt},
+		{"lance_index_segment_result_json", &b.indexSegmentResultJSON},
+		{"lance_index_segment_result_from_json", &b.indexSegmentResultFromJSON},
+		{"lance_index_segment_result_close", &b.indexSegmentResultClose},
 
 		{"lance_dataset_cleanup_old_versions", &b.datasetCleanupOldVersions},
 		{"lance_dataset_cleanup", &b.datasetCleanup},
