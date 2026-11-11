@@ -30,13 +30,22 @@ type namespaceCustomDispatchSpec struct {
 }
 
 type namespaceCustomAdapter struct {
+	mu     sync.RWMutex
 	client CustomNamespaceDispatcher
+}
+
+func (a *namespaceCustomAdapter) dispatcher() CustomNamespaceDispatcher {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.client
 }
 
 // releaseContext is called by the shared generic release callback exactly once
 // after native code drops the final owner of this context.
 func (a *namespaceCustomAdapter) releaseContext() {
+	a.mu.Lock()
 	a.client = nil
+	a.mu.Unlock()
 }
 
 var (
@@ -99,8 +108,13 @@ func namespaceCustomDispatchCallback(ctx uintptr, operation, request *byte, outR
 		return 1
 	}
 	adapter, ok := value.(*namespaceCustomAdapter)
-	if !ok || adapter.client == nil {
-		setCallbackError(outError, fmt.Errorf("custom namespace dispatch context has the wrong type or was released"))
+	if !ok {
+		setCallbackError(outError, fmt.Errorf("custom namespace dispatch context has the wrong type"))
+		return 1
+	}
+	client := adapter.dispatcher()
+	if client == nil {
+		setCallbackError(outError, fmt.Errorf("custom namespace dispatch context was released"))
 		return 1
 	}
 	if outResponse == nil {
@@ -108,7 +122,7 @@ func namespaceCustomDispatchCallback(ctx uintptr, operation, request *byte, outR
 		return 1
 	}
 
-	response, err := adapter.client.DispatchNamespace(goString(operation), []byte(goString(request)))
+	response, err := client.DispatchNamespace(goString(operation), []byte(goString(request)))
 	if err != nil {
 		setCallbackError(outError, err)
 		return 1
