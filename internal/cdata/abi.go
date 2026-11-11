@@ -9,9 +9,10 @@
 //
 // All ownership is explicit:
 //
-//   - Import operations take ownership of the source structure, move it into Go
-//     owned memory, and invoke the producer's release callback exactly once
-//     when the last imported Arrow buffer is released.
+//   - ImportSchema borrows the source schema. It neither moves nor releases it.
+//   - ImportArray and ImportRecordBatch take ownership of the source array,
+//     move it into Go owned memory, and invoke the producer's release callback
+//     exactly once when the last imported Arrow buffer is released.
 //   - Export operations transfer ownership of the emitted structure to the
 //     caller. The caller must invoke the release callback exactly once, either
 //     on the original structure or on a bitwise copy that has been moved out of
