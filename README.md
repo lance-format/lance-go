@@ -238,8 +238,10 @@ cannot be combined with `WithBatchSizeBytes`. The batch buffer and readahead
 sizes must be positive.
 
 `WithIncludeDeletedRows(true)` includes rows deleted from the scanned snapshot.
-It requires `WithRowID(true)`; deleted rows have a null `_rowid`. A filtered
-scan that includes deleted rows must also set `WithUseScalarIndex(false)`.
+It requires `WithRowID(true)`; deleted rows have a null `_rowid`. For filtered
+scans, set `WithUseScalarIndex(false)` to prevent index plans that omit
+tombstoned rows. Enabling scalar indexes does not itself reject a scan when
+no index is selected. Explicit scalar index segments cannot include deleted rows.
 
 `WithFragmentIDs` restricts a scan to the given native fragment IDs. Calling it
 without IDs selects no fragments, and IDs absent from the snapshot contribute

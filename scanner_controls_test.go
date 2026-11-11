@@ -154,31 +154,26 @@ func TestScannerIncludeDeletedRows(t *testing.T) {
 		t.Fatal("include deleted without row IDs succeeded")
 	}
 
-	if scanner, err := dataset.Scan(
-		lance.WithColumns("id"),
-		lance.WithRowID(true),
-		lance.WithIncludeDeletedRows(true),
-		lance.WithSQLFilter("id >= 0"),
-	); err == nil {
-		scanner.Close()
-		t.Fatal("filtered include deleted with scalar indexes enabled succeeded")
-	}
-
-	ids, deleted = scanIDsAndDeleted(t, dataset,
-		lance.WithIncludeDeletedRows(true),
-		lance.WithSQLFilter("id >= 0"),
-		lance.WithUseScalarIndex(false),
-	)
-	if len(ids) != 6 {
-		t.Fatalf("filtered include deleted ids = %v, want six rows", ids)
-	}
-	deletedByID = make(map[int64]bool, len(ids))
-	for i, id := range ids {
-		deletedByID[id] = deleted[i]
-	}
-	for id := int64(0); id <= 5; id++ {
-		if want := id == 5; deletedByID[id] != want {
-			t.Fatalf("filtered id %d rowid deleted = %v, want %v", id, deletedByID[id], want)
+	// This fixture has no scalar index, so enabling index use still selects
+	// a flat scan. Both settings must preserve tombstoned rows.
+	for _, useIndex := range []bool{true, false} {
+		ids, deleted = scanIDsAndDeleted(t, dataset,
+			lance.WithIncludeDeletedRows(true),
+			lance.WithSQLFilter("id >= 0"),
+			lance.WithUseScalarIndex(useIndex),
+		)
+		if len(ids) != 6 {
+			t.Fatalf("filtered include deleted useIndex=%v ids = %v, want six rows", useIndex, ids)
+		}
+		deletedByID = make(map[int64]bool, len(ids))
+		for i, id := range ids {
+			deletedByID[id] = deleted[i]
+		}
+		for id := int64(0); id <= 5; id++ {
+			got, ok := deletedByID[id]
+			if want := id == 5; !ok || got != want {
+				t.Fatalf("filtered id %d present=%v deleted=%v, want present with deleted=%v", id, ok, got, want)
+			}
 		}
 	}
 }
@@ -496,6 +491,24 @@ func TestScannerScalarIndexSegment(t *testing.T) {
 		)
 		if !equalIDs(ids, 4, 5, 6) {
 			t.Fatalf("scalar index useIndex=%v ids = %v, want [4 5 6]", useIndex, ids)
+		}
+	}
+
+	for _, useIndex := range []bool{true, false} {
+		scanner, err := indexed.Scan(
+			lance.WithColumns("id"),
+			lance.WithRowID(true),
+			lance.WithIncludeDeletedRows(true),
+			lance.WithSQLFilter("id >= 4"),
+			lance.WithFragmentIDs(fragments...),
+			lance.WithScalarIndexSegment(segments[0]),
+			lance.WithUseScalarIndex(useIndex),
+		)
+		if scanner != nil {
+			scanner.Close()
+		}
+		if !errors.Is(err, lance.ErrInvalidArgument) {
+			t.Fatalf("scalar index segment with deleted rows useIndex=%v: %v, want ErrInvalidArgument", useIndex, err)
 		}
 	}
 

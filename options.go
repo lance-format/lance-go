@@ -555,8 +555,9 @@ func WithUseStats(enabled bool) ScanOption {
 }
 
 // WithIncludeDeletedRows includes rows deleted from the scanned snapshot.
-// WithRowID(true) is required. Deleted rows have a null _rowid, and filtered
-// scans must also use WithUseScalarIndex(false).
+// WithRowID(true) is required. Deleted rows have a null _rowid. For filtered
+// scans, use WithUseScalarIndex(false) to prevent index plans that omit
+// tombstoned rows. Explicit scalar index segments are incompatible.
 func WithIncludeDeletedRows(enabled bool) ScanOption {
 	return func(config *scanConfig) error {
 		config.includeDeletedRows = &enabled
