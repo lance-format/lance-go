@@ -8,16 +8,22 @@
 //  1. LANCE_LIB_PATH, which must name an existing regular file. When it is
 //     set it is the only candidate; a bad value fails loudly instead of
 //     silently falling back to another library.
-//  2. The platform soname (liblance_c.so on Linux, liblance_c.dylib on
+//  2. In the default (untagged) build, a compiled-in artifact bundle
+//     registered by a generated platform selector. The bundle is verified and
+//     unpacked into a private user cache before it is loaded. Once a bundle is
+//     registered for the running target, cache, extraction, or dlopen errors
+//     fail loudly; the loader does not fall back to the system copy.
+//  3. The platform soname (liblance_c.so on Linux, liblance_c.dylib on
 //     macOS), resolved by the operating system dynamic loader. This honors
 //     LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, ldconfig caches and the usual
 //     system directories.
 //
-// Builds tagged lance_external_lib skip embedded artifact modules and always
-// use the discovery order above. This foundation slice does not ship
-// embedded artifacts yet, so the untagged build currently uses the same
-// discovery order, but the tag is the switch that later artifact modules key
-// off.
+// Builds tagged lance_external_lib omit bundle, cache, and decompression code
+// entirely and use only the environment and system-loader steps.
+//
+// The loader does not ship an artifact bundle itself: generated per-platform
+// artifact modules and the selector files that register them are added by the
+// packaging process. Without one, the default build uses the system loader.
 //
 // The library is loaded at most once per process and is never unloaded.
 // lance-c owns a Tokio runtime, thread-local error state and handles that may
@@ -78,8 +84,9 @@ func Load() (*Library, error) {
 	return lib, nil
 }
 
-// Path returns the configured path when LANCE_LIB_PATH was used, or the
-// platform soname when the system dynamic loader resolved the library.
+// Path returns the configured path when LANCE_LIB_PATH was used, the cache
+// path when a compiled-in bundle was used, or the platform soname when the
+// system dynamic loader resolved the library.
 func (l *Library) Path() string {
 	return l.path
 }
@@ -94,13 +101,6 @@ func (l *Library) Lookup(name string) (uintptr, error) {
 		return 0, fmt.Errorf("loader: symbol %q is missing from %s", name, l.path)
 	}
 	return addr, nil
-}
-
-func open() (*Library, error) {
-	if path := os.Getenv(EnvLibPath); path != "" {
-		return openFromEnv(path)
-	}
-	return openFromSystemPath()
 }
 
 func openFromEnv(path string) (*Library, error) {
