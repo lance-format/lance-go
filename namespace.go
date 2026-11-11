@@ -58,6 +58,9 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 			return nil, invalidError("open namespace", "", "%v", err)
 		}
 	}
+	if config.storageOptionsAccessor != nil {
+		return nil, invalidError("open namespace", "", "WithStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
+	}
 	session, releaseSession, err := acquireSession("open namespace", "", config.session)
 	if err != nil {
 		return nil, err
@@ -111,6 +114,9 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 	if config.hasTransactionProperties {
 		return nil, invalidError("write namespace", "", "WithWriteTransactionProperties is not supported")
 	}
+	if config.storageOptionsAccessor != nil {
+		return nil, invalidError("write namespace", "", "WithWriteStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
+	}
 	session, releaseSession, err := acquireSession("write namespace", "", config.session)
 	if err != nil {
 		return nil, err
@@ -157,6 +163,9 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 	config, err := parseCommitOptions(opts)
 	if err != nil {
 		return nil, invalidError("commit namespace", "", "%v", err)
+	}
+	if config.storageOptionsAccessor != nil {
+		return nil, invalidError("commit namespace", "", "WithCommitStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}
 	session, releaseSession, err := acquireSession("commit namespace", "", config.session)
 	if err != nil {

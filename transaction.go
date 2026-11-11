@@ -747,16 +747,18 @@ type CommitTimeout struct {
 type CommitOption func(*commitConfig) error
 
 type commitConfig struct {
-	useStableRowIDs       *bool
-	enableV2ManifestPaths *bool
-	maxRetries            *uint32
-	retryTimeout          *time.Duration
-	timeout               CommitTimeout
-	detached              bool
-	skipAutoCleanup       bool
-	dataStorageVersion    *string
-	storageOptions        map[string]string
-	session               *Session
+	useStableRowIDs        *bool
+	enableV2ManifestPaths  *bool
+	maxRetries             *uint32
+	retryTimeout           *time.Duration
+	timeout                CommitTimeout
+	detached               bool
+	skipAutoCleanup        bool
+	dataStorageVersion     *string
+	storageOptions         map[string]string
+	storageOptionsSet      bool
+	storageOptionsAccessor *StorageOptionsAccessor
+	session                *Session
 }
 
 // WithCommitStableRowIDs overrides stable row ID generation.
@@ -848,6 +850,19 @@ func WithCommitStorageOptions(options map[string]string) CommitOption {
 			return err
 		}
 		config.storageOptions = copied
+		config.storageOptionsSet = options != nil
+		return nil
+	}
+}
+
+// WithCommitStorageOptionsAccessor supplies a reusable dynamic accessor for a
+// commit. It is mutually exclusive with WithCommitStorageOptions.
+func WithCommitStorageOptionsAccessor(accessor *StorageOptionsAccessor) CommitOption {
+	return func(config *commitConfig) error {
+		if accessor == nil {
+			return fmt.Errorf("storage options accessor must not be nil")
+		}
+		config.storageOptionsAccessor = accessor
 		return nil
 	}
 }
@@ -887,6 +902,11 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	if err != nil {
 		return nil, invalidError("commit", uri, "%v", err)
 	}
+	storageAccessor, releaseStorage, err := resolveStorageOptions("commit", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStorage()
 	session, releaseSession, err := acquireSession("commit", uri, config.session)
 	if err != nil {
 		return nil, err
@@ -897,7 +917,12 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	}
 	defer tx.res.release()
 
-	native, err := ffi.Commit(uri, tx.native, ffiCommitOptions(config, session))
+	var native *ffi.Dataset
+	if storageAccessor != nil {
+		native, err = ffi.CommitWithAccessor(uri, tx.native, ffiCommitOptions(config, session), storageAccessor)
+	} else {
+		native, err = ffi.Commit(uri, tx.native, ffiCommitOptions(config, session))
+	}
 	if err != nil {
 		return nil, wrapError("commit", uri, err)
 	}
@@ -923,6 +948,11 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	if err != nil {
 		return nil, nil, invalidError("commit batch", uri, "%v", err)
 	}
+	storageAccessor, releaseStorage, err := resolveStorageOptions("commit batch", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer releaseStorage()
 	for i, tx := range txs {
 		if tx == nil {
 			return nil, nil, invalidError("commit batch", uri, "transaction %d must not be nil", i)
@@ -949,7 +979,13 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	for i, tx := range txs {
 		nativeTxs[i] = tx.native
 	}
-	nativeDataset, nativeTransaction, err := ffi.CommitBatch(uri, nativeTxs, ffiCommitOptions(config, session))
+	var nativeDataset *ffi.Dataset
+	var nativeTransaction *ffi.Transaction
+	if storageAccessor != nil {
+		nativeDataset, nativeTransaction, err = ffi.CommitBatchWithAccessor(uri, nativeTxs, ffiCommitOptions(config, session), storageAccessor)
+	} else {
+		nativeDataset, nativeTransaction, err = ffi.CommitBatch(uri, nativeTxs, ffiCommitOptions(config, session))
+	}
 	if err != nil {
 		return nil, nil, wrapError("commit batch", uri, err)
 	}
@@ -1019,19 +1055,30 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 	if config.branch != "" {
 		return nil, invalidError("write uncommitted", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
+	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStorage()
 	session, releaseSession, err := acquireSession("write uncommitted", uri, config.session)
 	if err != nil {
 		return nil, err
 	}
 	defer releaseSession()
 
-	native, err := ffi.WriteUncommitted(uri, reader, ffi.WriteUncommittedOptions{
+	uncommittedOptions := ffi.WriteUncommittedOptions{
 		Write:                 nativeWriteOptions(config),
 		StorageOptions:        config.storageOptions,
 		TransactionProperties: config.transactionProperties,
 		HasProperties:         config.hasTransactionProperties,
 		Session:               session,
-	})
+	}
+	var native *ffi.Transaction
+	if storageAccessor != nil {
+		native, err = ffi.WriteUncommittedWithAccessor(uri, reader, uncommittedOptions, storageAccessor)
+	} else {
+		native, err = ffi.WriteUncommitted(uri, reader, uncommittedOptions)
+	}
 	if err != nil {
 		return nil, wrapError("write uncommitted", uri, err)
 	}

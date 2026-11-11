@@ -36,14 +36,13 @@ func (a *namespaceContextAdapter) releaseContext() {}
 var (
 	namespaceContextCallbacksOnce sync.Once
 	callbackNamespaceProvide      uintptr
-	callbackNamespaceRelease      uintptr
 )
 
 func initNamespaceContextCallbacks() {
 	namespaceContextCallbacksOnce.Do(func() {
 		initOwnedReleaseCallback()
+		initContextReleaseCallback()
 		callbackNamespaceProvide = purego.NewCallback(namespaceContextProvideCallback)
-		callbackNamespaceRelease = purego.NewCallback(namespaceContextReleaseCallback)
 	})
 }
 
@@ -58,7 +57,7 @@ func newNamespaceContextProviderSpec(provider ContextProvider) *namespaceContext
 	adapter := &namespaceContextAdapter{provider: provider}
 	return &namespaceContextProviderSpec{
 		ProvideContext: callbackNamespaceProvide,
-		Release:        callbackNamespaceRelease,
+		Release:        callbackContextRelease,
 		ProviderCtx:    uintptr(handle.New(adapter)),
 	}
 }
@@ -73,7 +72,7 @@ func namespaceContextProvideCallback(ctx uintptr, operation, objectID *byte, out
 			if outResult != nil {
 				*outResult = ownedString{}
 			}
-			setCallbackError(outError, fmt.Errorf("namespace context provider panic: %v", recovered))
+			setCallbackError(outError, fmt.Errorf("namespace context provider panic"))
 			ret = 1
 		}
 	}()
@@ -111,20 +110,5 @@ func namespaceContextProvideCallback(ctx uintptr, operation, objectID *byte, out
 		return 1
 	}
 	*outResult = newOwnedString(string(encoded))
-	return 0
-}
-
-func namespaceContextReleaseCallback(ctx uintptr) (ret uintptr) {
-	if ctx == 0 {
-		return 0
-	}
-	defer func() {
-		_ = recover()
-	}()
-	if value, ok := handle.Take(uint64(ctx)); ok {
-		if releaser, ok := value.(interface{ releaseContext() }); ok {
-			releaser.releaseContext()
-		}
-	}
 	return 0
 }

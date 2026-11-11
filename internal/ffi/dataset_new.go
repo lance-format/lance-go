@@ -14,6 +14,9 @@ import (
 type OpenOptions struct {
 	// StorageOptions are passed to lance-c as NULL-terminated key/value pairs.
 	StorageOptions map[string]string
+	// StorageOptionsAccessor is a reusable native accessor. It is mutually
+	// exclusive with StorageOptions.
+	StorageOptionsAccessor *StorageOptionsAccessor
 	// Version selects a dataset version. Zero selects the latest version.
 	Version uint64
 	// Session shares caches with other datasets. It may be nil.
@@ -34,6 +37,12 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	if err := validateCString(uri); err != nil {
 		return nil, err
 	}
+	if opts.StorageOptions != nil && opts.StorageOptionsAccessor != nil {
+		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if opts.StorageOptionsAccessor != nil && opts.StorageOptionsAccessor.Handle() == 0 {
+		return nil, ErrClosed
+	}
 	storageList, err := storageOptionList(opts.StorageOptions)
 	if err != nil {
 		return nil, err
@@ -50,7 +59,15 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	defer runtime.UnlockOSThread()
 
 	var handle uintptr
-	if opts.Session != nil {
+	if opts.StorageOptionsAccessor != nil {
+		rawOptions := datasetOpenOptions{
+			Version:                opts.Version,
+			StorageOptionsAccessor: opts.StorageOptionsAccessor.Handle(),
+		}
+		handle = b.datasetOpenWithOptions(uri, &rawOptions, sessionHandle)
+		runtime.KeepAlive(&rawOptions)
+		runtime.KeepAlive(opts.StorageOptionsAccessor)
+	} else if opts.Session != nil {
 		handle = b.datasetOpenWithSession(uri, storageList.ptrs, opts.Version, sessionHandle)
 	} else {
 		handle = b.datasetOpen(uri, storageList.ptrs, opts.Version)

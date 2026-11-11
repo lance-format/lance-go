@@ -63,3 +63,40 @@ func TestStorageOptionsInputPointers(t *testing.T) {
 		})
 	}
 }
+
+func TestStorageOptionsInputNilPresence(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		initial    map[string]string
+		hasInitial bool
+		wantInput  bool
+	}{
+		{name: "absent", initial: nil, hasInitial: false, wantInput: false},
+		{name: "present empty", initial: map[string]string{}, hasInitial: true, wantInput: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var input *storageOptionsInput
+			b := &bindings{
+				storageAccessorNew: func(got *storageOptionsInput, provider uintptr) uintptr {
+					if provider != 0 {
+						t.Fatal("static accessor passed a provider")
+					}
+					input = got
+					return 1
+				},
+				storageAccessorClose: func(uintptr) {},
+			}
+			accessor, err := newStorageOptionsAccessorWithPresence(b, tc.initial, tc.hasInitial, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			accessor.Close()
+			if (input != nil) != tc.wantInput {
+				t.Fatalf("input presence = %v, want %v", input != nil, tc.wantInput)
+			}
+			if input != nil && input.Count != 0 {
+				t.Fatalf("input count = %d, want 0", input.Count)
+			}
+		})
+	}
+}

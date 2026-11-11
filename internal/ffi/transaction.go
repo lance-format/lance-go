@@ -1164,6 +1164,23 @@ type commitOptions struct {
 
 // Commit publishes one transaction through CommitBuilder::execute.
 func Commit(uri string, tx *Transaction, opts CommitOptions) (*Dataset, error) {
+	return commit(uri, tx, opts, nil)
+}
+
+// CommitWithAccessor publishes one transaction using a reusable storage
+// options accessor. The returned dataset retains the accessor for later I/O;
+// the transaction metadata does not.
+func CommitWithAccessor(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	return commit(uri, tx, opts, accessor)
+}
+
+func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	if opts.StorageOptions != nil && accessor != nil {
+		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if accessor != nil && accessor.Handle() == 0 {
+		return nil, ErrClosed
+	}
 	if tx == nil {
 		return nil, fmt.Errorf("ffi: transaction must not be nil")
 	}
@@ -1185,7 +1202,13 @@ func Commit(uri string, tx *Transaction, opts CommitOptions) (*Dataset, error) {
 
 	var out uintptr
 	runtime.LockOSThread()
-	rc := tx.b.transactionCommit(uri, handle, raw, storageList.ptrs, session, &out)
+	var rc int32
+	if accessor != nil {
+		rc = tx.b.transactionCommitWithAccessor(uri, handle, raw, accessor.Handle(), session, &out)
+		runtime.KeepAlive(accessor)
+	} else {
+		rc = tx.b.transactionCommit(uri, handle, raw, storageList.ptrs, session, &out)
+	}
 	storageList.keepAlive()
 	versionList.keepAlive()
 	runtime.KeepAlive(raw)
@@ -1208,6 +1231,22 @@ func Commit(uri string, tx *Transaction, opts CommitOptions) (*Dataset, error) {
 
 // CommitBatch publishes append transactions through CommitBuilder::execute_batch.
 func CommitBatch(uri string, txs []*Transaction, opts CommitOptions) (*Dataset, *Transaction, error) {
+	return commitBatch(uri, txs, opts, nil)
+}
+
+// CommitBatchWithAccessor publishes append transactions using a reusable
+// storage options accessor. The returned dataset retains the accessor.
+func CommitBatchWithAccessor(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, *Transaction, error) {
+	return commitBatch(uri, txs, opts, accessor)
+}
+
+func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *StorageOptionsAccessor) (*Dataset, *Transaction, error) {
+	if opts.StorageOptions != nil && accessor != nil {
+		return nil, nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if accessor != nil && accessor.Handle() == 0 {
+		return nil, nil, ErrClosed
+	}
 	b, err := load()
 	if err != nil {
 		return nil, nil, err
@@ -1241,7 +1280,13 @@ func CommitBatch(uri string, txs []*Transaction, opts CommitOptions) (*Dataset, 
 
 	var outDataset, outTransaction uintptr
 	runtime.LockOSThread()
-	rc := b.transactionCommitBatch(uri, handles, uint64(len(handles)), raw, storageList.ptrs, session, &outDataset, &outTransaction)
+	var rc int32
+	if accessor != nil {
+		rc = b.transactionCommitBatchWithAccessor(uri, handles, uint64(len(handles)), raw, accessor.Handle(), session, &outDataset, &outTransaction)
+		runtime.KeepAlive(accessor)
+	} else {
+		rc = b.transactionCommitBatch(uri, handles, uint64(len(handles)), raw, storageList.ptrs, session, &outDataset, &outTransaction)
+	}
 	storageList.keepAlive()
 	versionList.keepAlive()
 	runtime.KeepAlive(raw)
@@ -1339,6 +1384,23 @@ type uncommittedWriteOptions struct {
 
 // WriteUncommitted writes reader as uncommitted Lance data files.
 func WriteUncommitted(uri string, reader array.RecordReader, opts WriteUncommittedOptions) (*Transaction, error) {
+	return writeUncommitted(uri, reader, opts, nil)
+}
+
+// WriteUncommittedWithAccessor writes uncommitted data files using a reusable
+// storage options accessor. The transaction metadata does not retain the
+// accessor; pass it again when committing.
+func WriteUncommittedWithAccessor(uri string, reader array.RecordReader, opts WriteUncommittedOptions, accessor *StorageOptionsAccessor) (*Transaction, error) {
+	return writeUncommitted(uri, reader, opts, accessor)
+}
+
+func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommittedOptions, accessor *StorageOptionsAccessor) (*Transaction, error) {
+	if opts.StorageOptions != nil && accessor != nil {
+		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if accessor != nil && accessor.Handle() == 0 {
+		return nil, ErrClosed
+	}
 	b, err := load()
 	if err != nil {
 		return nil, err
@@ -1440,7 +1502,13 @@ func WriteUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 
 	runtime.LockOSThread()
 	var out uintptr
-	rc := b.datasetWriteUncommittedStream(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, storageList.ptrs, session, &out)
+	var rc int32
+	if accessor != nil {
+		rc = b.datasetWriteUncommittedStreamWithAccessor(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, accessor.Handle(), session, &out)
+		runtime.KeepAlive(accessor)
+	} else {
+		rc = b.datasetWriteUncommittedStream(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, storageList.ptrs, session, &out)
+	}
 	streamConsumed = true
 	versionList.keepAlive()
 	storageList.keepAlive()
