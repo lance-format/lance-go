@@ -64,8 +64,9 @@ The script reads the pinned commit and header SHA-256 from
 `internal/ffi/upstream.go`, clones/fetches `lance-c` into
 `${XDG_CACHE_HOME:-$HOME/.cache}/lance-c-build/src`, checks out the pinned
 commit, verifies the header hash, builds with CMake/Corrosion in Release mode,
-and installs into `dist/lance-c`. Use `--out DIR` to choose another prefix and
-`LANCE_C_WORK_DIR` to move the checkout/build cache.
+and installs into `dist/lance-c`. The output directory must not already exist.
+Use `--out DIR` to choose another prefix and `LANCE_C_WORK_DIR` to move the
+checkout/build cache. Build intermediates are reused across runs.
 
 Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.94.0 or newer,
 network access for crates and CMake's Corrosion dependency. The first build
@@ -155,8 +156,8 @@ scripts/           build-lance-c.sh, check-abi-symbols.go
 ```
 
 Planned boundaries: `internal/cdata` will own Arrow C Data structures and
-release callbacks; it must not be imported by `internal/loader` or
-`internal/ffi`. Native calls and error extraction stay in `internal/ffi`.
+release callbacks without depending on the loader or Lance FFI. Native calls
+and error extraction stay in `internal/ffi`.
 
 ## Known gaps
 

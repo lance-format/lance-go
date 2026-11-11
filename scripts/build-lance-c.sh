@@ -22,9 +22,8 @@ Environment:
   LANCE_C_UPSTREAM_URL  git remote to clone (default: pinned GitHub repository)
   JOBS                  parallel build jobs (default: CPU count)
 
-The upstream checkout is cached across runs and fetched/checked out at the
-pinned commit. The build directory is recreated on every run; DIR is replaced
-only after a successful build.
+The upstream checkout and build directory are reused across runs. DIR must
+not already exist; choose a new output prefix to preserve an earlier build.
 EOF
 }
 
@@ -55,6 +54,8 @@ while [[ $# -gt 0 ]]; do
 		;;
 	esac
 done
+
+[[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output already exists: $out_dir; choose a new --out directory"
 
 for cmd in git cmake cargo; do
 	command -v "$cmd" >/dev/null 2>&1 || die "required command not found: $cmd"
@@ -90,9 +91,10 @@ jobs=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
 
 src_dir="$work_dir/src"
 build_dir="$work_dir/build"
-stage_dir="$work_dir/stage"
 
 mkdir -p "$work_dir"
+stage_dir=$(mktemp -d "$work_dir/stage.XXXXXX")
+trap 'rm -rf -- "$stage_dir"' EXIT
 
 if [[ ! -d "$src_dir/.git" ]]; then
 	printf 'build-lance-c: cloning %s into %s\n' "$upstream_url" "$src_dir"
@@ -119,7 +121,6 @@ actual_header_sha=$(sha256_file "$source_header")
 	die "header sha256 at $upstream_commit is $actual_header_sha, want $header_sha256; update the pin in $upstream_go"
 
 printf 'build-lance-c: building with %s job(s); this compiles all of Lance and takes a while\n' "$jobs"
-rm -rf "$build_dir" "$stage_dir"
 cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
 cmake --build "$build_dir" --parallel "$jobs"
 cmake --install "$build_dir" --prefix "$stage_dir"
@@ -133,7 +134,7 @@ actual_header_sha=$(sha256_file "$installed_header")
 [[ $actual_header_sha == "$header_sha256" ]] ||
 	die "installed header sha256 is $actual_header_sha, want $header_sha256"
 
-rm -rf "$out_dir"
+[[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output appeared during build: $out_dir"
 mkdir -p "$(dirname "$out_dir")"
 mv "$stage_dir" "$out_dir"
 
