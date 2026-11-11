@@ -196,11 +196,10 @@ func exportModel(arr arrow.Array) (*cdata.ArrowArray, *cdata.ArrowSchema, error)
 	if err := cdata.ExportArray(arr, raw); err != nil {
 		return nil, nil, fmt.Errorf("ffi: export index model array: %w", err)
 	}
-	schema := arrow.NewSchema([]arrow.Field{field}, nil)
 	rawSchema := &cdata.ArrowSchema{}
-	if err := cdata.ExportSchema(schema, rawSchema); err != nil {
+	if err := cdata.ExportField(field, rawSchema); err != nil {
 		cdata.ReleaseArray(raw)
-		return nil, nil, fmt.Errorf("ffi: export index model schema: %w", err)
+		return nil, nil, fmt.Errorf("ffi: export index model field: %w", err)
 	}
 	return raw, rawSchema, nil
 }
