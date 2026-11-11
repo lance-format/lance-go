@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
@@ -244,7 +243,7 @@ func buildVectorIndexOptions(opts *VectorIndexOptions) (*vectorIndexOptions, fun
 			return fail(err)
 		}
 		keep = append(keep, list)
-		out.precomputedPartitionsFile = (*byte)(unsafe.Pointer(list.ptrs[0]))
+		out.precomputedPartitionsFile = &list.bufs[0][0]
 	}
 	if opts.PrecomputedShuffleBuffers != nil {
 		pathList, err := newCStringList([]string{opts.PrecomputedShuffleBuffers.Path})
@@ -253,7 +252,7 @@ func buildVectorIndexOptions(opts *VectorIndexOptions) (*vectorIndexOptions, fun
 		}
 		keep = append(keep, pathList)
 		raw := &precomputedShuffleBuffers{
-			path:  (*byte)(unsafe.Pointer(pathList.ptrs[0])),
+			path:  &pathList.bufs[0][0],
 			count: uint64(len(opts.PrecomputedShuffleBuffers.Buffers)),
 		}
 		if len(opts.PrecomputedShuffleBuffers.Buffers) > 0 {
@@ -280,7 +279,7 @@ func buildVectorIndexOptions(opts *VectorIndexOptions) (*vectorIndexOptions, fun
 			return fail(err)
 		}
 		keep = append(keep, list)
-		out.rabitqModelJSON = (*byte)(unsafe.Pointer(list.ptrs[0]))
+		out.rabitqModelJSON = &list.bufs[0][0]
 	}
 	if opts.RuntimeHints != nil {
 		mapping, lists, err := buildStringMap(opts.RuntimeHints)
@@ -569,7 +568,7 @@ func (d *Dataset) PrewarmIndex(name string, opts *PrewarmOptions) error {
 		segmentCount:        uint64(len(opts.SegmentUUIDs) / 16),
 	}
 	if len(opts.SegmentUUIDs) > 0 {
-		raw.segmentUUIDs = (*byte)(unsafe.Pointer(&opts.SegmentUUIDs[0]))
+		raw.segmentUUIDs = &opts.SegmentUUIDs[0]
 	}
 	runtime.LockOSThread()
 	rc := d.b.datasetPrewarmIndexWithOptions(handle, name, raw)
