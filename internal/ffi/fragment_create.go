@@ -157,7 +157,7 @@ func writeFragments(b *bindings, uri string, reader array.RecordReader, options 
 	for i, handle := range handles {
 		if handle == 0 {
 			for _, adopted := range fragments[:i] {
-				_ = adopted.Close()
+				adopted.Close()
 			}
 			freeFragmentArray(b, outFragments, count)
 			return nil, fmt.Errorf("ffi: lance_fragment_create_many returned a NULL fragment handle at index %d", i)
