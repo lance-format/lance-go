@@ -390,12 +390,12 @@ func (m *OptimizeIndexMerge) ReplaceCount() uint64 {
 }
 
 // ReplacedUUID returns one replaced segment's UUID.
-func (m *OptimizeIndexMerge) ReplacedUUID(index uint64) (index.UUID, error) {
-	if index >= uint64(len(m.replaced)) {
+func (m *OptimizeIndexMerge) ReplacedUUID(position uint64) (index.UUID, error) {
+	if position >= uint64(len(m.replaced)) {
 		return index.UUID{}, invalidError("optimize index merge replace", m.uri,
-			"index %d out of range [0,%d)", index, len(m.replaced))
+			"index %d out of range [0,%d)", position, len(m.replaced))
 	}
-	return m.replaced[index], nil
+	return m.replaced[position], nil
 }
 
 // JSON returns the native serialized merge JSON.
@@ -535,12 +535,12 @@ func (r *IndexSegmentResult) ReplaceCount() uint64 {
 }
 
 // ReplacedUUID returns one replaced segment's UUID.
-func (r *IndexSegmentResult) ReplacedUUID(index uint64) (index.UUID, error) {
-	if index >= uint64(len(r.replaced)) {
+func (r *IndexSegmentResult) ReplacedUUID(position uint64) (index.UUID, error) {
+	if position >= uint64(len(r.replaced)) {
 		return index.UUID{}, invalidError("index segment result replace", r.uri,
-			"index %d out of range [0,%d)", index, len(r.replaced))
+			"index %d out of range [0,%d)", position, len(r.replaced))
 	}
-	return r.replaced[index], nil
+	return r.replaced[position], nil
 }
 
 // JSON returns the native serialized result JSON.
