@@ -722,6 +722,16 @@ namespace-managed writes. Opened datasets and REST adapters retain native
 ownership and remain usable after their namespace is closed.
 
 `namespace.NewRest` takes native properties such as `uri`.
+`namespace.NewCustom` adapts a Go `namespace.CustomClient` for native
+`DescribeTable`, `DescribeTableVersion`, `CreateTableVersion`, and
+`ListTableVersions` calls. The native operation string selects the client
+method, so overlapping request fields cannot misroute a call. The namespace
+retains the client until the final native owner is released; it does not close
+the client. Callbacks run synchronously on the native caller's goroutine
+without context propagation and must be safe for concurrent use. A callback
+must not close the namespace that invoked it, because Close waits for in-flight
+callbacks. Other namespace operations keep the native `Unsupported` error.
+
 `WithDynamicContextProvider` supplies per-operation request context. The native
 contract logs provider errors or panics and continues with empty context; do
 not rely on provider failure to deny a request. Context cancellation is checked
@@ -730,9 +740,7 @@ before synchronous native calls and does not interrupt an operation in flight.
 Models preserve absent, explicit-null and concrete values using pointers to
 `namespace.Nullable[T]`. Native namespace errors retain their separate error
 code space, including code zero (`Unsupported`). The standalone `namespace`
-package activates the same platform bundle as the root package. Custom Go
-namespace implementations require the upstream callback interface tracked in
-[lance-c#180](https://github.com/lance-format/lance-c/issues/180).
+package activates the same platform bundle as the root package.
 
 ## How loading works
 
@@ -817,13 +825,14 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 07cd7d0cd06d65c5c643972267cc7981decef067:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show 08d28ac304e6e8d7d23bf2f0d6004091c0728451:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
-The published `artifacts/linux-amd64` module records the same upstream commit
-and header SHA-256. Packaging verifies the header against this pin; a library
-built from a different commit is not detectable at runtime.
+Packaging verifies the header against this pin; a library built from a
+different commit is not detectable at runtime. The `artifacts/linux-amd64`
+module must be regenerated when this pin changes and carries the previous pin
+until that happens.
 
 The checker refuses a header whose SHA-256 differs from the pin, then verifies
 that every bound symbol is declared, that C and Go agree on arity, and that

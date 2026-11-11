@@ -450,6 +450,7 @@ type bindings struct {
 	namespaceDirectoryNew         func(propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
 	namespaceRestNew              func(propertiesJSON string, spec *namespaceContextProviderSpec) uintptr
 	namespaceConnectNew           func(implName, propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceCustomDispatchNew    func(spec *namespaceCustomDispatchSpec) uintptr
 	namespaceClose                func(namespace uintptr)
 	namespaceCall                 func(namespace uintptr, operation, requestJSON string, requestBytes []byte, requestBytesLen uint64, result *lanceNamespaceResult) int32
 	datasetOpenNamespace          func(namespace uintptr, tableIDJSON, storageOptionsJSON string, version uint64, session uintptr) uintptr
@@ -902,6 +903,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_namespace_directory_new", &b.namespaceDirectoryNew},
 		{"lance_namespace_rest_new", &b.namespaceRestNew},
 		{"lance_namespace_connect_new", &b.namespaceConnectNew},
+		{"lance_namespace_custom_dispatch_new", &b.namespaceCustomDispatchNew},
 		{"lance_namespace_close", &b.namespaceClose},
 		{"lance_namespace_call", &b.namespaceCall},
 		{"lance_dataset_open_namespace", &b.datasetOpenNamespace},
