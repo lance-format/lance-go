@@ -18,15 +18,15 @@ type FileReader struct {
 
 // OpenFileReader opens uri as a raw Lance file. A nil storage accessor selects
 // native None. Scheduler nil selects native defaults.
-func OpenFileReader(uri string, storage *StorageOptionsAccessor, options *FileReaderOptions, scheduler *FileSchedulerConfig) (*FileReader, error) {
+func OpenFileReader(uri string, storage *StorageOptionsAccessor, options *FileReaderOptions, session *Session, scheduler *FileSchedulerConfig) (*FileReader, error) {
 	b, err := load()
 	if err != nil {
 		return nil, err
 	}
-	return openFileReader(b, uri, storage, options, scheduler)
+	return openFileReader(b, uri, storage, options, session, scheduler)
 }
 
-func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, options *FileReaderOptions, scheduler *FileSchedulerConfig) (*FileReader, error) {
+func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, options *FileReaderOptions, session *Session, scheduler *FileSchedulerConfig) (*FileReader, error) {
 	if err := validateCString(uri); err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, op
 	}
 
 	runtime.LockOSThread()
-	handle := b.fileReaderOpen(uri, storage.Handle(), rawOptions, 0, rawScheduler)
+	handle := b.fileReaderOpen(uri, storage.Handle(), rawOptions, SessionHandle(session), rawScheduler)
 	keep.keepAlive()
 	if handle == 0 {
 		nativeErr := b.takeError()

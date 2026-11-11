@@ -484,7 +484,7 @@ func cClass(typ string) string {
 	switch typ {
 	case "void":
 		return "void"
-	case "int", "int32_t", "LanceErrorCode", "LancePollStatus", "LanceScalarIndexType", "LanceMetadataUpdateMode", "LanceDataType", "LanceMetricType", "LanceApproxMode":
+	case "int", "int32_t", "LanceErrorCode", "LancePollStatus", "LanceScalarIndexType", "LanceMetadataUpdateMode", "LanceDataType", "LanceMetricType", "LanceApproxMode", "LanceBlobHandling", "LanceMaterializationStyle":
 		return "int32"
 	case "LanceWaker", "LanceScanStatisticsCallback", "LanceIndexBuildProgressCallback":
 		return "pointer"
