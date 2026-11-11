@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -233,8 +234,10 @@ func TestReadBlobsCancellationAndErrors(t *testing.T) {
 	if _, err := dataset.ReadBlobs(context.Background(), "blob", lance.BlobRowSelectorIDs, []uint64{0}, &lance.BlobReadOptions{Order: lance.BlobReadOrder(7)}); err == nil {
 		t.Fatal("invalid order succeeded")
 	}
-	if _, err := dataset.ReadBlobs(context.Background(), "missing", lance.BlobRowSelectorIDs, []uint64{0}, nil); !errors.Is(err, lance.ErrInvalidArgument) {
-		t.Fatalf("missing column error = %v, want ErrInvalidArgument", err)
+	// The pinned native ABI maps FieldNotFound to Internal. Preserve its code
+	// and verify the diagnostic identifies the requested missing column.
+	if _, err := dataset.ReadBlobs(context.Background(), "missing", lance.BlobRowSelectorIDs, []uint64{0}, nil); !errors.Is(err, lance.ErrInternal) || !strings.Contains(err.Error(), "Field 'missing' not found") {
+		t.Fatalf("missing column error = %v, want native Internal with field diagnostic", err)
 	}
 
 	if err := dataset.Close(); err != nil {

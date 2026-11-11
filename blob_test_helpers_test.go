@@ -95,7 +95,7 @@ func blobTestSchema(field arrow.Field) *arrow.Schema {
 func createBlobFragment(t *testing.T, uri string, schema *arrow.Schema, firstID int, values []blobTestValue) *lance.Dataset {
 	t.Helper()
 	record := makeBlobRecord(t, schema, firstID, values)
-	dataset, err := lance.Create(context.Background(), uri, makeReader(t, schema, record))
+	dataset, err := lance.Create(context.Background(), uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{EnableStableRowIDs: true}))
 	if err != nil {
 		t.Fatalf("Create blob dataset: %v", err)
 	}
@@ -105,7 +105,7 @@ func createBlobFragment(t *testing.T, uri string, schema *arrow.Schema, firstID 
 func appendBlobFragment(t *testing.T, uri string, schema *arrow.Schema, firstID int, values []blobTestValue) *lance.Dataset {
 	t.Helper()
 	record := makeBlobRecord(t, schema, firstID, values)
-	dataset, err := lance.Append(context.Background(), uri, makeReader(t, schema, record))
+	dataset, err := lance.Append(context.Background(), uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{EnableStableRowIDs: true}))
 	if err != nil {
 		t.Fatalf("Append blob fragment: %v", err)
 	}
