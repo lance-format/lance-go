@@ -18,6 +18,66 @@ import (
 	lance "github.com/lance-format/lance-go"
 )
 
+func TestWriteCleanupPolicyAcrossOptionPaths(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	session, err := lance.NewSession(0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	for _, route := range []struct {
+		name string
+		opts []lance.WriteOption
+	}{
+		{"default", nil},
+		{"session", []lance.WriteOption{lance.WithWriteSession(session)}},
+		{"progress", []lance.WriteOption{lance.WithWriteParams(lance.WriteParams{
+			Progress: &lance.WriteProgress{WriteStats: func(lance.WriteStats) {}},
+		})}},
+	} {
+		for _, explicit := range []bool{false, true} {
+			name := "unset"
+			if explicit {
+				name = "explicit"
+			}
+			t.Run(route.name+"/"+name, func(t *testing.T) {
+				opts := append([]lance.WriteOption(nil), route.opts...)
+				if explicit {
+					opts = append(opts, lance.WithAutoCleanup(lance.AutoCleanupParams{Interval: 7, OlderThan: 48 * time.Hour}))
+				}
+				uri := filepath.Join(t.TempDir(), "data.lance")
+				schema := testSchema()
+				dataset, err := lance.Create(ctx, uri, makeReader(t, schema,
+					makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), opts...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := dataset.Close(); err != nil {
+					t.Fatal(err)
+				}
+				reopened, err := lance.Open(ctx, uri)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reopened.Close()
+				config, err := reopened.Config()
+				if err != nil {
+					t.Fatal(err)
+				}
+				interval, hasInterval := config["lance.auto_cleanup.interval"]
+				olderThan, hasOlderThan := config["lance.auto_cleanup.older_than"]
+				if hasInterval != explicit || hasOlderThan != explicit {
+					t.Fatalf("cleanup policy = %v, explicit = %v", config, explicit)
+				}
+				if explicit && (interval != "7" || olderThan == "") {
+					t.Fatalf("explicit cleanup policy = %v", config)
+				}
+			})
+		}
+	}
+}
+
 func TestNativeWriteOptionsCommitPaths(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()

@@ -11,6 +11,9 @@ import (
 
 // Write writes all batches from reader using the supplied options. The
 // default mode is Create.
+// Auto-cleanup is unset unless WithAutoCleanup is supplied; session and
+// progress options do not change this default. Append and Overwrite preserve
+// the existing dataset's stored cleanup policy.
 //
 // reader is borrowed and advanced during the call, possibly only partially
 // when a write fails. The caller retains ownership and must release reader
