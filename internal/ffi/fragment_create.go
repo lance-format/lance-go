@@ -176,10 +176,6 @@ func writeFragments(b *bindings, uri string, reader array.RecordReader, options 
 // physicalRows is nil to let native code infer the row count; a non-nil
 // pointer is forwarded explicitly, including a pointer to zero.
 func CreateFragmentFromFile(dataset *Dataset, filename string, fragmentID uint64, physicalRows *uint64) (*Fragment, error) {
-	b, err := load()
-	if err != nil {
-		return nil, err
-	}
 	if dataset == nil {
 		return nil, fmt.Errorf("ffi: dataset must not be nil")
 	}
@@ -193,6 +189,7 @@ func CreateFragmentFromFile(dataset *Dataset, filename string, fragmentID uint64
 
 	runtime.LockOSThread()
 	var handle uintptr
+	b := dataset.b
 	rc := b.fragmentCreateFromFile(datasetHandle, filename, fragmentID, physicalRows, &handle)
 	runtime.KeepAlive(physicalRows)
 	if rc != 0 {

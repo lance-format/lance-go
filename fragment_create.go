@@ -10,9 +10,12 @@ import (
 
 // FragmentCreateOption configures CreateFragment and WriteFragments.
 //
-// It aliases WriteOption so callers can reuse WithWriteParams,
-// WithWriteStorageOptions, WithWriteSession, WithAutoCleanup and related
-// options alongside WithFragmentSchema.
+// It aliases WriteOption so callers can reuse file-layout WriteParams,
+// WithWriteStorageOptions, WithWriteSession and WithFragmentSchema. Creation
+// does not commit: WithAutoCleanup, WithSkipAutoCleanup(true), stable row ID
+// generation and transaction properties are rejected. Configure publication
+// with CommitTransaction options, including WithCommitStableRowIDs and
+// WithCommitSkipAutoCleanup.
 type FragmentCreateOption = WriteOption
 
 // CreateFragment writes one uncommitted fragment from reader and returns
@@ -28,9 +31,10 @@ type FragmentCreateOption = WriteOption
 // Without WithFragmentSchema, native code infers the schema. With
 // WithFragmentSchema, the native schema is cloned before the write and keeps
 // field IDs that an Arrow schema cannot represent. The caller keeps ownership
-// of reader: native code consumes its stream on every return path and releases
-// the exporter's retained reference. The caller must still release reader; no
-// batches remain to read.
+// of reader: native code takes ownership of the exported stream and releases
+// its retained reference on every return path. The caller must still release
+// reader. A successful write exhausts the input; an error may leave it partially
+// read, including batches prefetched during schema inference.
 func CreateFragment(ctx context.Context, uri string, fragmentID uint64, reader array.RecordReader, opts ...FragmentCreateOption) (*Fragment, error) {
 	const op = "create fragment"
 	return createFragment(ctx, op, uri, fragmentID, reader, opts)
@@ -92,7 +96,8 @@ func WriteFragments(ctx context.Context, uri string, reader array.RecordReader, 
 //
 // The dataset supplies the snapshot, schema and storage options used to read
 // the file. physicalRows is nil to let native code infer the row count. A
-// non-nil pointer is forwarded explicitly, including a pointer to zero.
+// non-nil pointer is forwarded explicitly, including a pointer to zero. Native
+// treats this as a hint for legacy files; V2 files use their stored row count.
 //
 // Native code rejects files written with the Blob v2 layout because their
 // stored schema cannot be projected without the descriptor columns; that
@@ -167,6 +172,9 @@ func parseFragmentCreateConfig(op, uri string, opts []WriteOption) (writeConfig,
 		if err := option(&config); err != nil {
 			return config, invalidError(op, uri, "%v", err)
 		}
+	}
+	if config.autoCleanup != nil || config.skipAutoCleanup || config.params.EnableStableRowIDs {
+		return config, invalidError(op, uri, "cleanup and stable row ID options apply at commit, not fragment creation")
 	}
 	if config.hasTransactionProperties {
 		return config, invalidError(op, uri, "WithWriteTransactionProperties is not supported by fragment creation")

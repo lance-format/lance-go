@@ -488,16 +488,25 @@ func TestFragmentCreateStreamOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRecordReader: %v", err)
 	}
-	_, err = lance.CreateFragment(ctx, filepath.Join(blockedRoot, "failure.lance"), 2, errorReader)
+	ownedReader := &releaseCountingReader{RecordReader: errorReader}
+	_, err = lance.CreateFragment(ctx, filepath.Join(blockedRoot, "failure.lance"), 2, ownedReader)
 	if err == nil {
 		errorReader.Release()
 		t.Fatal("CreateFragment under a regular file succeeded, want native error")
 	}
-	if errorReader.Next() {
-		errorReader.Release()
-		t.Fatal("reader returned a batch after a native error consumed its stream")
+	// Schema inference may prefetch batches before opening the output file.
+	// Consumption progress is not the ownership contract: native must release
+	// exactly its retained reference, leaving the caller's reference intact.
+	if ownedReader.releases != 1 {
+		t.Fatalf("native reader releases = %d, want 1", ownedReader.releases)
 	}
-	errorReader.Release()
+	ownedReader.Release()
+	if ownedReader.releases != 2 {
+		t.Fatalf("reader releases including caller = %d, want 2", ownedReader.releases)
+	}
+	if got := collectInt64(t, record, "id"); !equalInt64(got, []int64{1}) {
+		t.Fatalf("caller-owned record after failed write = %v, want [1]", got)
+	}
 }
 
 func TestFragmentCreateEmptyAndNativeErrors(t *testing.T) {
@@ -909,5 +918,50 @@ func copyFile(t *testing.T, src, dst string) {
 	}
 	if err := os.WriteFile(dst, data, 0o644); err != nil {
 		t.Fatalf("WriteFile %s: %v", dst, err)
+	}
+}
+
+func TestFragmentCreationRejectsCommitOptions(t *testing.T) {
+	for _, option := range []struct {
+		name  string
+		value lance.FragmentCreateOption
+	}{
+		{"cleanup", lance.WithAutoCleanup(lance.AutoCleanupParams{})},
+		{"skip cleanup", lance.WithSkipAutoCleanup(true)},
+		{"stable row IDs", lance.WithWriteParams(lance.WriteParams{EnableStableRowIDs: true})},
+	} {
+		for _, many := range []bool{false, true} {
+			name := option.name + "/single"
+			if many {
+				name = option.name + "/many"
+			}
+			t.Run(name, func(t *testing.T) {
+				reader, err := array.NewRecordReader(testSchema(), nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer reader.Release()
+				uri := filepath.Join(t.TempDir(), "uncommitted.lance")
+				if many {
+					fragments, callErr := lance.WriteFragments(context.Background(), uri, reader, option.value)
+					for _, fragment := range fragments {
+						fragment.Close()
+					}
+					err = callErr
+				} else {
+					fragment, callErr := lance.CreateFragment(context.Background(), uri, 1, reader, option.value)
+					if fragment != nil {
+						fragment.Close()
+					}
+					err = callErr
+				}
+				if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "apply at commit") {
+					t.Fatalf("fragment creation error = %v, want commit-only option rejection", err)
+				}
+				if _, err := os.Stat(uri); !os.IsNotExist(err) {
+					t.Fatalf("fragment creation wrote output before option validation: %v", err)
+				}
+			})
+		}
 	}
 }
