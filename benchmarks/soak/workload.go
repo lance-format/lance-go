@@ -269,6 +269,8 @@ func (w *worker) cancel() (err error) {
 	if err != nil {
 		return fmt.Errorf("create scan: %w", err)
 	}
+	defer scanner.Close()
+
 	delivered := 0
 	var iterErr error
 	for batch, scanErr := range scanner.Records(ctx) {
@@ -286,10 +288,13 @@ func (w *worker) cancel() (err error) {
 		return fmt.Errorf("close scanner: %w", closeErr)
 	}
 	if delivered == 0 {
+		if iterErr != nil {
+			return fmt.Errorf("scan before cancel: %w", iterErr)
+		}
 		return errors.New("cancel requested but the scan delivered no native batch")
 	}
 	if iterErr != nil {
-		if !errors.Is(iterErr, context.Canceled) && !errors.Is(iterErr, context.DeadlineExceeded) {
+		if !errors.Is(iterErr, context.Canceled) {
 			return fmt.Errorf("scan after cancel: %w", iterErr)
 		}
 		w.current.cancelObserved.Add(1)

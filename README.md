@@ -832,7 +832,8 @@ CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
 `benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
-long-running repeated use of the public API. It is not part of `go test` or CI.
+long-running repeated use of the public API. CI compiles the package and runs
+its tests, but does not execute the long benchmark.
 See [`benchmarks/soak/README.md`](benchmarks/soak/README.md) for build and run
 commands, the measurement contract and the limits of RSS evidence.
 
@@ -872,7 +873,7 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
-benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (not part of CI)
+benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
 scripts/          build-lance-c.sh, check-abi-symbols.go
 ```
 

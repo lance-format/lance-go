@@ -48,13 +48,13 @@ type sample struct {
 	ThreadsError     string `json:"threads_error,omitempty"`
 }
 
-func collectSample(sp *sampler, phase, label string, seq int, startedAt, phaseStart time.Time) (sample, error) {
+func collectSample(sp *sampler, journal *journal, phase, label string, seq int, startedAt, phaseStart time.Time) (sample, error) {
 	snapshot, err := sp.snapshot()
 	if err != nil {
 		return sample{}, fmt.Errorf("sample process memory: %w", err)
 	}
 	now := time.Now()
-	return sample{
+	result := sample{
 		Phase:          phase,
 		Label:          label,
 		Seq:            seq,
@@ -82,7 +82,11 @@ func collectSample(sp *sampler, phase, label string, seq int, startedAt, phaseSt
 		Threads:          snapshot.Threads,
 		FDsError:         snapshot.FDsError,
 		ThreadsError:     snapshot.ThreadsError,
-	}, nil
+	}
+	if err := journal.write(result); err != nil {
+		return sample{}, err
+	}
+	return result, nil
 }
 
 type journal struct {
@@ -362,7 +366,7 @@ func printHumanReport(w io.Writer, st *runState, jsonlPath string) {
 			humanBytes(summary.EarlyWindow.MeanRSSBytes), humanBytes(summary.EarlyWindow.MinRSSBytes), humanBytes(summary.EarlyWindow.MaxRSSBytes),
 			humanBytes(summary.LateWindow.MeanRSSBytes), humanBytes(summary.LateWindow.MinRSSBytes), humanBytes(summary.LateWindow.MaxRSSBytes),
 			humanBytes(summary.LateMinusEarlyBytes), summary.SlopeBytesPerSecond)
-		fmt.Fprintf(w, "native handles: warmed baseline %d, max %d, max delta %d\n", summary.BaselineHandles, summary.MaxHandles, summary.MaxHandleDelta)
+		fmt.Fprintf(w, "registered Go callback handles: warmed baseline %d, max %d, max delta %d\n", summary.BaselineHandles, summary.MaxHandles, summary.MaxHandleDelta)
 	}
 	if reports := workloadReports(st.cfg.Workloads, st.measureSets); len(reports) > 0 {
 		fmt.Fprintln(w, "workloads:")

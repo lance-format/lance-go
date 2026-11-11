@@ -3,7 +3,9 @@
 `benchmarks/soak` is an opt-in, bounded, Linux-only benchmark for long-running
 use of the public lance-go API. It repeatedly exercises dataset, scanner, raw
 file, Blob and writer lifetimes while sampling total process residency. It is
-not part of the default test suite and does not run in CI.
+not run as a long benchmark in CI. The package is compiled and its tests run
+with `go test ./...`, including a short Linux native journal regression when
+the library is available.
 
 This command is supplementary evidence. Existing lifetime and ownership tests
 remain the primary regression coverage for those contracts. A run of this
@@ -140,7 +142,7 @@ two outcomes are counted separately. A zero-batch delivery is an error.
 
 Each epoch starts exactly one operation on every worker and waits for all of
 them to finish. Operations close their resources before reporting completion.
-Every measurement epoch checks the native handle count against the warmed
+Every measurement epoch checks the registered Go callback handle count against the warmed
 baseline. At sampling boundaries the harness also reads:
 
 - RSS and the available `smaps_rollup` fields: PSS, anonymous, shared/private
@@ -157,6 +159,14 @@ baseline; every measurement epoch and every measurement sample must still match
 it, otherwise the run fails loudly. Every selected workload must report at least one
 operation. A selector that runs nothing cannot produce a success.
 
+`internal/handle` counts Go callback state, including Arrow release state. It
+does not count every native dataset, session or scanner object.
+
+An epoch waits for all workers. Native calls that cannot be interrupted can
+extend an epoch beyond the requested duration. Run unattended measurements
+under an external process timeout; a timeout is a failed, incomplete run, and
+the journal retains samples written before the stall.
+
 No forced GC, `FreeOSMemory` or malloc trimming runs during warmup or
 measurement. One `runtime.GC()` sample is taken after measurement, labelled
 `post_gc`; it is not part of the primary evidence.
@@ -170,7 +180,7 @@ without trusting the final summary alone. The final summary reports:
 - initial, final and peak RSS;
 - early and late post-warmup window means, minima and maxima;
 - late-minus-early mean, and a least-squares RSS slope in bytes per second;
-- baseline, maximum and delta native handle counts;
+- baseline, maximum and delta registered Go callback handle counts;
 - operations, completed operations, errors and per-workload cancellation
   outcomes.
 
@@ -187,8 +197,8 @@ The control opens the main dataset, repeatedly calls the public `Take` API for
 a small fixed row set, keeps the caller-owned result batches without releasing
 them, reads one byte from every Arrow buffer page to establish real residency,
 and samples RSS before, while held and after releasing all batches. It stops
-after the requested byte budget, with at most one additional `Take` batch of
-overshoot.
+after the requested byte budget, with at most one additional `Take` call of
+overshoot; a call can return multiple batches.
 
 This is deliberately independent of normal operation and is never enabled by
 default. It is a sensitivity check for whether this harness and the allocator

@@ -228,7 +228,7 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 			return fmt.Errorf("warmup: %w", err)
 		}
 		if time.Since(lastSample) >= st.cfg.SampleInterval {
-			snapshot, err := collectSample(sampler, "warmup", "", warmupSeq, st.startedAt, warmupStart)
+			snapshot, err := collectSample(sampler, journal, "warmup", "", warmupSeq, st.startedAt, warmupStart)
 			if err != nil {
 				return err
 			}
@@ -237,7 +237,7 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 			lastSample = time.Now()
 		}
 	}
-	baseline, err := collectSample(sampler, "warmup", "baseline", warmupSeq, st.startedAt, warmupStart)
+	baseline, err := collectSample(sampler, journal, "warmup", "baseline", warmupSeq, st.startedAt, warmupStart)
 	if err != nil {
 		return err
 	}
@@ -247,7 +247,7 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 	st.measureSets = newStatsSet(st.cfg.Workloads)
 	measureStart := time.Now()
 	measureDeadline := measureStart.Add(st.cfg.Duration)
-	initial, err := collectQuiescentSample(st, sampler, "measurement", "initial", 0, measureStart)
+	initial, err := collectQuiescentSample(st, sampler, journal, "measurement", "initial", 0, measureStart)
 	if err != nil {
 		return err
 	}
@@ -260,13 +260,13 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 		}
 		workers.epoch(st.measureSets)
 		if handles := handle.Len(); handles != st.baselineHandles {
-			return fmt.Errorf("native handle count %d after quiescent epoch, warmed baseline %d", handles, st.baselineHandles)
+			return fmt.Errorf("registered Go callback handle count %d after quiescent epoch, warmed baseline %d", handles, st.baselineHandles)
 		}
 		if err := workers.firstErr(); err != nil {
 			return fmt.Errorf("measurement: %w", err)
 		}
 		if time.Since(lastSample) >= st.cfg.SampleInterval {
-			snapshot, err := collectQuiescentSample(st, sampler, "measurement", "", measureSeq, measureStart)
+			snapshot, err := collectQuiescentSample(st, sampler, journal, "measurement", "", measureSeq, measureStart)
 			if err != nil {
 				return err
 			}
@@ -275,7 +275,7 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 			lastSample = time.Now()
 		}
 	}
-	final, err := collectQuiescentSample(st, sampler, "measurement", "final", measureSeq, measureStart)
+	final, err := collectQuiescentSample(st, sampler, journal, "measurement", "final", measureSeq, measureStart)
 	if err != nil {
 		return err
 	}
@@ -308,14 +308,14 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 	// This GC is deliberately after measurement and is labelled post_gc. It
 	// is not part of the primary steady-state evidence.
 	runtime.GC()
-	postGC, err := collectSample(sampler, "post_gc", "after_runtime_gc", 0, st.startedAt, time.Now())
+	postGC, err := collectSample(sampler, journal, "post_gc", "after_runtime_gc", 0, st.startedAt, time.Now())
 	if err != nil {
 		return err
 	}
 	st.postGC = &postGC
 
 	if st.cfg.DiagnosticRetainBytes > 0 {
-		diagnostic, err := runDiagnostic(ctx, st, sampler, fixture)
+		diagnostic, err := runDiagnostic(ctx, st, sampler, journal, fixture)
 		if err != nil {
 			return fmt.Errorf("diagnostic retention control: %w", err)
 		}
@@ -324,13 +324,13 @@ func runInner(ctx context.Context, st *runState, journal *journal) error {
 	return budgetErr
 }
 
-func collectQuiescentSample(st *runState, sampler *sampler, phase, label string, seq int, phaseStart time.Time) (sample, error) {
-	snapshot, err := collectSample(sampler, phase, label, seq, st.startedAt, phaseStart)
+func collectQuiescentSample(st *runState, sampler *sampler, journal *journal, phase, label string, seq int, phaseStart time.Time) (sample, error) {
+	snapshot, err := collectSample(sampler, journal, phase, label, seq, st.startedAt, phaseStart)
 	if err != nil {
 		return sample{}, err
 	}
 	if phase == "measurement" && snapshot.Handles != st.baselineHandles {
-		return sample{}, fmt.Errorf("native handle count %d after a quiescent epoch, warmed baseline %d", snapshot.Handles, st.baselineHandles)
+		return sample{}, fmt.Errorf("registered Go callback handle count %d after a quiescent epoch, warmed baseline %d", snapshot.Handles, st.baselineHandles)
 	}
 	return snapshot, nil
 }
@@ -415,7 +415,7 @@ func parseConfig(args []string) (config, error) {
 	if cfg.Warmup < 0 {
 		return config{}, errors.New("-warmup must not be negative")
 	}
-	if planned := int64(cfg.Warmup/cfg.SampleInterval) + int64(cfg.Duration/cfg.SampleInterval) + 2; planned > maxRetainedSamples {
+	if planned := int64(cfg.Warmup/cfg.SampleInterval) + int64(cfg.Duration/cfg.SampleInterval) + 3; planned > maxRetainedSamples {
 		return config{}, fmt.Errorf("run would retain about %d samples (limit %d); increase -sample-interval or shorten -warmup/-duration", planned, maxRetainedSamples)
 	}
 	if cfg.Concurrency < 1 || cfg.Concurrency > 1024 {
@@ -580,7 +580,7 @@ func hashFile(path string) (string, error) {
 
 var diagnosticTouchSink uint64
 
-func runDiagnostic(ctx context.Context, st *runState, sampler *sampler, fx *fixture) (*diagnosticRecord, error) {
+func runDiagnostic(ctx context.Context, st *runState, sampler *sampler, journal *journal, fx *fixture) (*diagnosticRecord, error) {
 	dataset, err := lance.Open(ctx, fx.mainURI)
 	if err != nil {
 		return nil, fmt.Errorf("open diagnostic dataset: %w", err)
@@ -593,7 +593,7 @@ func runDiagnostic(ctx context.Context, st *runState, sampler *sampler, fx *fixt
 		indices[i] = uint64(i)
 	}
 	diagnosticStart := time.Now()
-	before, err := collectSample(sampler, "diagnostic", "before", 0, st.startedAt, diagnosticStart)
+	before, err := collectSample(sampler, journal, "diagnostic", "before", 0, st.startedAt, diagnosticStart)
 	if err != nil {
 		return nil, err
 	}
@@ -629,7 +629,7 @@ func runDiagnostic(ctx context.Context, st *runState, sampler *sampler, fx *fixt
 		record.BytesRetained += takenBytes
 		record.BatchesRetained += len(batches)
 	}
-	heldSample, err := collectSample(sampler, "diagnostic", "held", 1, st.startedAt, diagnosticStart)
+	heldSample, err := collectSample(sampler, journal, "diagnostic", "held", 1, st.startedAt, diagnosticStart)
 	if err != nil {
 		return nil, err
 	}
@@ -638,7 +638,7 @@ func runDiagnostic(ctx context.Context, st *runState, sampler *sampler, fx *fixt
 		batch.Release()
 	}
 	held = nil
-	after, err := collectSample(sampler, "diagnostic", "after", 2, st.startedAt, diagnosticStart)
+	after, err := collectSample(sampler, journal, "diagnostic", "after", 2, st.startedAt, diagnosticStart)
 	if err != nil {
 		return nil, err
 	}
