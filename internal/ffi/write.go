@@ -72,7 +72,7 @@ func Write(uri string, reader array.RecordReader, opts WriteOptions, storageOpti
 	if err != nil {
 		return nil, err
 	}
-	return writeDataset(b, uri, reader, opts, storageOptions, nil)
+	return writeDataset(b, uri, reader, opts, storageOptions, nil, nil, nil)
 }
 
 // WriteWithAccessor writes reader using a reusable storage-options accessor.
@@ -83,7 +83,7 @@ func WriteWithAccessor(uri string, reader array.RecordReader, opts WriteOptions,
 	if err != nil {
 		return nil, err
 	}
-	return writeDataset(b, uri, reader, opts, nil, accessor)
+	return writeDataset(b, uri, reader, opts, nil, accessor, nil, nil)
 }
 
 // buildWriteParameters converts public write options into the native layout
@@ -149,12 +149,38 @@ func storageOptionsJSON(options map[string]string) (string, error) {
 	return string(encoded), nil
 }
 
-func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string, accessor *StorageOptionsAccessor) (*Dataset, error) {
+// WriteWithAccessorAndCommitLock writes reader through an external commit lock.
+// The accessor and session may be nil. Native retains both owners in the
+// returned dataset.
+func WriteWithAccessorAndCommitLock(uri string, reader array.RecordReader, opts WriteOptions, accessor *StorageOptionsAccessor, session *Session, lock *CommitLock) (*Dataset, error) {
+	b, err := load()
+	if err != nil {
+		return nil, err
+	}
+	return writeDataset(b, uri, reader, opts, nil, accessor, session, lock)
+}
+
+func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string, accessor *StorageOptionsAccessor, session *Session, lock *CommitLock) (*Dataset, error) {
 	if storageOptions != nil && accessor != nil {
 		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
 	}
 	if accessor != nil && accessor.Handle() == 0 {
 		return nil, ErrClosed
+	}
+	if lock != nil {
+		if storageOptions != nil {
+			return nil, fmt.Errorf("ffi: commit lock requires storage options accessor instead of static storage options")
+		}
+		if lock.Handle() == 0 {
+			return nil, ErrClosed
+		}
+	}
+	var sessionHandle uintptr
+	if session != nil {
+		sessionHandle = session.nativeHandle()
+		if sessionHandle == 0 {
+			return nil, fmt.Errorf("ffi: session is closed")
+		}
 	}
 	if reader == nil {
 		return nil, fmt.Errorf("ffi: record reader must not be nil")
@@ -195,7 +221,16 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	runtime.LockOSThread()
 	var handle uintptr
 	var rc int32
-	if accessor != nil {
+	if lock != nil {
+		var accessorHandle uintptr
+		if accessor != nil {
+			accessorHandle = accessor.Handle()
+		}
+		rc = b.datasetWriteWithOptionsWithCommitLock(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, accessorHandle, sessionHandle, lock.Handle(), &handle)
+		runtime.KeepAlive(accessor)
+		runtime.KeepAlive(session)
+		runtime.KeepAlive(lock)
+	} else if accessor != nil {
 		rc = b.datasetWriteWithOptionsAndAccessor(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, accessor.Handle(), &handle)
 		runtime.KeepAlive(accessor)
 	} else {

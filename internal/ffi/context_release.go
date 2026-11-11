@@ -20,10 +20,12 @@ var (
 	callbackContextRelease uintptr
 )
 
-// initContextReleaseCallback installs the single release trampoline shared by
-// namespace context providers, storage options providers and fetched storage
-// option snapshots. Keeping one trampoline bounds the process-wide callback
-// budget and gives every adapter the same exactly-once release semantics.
+// initContextReleaseCallback installs the single one-word trampoline shared by
+// namespace context providers, storage options providers, fetched storage
+// option snapshots and scanner poll wakeups. Keeping one trampoline bounds the
+// process-wide callback budget and gives every adapter the same exactly-once
+// release semantics. Scanner waiters are woken without being removed because
+// their handle is released separately during scanner cleanup.
 func initContextReleaseCallback() {
 	contextReleaseOnce.Do(func() {
 		callbackContextRelease = purego.NewCallback(contextReleaseCallback)
@@ -37,10 +39,23 @@ func contextReleaseCallback(ctx uintptr) (ret uintptr) {
 	defer func() {
 		_ = recover()
 	}()
-	if value, ok := handle.Take(uint64(ctx)); ok {
-		if releaser, ok := value.(contextReleaser); ok {
+	value, ok := handle.Get(uint64(ctx))
+	if !ok {
+		return 0
+	}
+	switch target := value.(type) {
+	case *pollWaiter:
+		target.wake()
+	case contextReleaser:
+		removed, removedOK := handle.Take(uint64(ctx))
+		if !removedOK {
+			return 0
+		}
+		if releaser, ok := removed.(contextReleaser); ok {
 			releaser.releaseContext()
 		}
+	default:
+		handle.Remove(uint64(ctx))
 	}
 	return 0
 }

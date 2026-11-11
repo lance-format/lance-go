@@ -23,8 +23,9 @@ const (
 type CreateIndexOption func(*createIndexConfig) error
 
 type createIndexConfig struct {
-	name    string
-	replace bool
+	name     string
+	replace  bool
+	progress index.ProgressFunc
 }
 
 // WithIndexName names the created index. An empty name leaves the index
@@ -47,6 +48,24 @@ func WithIndexReplace(replace bool) CreateIndexOption {
 	}
 }
 
+// WithIndexProgress observes progress while creating an ordinary index. Nil
+// disables observation and preserves the behavior of earlier releases.
+//
+// The observer runs on native worker threads and may be called concurrently.
+// It must be fast and thread-safe, and it must not call back into Lance,
+// including the Dataset whose index is being built. Native event delivery,
+// stage names and counts are authoritative; observations are advisory and
+// cannot cancel a build. A panic in the observer is recovered and does not
+// stop the build. The observer is retired and in-flight calls are drained
+// before the create call returns, so it is safe to release observer state once
+// that call returns.
+func WithIndexProgress(progress index.ProgressFunc) CreateIndexOption {
+	return func(config *createIndexConfig) error {
+		config.progress = progress
+		return nil
+	}
+}
+
 func buildCreateIndexConfig(opts []CreateIndexOption) (createIndexConfig, error) {
 	var config createIndexConfig
 	for _, option := range opts {
@@ -63,8 +82,9 @@ func buildCreateIndexConfig(opts []CreateIndexOption) (createIndexConfig, error)
 // CreateVectorIndex builds a vector index and returns a new Dataset snapshot.
 // This Dataset keeps its current version and catalog. Options cover every
 // native vector index build field; nil optional fields keep native defaults.
-// An error can occur after the index version is committed, during metadata
-// reload. Reopen the dataset to determine the published state before retrying.
+// WithIndexProgress observes the build. An error can occur after the index
+// version is committed, during metadata reload. Reopen the dataset to determine
+// the published state before retrying.
 func (d *Dataset) CreateVectorIndex(ctx context.Context, column string, options index.VectorOptions, opts ...CreateIndexOption) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
@@ -80,13 +100,18 @@ func (d *Dataset) CreateVectorIndex(ctx context.Context, column string, options 
 		return nil, invalidError("create vector index", d.uri, "%v", err)
 	}
 	native := ffiVectorIndexOptions(options)
+	progress := adaptProgress(config.progress)
 	return d.mutate("create vector index", func(clone *ffi.Dataset) error {
-		return clone.CreateVectorIndex(column, config.name, native, config.replace)
+		if progress == nil {
+			return clone.CreateVectorIndex(column, config.name, native, config.replace)
+		}
+		return clone.CreateVectorIndexWithOptionsAndProgress(column, config.name, native, progress, config.replace)
 	})
 }
 
 // CreateVectorIndexWithParams builds a vector index from legacy parameters.
 // It is equivalent to CreateVectorIndex with params.Options().
+// WithIndexProgress observes the build.
 func (d *Dataset) CreateVectorIndexWithParams(ctx context.Context, column string, params index.VectorParams, opts ...CreateIndexOption) (*Dataset, error) {
 	return d.CreateVectorIndex(ctx, column, params.Options(), opts...)
 }
@@ -94,6 +119,9 @@ func (d *Dataset) CreateVectorIndexWithParams(ctx context.Context, column string
 // CreateScalarIndex builds a scalar index and returns a new Dataset snapshot.
 // params is forwarded verbatim as the native plugin JSON; nil leaves the
 // native parameter string unset. Unknown plugin keys are preserved.
+// WithIndexProgress observes the build. An error can occur after the version is
+// committed, during metadata reload; reopen the dataset to inspect the
+// published state before retrying.
 func (d *Dataset) CreateScalarIndex(ctx context.Context, column string, indexType index.ScalarType, params json.RawMessage, options index.ScalarOptions, opts ...CreateIndexOption) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
@@ -108,7 +136,6 @@ func (d *Dataset) CreateScalarIndex(ctx context.Context, column string, indexTyp
 	if err != nil {
 		return nil, invalidError("create scalar index", d.uri, "%v", err)
 	}
-	native := &ffi.ScalarIndexOptions{Train: options.Train}
 	var paramsJSON []byte
 	if params != nil {
 		if !json.Valid(params) {
@@ -116,8 +143,17 @@ func (d *Dataset) CreateScalarIndex(ctx context.Context, column string, indexTyp
 		}
 		paramsJSON = params
 	}
+	progress := adaptProgress(config.progress)
 	return d.mutate("create scalar index", func(clone *ffi.Dataset) error {
-		return clone.CreateScalarIndex(column, config.name, int32(indexType), paramsJSON, native, config.replace)
+		if progress == nil {
+			native := &ffi.ScalarIndexOptions{Train: options.Train}
+			return clone.CreateScalarIndex(column, config.name, int32(indexType), paramsJSON, native, config.replace)
+		}
+		if options.Train == nil {
+			return clone.CreateScalarIndexWithProgress(column, config.name, int32(indexType), paramsJSON, progress, config.replace)
+		}
+		native := &ffi.ScalarIndexOptions{Train: options.Train}
+		return clone.CreateScalarIndexWithOptionsAndProgress(column, config.name, int32(indexType), paramsJSON, native, progress, config.replace)
 	})
 }
 

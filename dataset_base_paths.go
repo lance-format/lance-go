@@ -55,8 +55,8 @@ func (d *Dataset) BasePaths() (map[uint32]BasePath, error) {
 // ReadTransactionByVersion does not preserve that input distinction.
 //
 // AddBases records and lists bases; it does not route new writes to a base.
-// Write placement is a separate capability that the pinned C API does not
-// expose.
+// Write placement is configured through WriteParams.InitialBases and the
+// TargetBases, TargetBaseNamesOrPaths or TargetAllBases fields.
 func (d *Dataset) AddBases(ctx context.Context, bases []BasePath, transactionProperties map[string]string) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err

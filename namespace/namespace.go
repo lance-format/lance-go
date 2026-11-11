@@ -23,8 +23,8 @@ import (
 	"github.com/lance-format/lance-go/internal/nshandle"
 )
 
-// Namespace is a sealed native Lance namespace. Use NewDirectory, NewRest, or
-// NewConnect to construct one.
+// Namespace is a sealed native Lance namespace. Use NewDirectory, NewRest,
+// NewConnect, or NewCustom to construct one.
 type Namespace interface {
 	// nativeNamespace seals the interface to this package's native adapter.
 	nativeNamespace()

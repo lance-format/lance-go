@@ -43,11 +43,24 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		}
 	}
 
-	storageAccessor, releaseStorage, err := resolveStorageOptions("open", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	var err error
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("open", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("open", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer releaseStorage()
+
+	releaseLock, err := config.commitLock.pin("open", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
 
 	session, releaseSession, err := acquireSession("open", uri, config.session)
 	if err != nil {
@@ -55,12 +68,17 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 	}
 	defer releaseSession()
 
-	native, err := ffi.OpenDatasetWithOptions(uri, ffi.OpenOptions{
-		StorageOptions:         config.storageOptions,
+	nativeOptions := ffi.OpenOptions{
 		StorageOptionsAccessor: storageAccessor,
 		Version:                config.version,
 		Session:                session,
-	})
+	}
+	if config.commitLock != nil {
+		nativeOptions.CommitLock = config.commitLock.native
+	} else {
+		nativeOptions.StorageOptions = config.storageOptions
+	}
+	native, err := ffi.OpenDatasetWithOptions(uri, nativeOptions)
 	if err != nil {
 		return nil, wrapError("open", uri, err)
 	}

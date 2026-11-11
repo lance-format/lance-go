@@ -202,14 +202,15 @@ func initStorageOptionsProviderCallbacks() {
 // trampolines return uintptr for Windows syscall.NewCallback; C consumes the
 // low int32 status, which is always zero or one.
 func storageOptionsForceFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) uintptr {
-	return uintptr(storageOptionsFetch(ctx, true, out, outError))
+	return uintptr(dispatchStatus3(ctx, true, unsafe.Pointer(out), outError))
 }
 
 func storageOptionsFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) uintptr {
-	return uintptr(storageOptionsFetch(ctx, false, out, outError))
+	return uintptr(dispatchStatus3(ctx, false, unsafe.Pointer(out), outError))
 }
 
-func storageOptionsFetch(ctx uintptr, force bool, out *storageOptionsFetchResult, outError *callbackError) (ret int32) {
+func (a *storageOptionsProviderAdapter) dispatchStatus3(force bool, payload unsafe.Pointer, outError *callbackError) (ret int32) {
+	out := (*storageOptionsFetchResult)(payload)
 	if out != nil {
 		*out = storageOptionsFetchResult{}
 	}
@@ -229,22 +230,12 @@ func storageOptionsFetch(ctx uintptr, force bool, out *storageOptionsFetchResult
 		setCallbackError(outError, fmt.Errorf("storage options fetch result pointer is NULL"))
 		return 1
 	}
-	if ctx == 0 {
-		setCallbackError(outError, fmt.Errorf("storage options provider context is NULL"))
-		return 1
-	}
-	value, ok := handle.Get(uint64(ctx))
-	if !ok {
-		setCallbackError(outError, fmt.Errorf("storage options provider context is no longer registered"))
-		return 1
-	}
-	adapter, ok := value.(*storageOptionsProviderAdapter)
-	if !ok || adapter.fetch == nil {
+	if a == nil || a.fetch == nil {
 		setCallbackError(outError, fmt.Errorf("storage options provider context has the wrong type"))
 		return 1
 	}
 
-	options, err := adapter.fetchOptions(context.Background(), force)
+	options, err := a.fetchOptions(context.Background(), force)
 	if err != nil {
 		setCallbackError(outError, err)
 		return 1

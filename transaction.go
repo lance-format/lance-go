@@ -759,6 +759,7 @@ type commitConfig struct {
 	storageOptionsSet      bool
 	storageOptionsAccessor *StorageOptionsAccessor
 	session                *Session
+	commitLock             *CommitLock
 }
 
 // WithCommitStableRowIDs overrides stable row ID generation.
@@ -902,7 +903,20 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	if err != nil {
 		return nil, invalidError("commit", uri, "%v", err)
 	}
-	storageAccessor, releaseStorage, err := resolveStorageOptions("commit", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	releaseLock, err := config.commitLock.pin("commit", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("commit", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+		config.storageOptions = nil
+		config.storageOptionsSet = false
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("commit", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -917,11 +931,14 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	}
 	defer tx.res.release()
 
+	ffiOptions := ffiCommitOptions(config, session)
 	var native *ffi.Dataset
-	if storageAccessor != nil {
-		native, err = ffi.CommitWithAccessor(uri, tx.native, ffiCommitOptions(config, session), storageAccessor)
+	if config.commitLock != nil {
+		native, err = ffi.CommitWithAccessorAndCommitLock(uri, tx.native, ffiOptions, storageAccessor, config.commitLock.native)
+	} else if storageAccessor != nil {
+		native, err = ffi.CommitWithAccessor(uri, tx.native, ffiOptions, storageAccessor)
 	} else {
-		native, err = ffi.Commit(uri, tx.native, ffiCommitOptions(config, session))
+		native, err = ffi.Commit(uri, tx.native, ffiOptions)
 	}
 	if err != nil {
 		return nil, wrapError("commit", uri, err)
@@ -948,7 +965,20 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	if err != nil {
 		return nil, nil, invalidError("commit batch", uri, "%v", err)
 	}
-	storageAccessor, releaseStorage, err := resolveStorageOptions("commit batch", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	releaseLock, err := config.commitLock.pin("commit batch", uri)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer releaseLock()
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("commit batch", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+		config.storageOptions = nil
+		config.storageOptionsSet = false
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("commit batch", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -979,12 +1009,15 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	for i, tx := range txs {
 		nativeTxs[i] = tx.native
 	}
+	ffiOptions := ffiCommitOptions(config, session)
 	var nativeDataset *ffi.Dataset
 	var nativeTransaction *ffi.Transaction
-	if storageAccessor != nil {
-		nativeDataset, nativeTransaction, err = ffi.CommitBatchWithAccessor(uri, nativeTxs, ffiCommitOptions(config, session), storageAccessor)
+	if config.commitLock != nil {
+		nativeDataset, nativeTransaction, err = ffi.CommitBatchWithAccessorAndCommitLock(uri, nativeTxs, ffiOptions, storageAccessor, config.commitLock.native)
+	} else if storageAccessor != nil {
+		nativeDataset, nativeTransaction, err = ffi.CommitBatchWithAccessor(uri, nativeTxs, ffiOptions, storageAccessor)
 	} else {
-		nativeDataset, nativeTransaction, err = ffi.CommitBatch(uri, nativeTxs, ffiCommitOptions(config, session))
+		nativeDataset, nativeTransaction, err = ffi.CommitBatch(uri, nativeTxs, ffiOptions)
 	}
 	if err != nil {
 		return nil, nil, wrapError("commit batch", uri, err)
@@ -1052,10 +1085,27 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}
+	if config.schema != nil {
+		return nil, invalidError("write uncommitted", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	if config.branch != "" {
 		return nil, invalidError("write uncommitted", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	releaseLock, err := config.commitLock.pin("write uncommitted", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
+	if config.params.hasNativeOptions() {
+		return writeUncommittedNative(uri, reader, config)
+	}
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1068,13 +1118,17 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 
 	uncommittedOptions := ffi.WriteUncommittedOptions{
 		Write:                 nativeWriteOptions(config),
-		StorageOptions:        config.storageOptions,
 		TransactionProperties: config.transactionProperties,
 		HasProperties:         config.hasTransactionProperties,
 		Session:               session,
 	}
+	if config.commitLock != nil {
+		uncommittedOptions.CommitLock = config.commitLock.native
+	} else {
+		uncommittedOptions.StorageOptions = config.storageOptions
+	}
 	var native *ffi.Transaction
-	if storageAccessor != nil {
+	if storageAccessor != nil || config.commitLock != nil {
 		native, err = ffi.WriteUncommittedWithAccessor(uri, reader, uncommittedOptions, storageAccessor)
 	} else {
 		native, err = ffi.WriteUncommitted(uri, reader, uncommittedOptions)

@@ -6,7 +6,7 @@ require (
 	github.com/apache/arrow-go/v18 v18.4.1
 	github.com/ebitengine/purego v0.10.2
 	github.com/klauspost/compress v1.18.0
-	github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349
+	github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111213734-a779f4a15524
 	golang.org/x/sys v0.35.0
 )
 

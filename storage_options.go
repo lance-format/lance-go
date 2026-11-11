@@ -99,3 +99,24 @@ func resolveStorageOptions(op, uri string, staticOptions map[string]string, stat
 	}
 	return acquireStorageOptionsAccessor(op, uri, options)
 }
+
+// resolveLockStorageOptions supplies the accessor-only storage interface used
+// by commit-lock overloads. Non-empty static options are bridged to a transient
+// accessor that native code retains; nil and empty static options remain native
+// None, matching the older static entry points.
+func resolveLockStorageOptions(op, uri string, staticOptions map[string]string, staticOptionsSet bool, options *StorageOptionsAccessor) (*ffi.StorageOptionsAccessor, func(), error) {
+	if (staticOptionsSet || staticOptions != nil) && options != nil {
+		return nil, nil, invalidError(op, uri, "storage options and storage options accessor are mutually exclusive")
+	}
+	if options != nil {
+		return acquireStorageOptionsAccessor(op, uri, options)
+	}
+	if len(staticOptions) == 0 {
+		return nil, func() {}, nil
+	}
+	native, err := ffi.NewStorageOptionsAccessorWithPresence(staticOptions, true, nil)
+	if err != nil {
+		return nil, nil, invalidError(op, uri, "%v", err)
+	}
+	return native, native.Close, nil
+}
