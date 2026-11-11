@@ -97,15 +97,14 @@ var (
 	callbackStreamGetLastError = purego.NewCallback(streamGetLastErrorCallback)
 )
 
-func schemaReleaseCallback(ptr uintptr) {
-	if ptr == 0 {
+func schemaReleaseCallback(s *ArrowSchema) {
+	if s == nil {
 		return
 	}
 	defer func() {
 		_ = recover()
 	}()
 
-	s := (*ArrowSchema)(unsafe.Pointer(ptr))
 	s.Release = 0
 	id := handleID(s.PrivateData)
 	if id == 0 {
@@ -120,15 +119,14 @@ func schemaReleaseCallback(ptr uintptr) {
 	}
 }
 
-func arrayReleaseCallback(ptr uintptr) {
-	if ptr == 0 {
+func arrayReleaseCallback(a *ArrowArray) {
+	if a == nil {
 		return
 	}
 	defer func() {
 		_ = recover()
 	}()
 
-	a := (*ArrowArray)(unsafe.Pointer(ptr))
 	a.Release = 0
 	id := handleID(a.PrivateData)
 	if id == 0 {
@@ -143,15 +141,14 @@ func arrayReleaseCallback(ptr uintptr) {
 	}
 }
 
-func streamReleaseCallback(ptr uintptr) {
-	if ptr == 0 {
+func streamReleaseCallback(s *ArrowArrayStream) {
+	if s == nil {
 		return
 	}
 	defer func() {
 		_ = recover()
 	}()
 
-	s := (*ArrowArrayStream)(unsafe.Pointer(ptr))
 	s.Release = 0
 	id := handleID(s.PrivateData)
 	if id == 0 {

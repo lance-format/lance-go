@@ -93,11 +93,10 @@ func (e *streamExporter) releaseStream(_ *ArrowArrayStream) {
 	e.value = ArrowArrayStream{}
 }
 
-func streamState(ptr uintptr) (*streamExporter, bool) {
-	if ptr == 0 {
+func streamState(s *ArrowArrayStream) (*streamExporter, bool) {
+	if s == nil {
 		return nil, false
 	}
-	s := (*ArrowArrayStream)(unsafe.Pointer(ptr))
 	v, ok := handle.Get(handleID(s.PrivateData))
 	if !ok {
 		return nil, false
@@ -106,11 +105,10 @@ func streamState(ptr uintptr) (*streamExporter, bool) {
 	return e, ok
 }
 
-func streamGetSchemaCallback(streamPtr, outPtr uintptr) (ret uintptr) {
+func streamGetSchemaCallback(stream *ArrowArrayStream, out *ArrowSchema) (ret uintptr) {
 	defer func() {
 		if r := recover(); r != nil {
-			if outPtr != 0 {
-				out := (*ArrowSchema)(unsafe.Pointer(outPtr))
+			if out != nil {
 				if out.Release != 0 {
 					ReleaseSchema(out)
 				}
@@ -119,14 +117,13 @@ func streamGetSchemaCallback(streamPtr, outPtr uintptr) (ret uintptr) {
 			ret = uintptr(syscall.EINVAL)
 		}
 	}()
-	if streamPtr == 0 || outPtr == 0 {
+	if stream == nil || out == nil {
 		return uintptr(syscall.EINVAL)
 	}
-	e, ok := streamState(streamPtr)
+	e, ok := streamState(stream)
 	if !ok || e.reader == nil {
 		return uintptr(syscall.EINVAL)
 	}
-	out := (*ArrowSchema)(unsafe.Pointer(outPtr))
 	*out = ArrowSchema{}
 	if err := ExportSchema(e.reader.Schema(), out); err != nil {
 		e.setError(err)
@@ -136,11 +133,10 @@ func streamGetSchemaCallback(streamPtr, outPtr uintptr) (ret uintptr) {
 	return 0
 }
 
-func streamGetNextCallback(streamPtr, outPtr uintptr) (ret uintptr) {
+func streamGetNextCallback(stream *ArrowArrayStream, out *ArrowArray) (ret uintptr) {
 	defer func() {
 		if r := recover(); r != nil {
-			if outPtr != 0 {
-				out := (*ArrowArray)(unsafe.Pointer(outPtr))
+			if out != nil {
 				if out.Release != 0 {
 					ReleaseArray(out)
 				}
@@ -149,14 +145,13 @@ func streamGetNextCallback(streamPtr, outPtr uintptr) (ret uintptr) {
 			ret = uintptr(syscall.EIO)
 		}
 	}()
-	if streamPtr == 0 || outPtr == 0 {
+	if stream == nil || out == nil {
 		return uintptr(syscall.EINVAL)
 	}
-	e, ok := streamState(streamPtr)
+	e, ok := streamState(stream)
 	if !ok || e.reader == nil {
 		return uintptr(syscall.EINVAL)
 	}
-	out := (*ArrowArray)(unsafe.Pointer(outPtr))
 	*out = ArrowArray{}
 	if !e.reader.Next() {
 		if err := e.reader.Err(); err != nil {
@@ -179,13 +174,13 @@ func streamGetNextCallback(streamPtr, outPtr uintptr) (ret uintptr) {
 	return 0
 }
 
-func streamGetLastErrorCallback(streamPtr uintptr) (ret uintptr) {
+func streamGetLastErrorCallback(stream *ArrowArrayStream) (ret uintptr) {
 	defer func() {
 		if r := recover(); r != nil {
 			ret = 0
 		}
 	}()
-	e, ok := streamState(streamPtr)
+	e, ok := streamState(stream)
 	if !ok || len(e.lastError) == 0 {
 		return 0
 	}
