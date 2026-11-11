@@ -14,6 +14,12 @@ import (
 	lance "github.com/lance-format/lance-go"
 )
 
+type blobReadRow struct {
+	rowAddress uint64
+	data       []byte
+	null       bool
+}
+
 func TestReadBlobsSelectorsAndSchema(t *testing.T) {
 	dataset, _ := newBlobDataset(t, blobTestValues())
 	refs := blobRefs(t, dataset)
