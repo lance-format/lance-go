@@ -652,6 +652,7 @@ func ExportRecordBatch(batch arrow.RecordBatch, dst *ArrowArray) error {
 	n := batch.NumCols()
 	if n > 0 {
 		if n > int64(maxIntValue()) {
+			e.freeTree()
 			return invalidf("record batch has too many columns: %d", n)
 		}
 		count := int(n)

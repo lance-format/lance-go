@@ -423,6 +423,30 @@ func TestImportForeignArrayReleaseOnce(t *testing.T) {
 	}
 }
 
+func TestImportForeignOffset(t *testing.T) {
+	resetFixtureRelease()
+	f := newFixture(t)
+	src := f.int32Array([]int32{10, 20, 30}, nil, 0)
+	src.Length = 2
+	src.Offset = 1
+	src.Release = fixtureRelease
+
+	arr, err := ImportArray(src, arrow.PrimitiveTypes.Int32)
+	if err != nil {
+		t.Fatalf("ImportArray: %v", err)
+	}
+	if got := arr.(*array.Int32).Value(0); got != 20 {
+		t.Errorf("value at offset 0 = %d, want 20", got)
+	}
+	if got := arr.(*array.Int32).Value(1); got != 30 {
+		t.Errorf("value at offset 1 = %d, want 30", got)
+	}
+	arr.Release()
+	if got := fixtureReleaseCalls.Load(); got != 1 {
+		t.Fatalf("foreign release calls = %d, want 1", got)
+	}
+}
+
 func TestImportForeignNestedList(t *testing.T) {
 	resetFixtureRelease()
 	f := newFixture(t)
