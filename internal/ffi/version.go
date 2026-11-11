@@ -90,7 +90,7 @@ func (d *Dataset) Versions() ([]VersionInfo, error) {
 		}
 		result = append(result, VersionInfo{
 			ID:        id,
-			Timestamp: time.UnixMilli(int64(timestampMS)).UTC(),
+			Timestamp: time.UnixMilli(timestampMS).UTC(),
 			Metadata:  metadata,
 		})
 	}

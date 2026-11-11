@@ -46,7 +46,7 @@ type bindings struct {
 	versionsCount          func(versions uintptr) uint64
 	versionsAt             func(versions uintptr, index uint64) uintptr
 	versionsIDAt           func(versions uintptr, index uint64) uint64
-	versionsTimestampMSAt  func(versions uintptr, index uint64) uint64
+	versionsTimestampMSAt  func(versions uintptr, index uint64) int64
 	versionsClose          func(versions uintptr)
 	datasetVersionRefs     func(dataset uintptr) uintptr
 	versionRefsCount       func(refs uintptr) uint64
