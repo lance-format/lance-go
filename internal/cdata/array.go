@@ -37,7 +37,7 @@ func ImportArray(src *ArrowArray, dt arrow.DataType) (arrow.Array, error) {
 	moved := false
 	defer func() {
 		if !moved && src.Release != 0 {
-			consumeArray(src)
+			ReleaseArray(src)
 		}
 	}()
 	if err := validateDataType(dt); err != nil {
@@ -77,7 +77,7 @@ func ImportRecordBatch(src *ArrowArray, schema *arrow.Schema) (arrow.RecordBatch
 	moved := false
 	defer func() {
 		if !moved && src.Release != 0 {
-			consumeArray(src)
+			ReleaseArray(src)
 		}
 	}()
 	if schema == nil {
@@ -126,9 +126,10 @@ func ImportRecordBatch(src *ArrowArray, schema *arrow.Schema) (arrow.RecordBatch
 		if err != nil {
 			return nil, fmt.Errorf("cdata: record batch column %d: %w", i, err)
 		}
-		if int64(child.Len()) < length {
+		childLen := int64(child.Len())
+		if childLen < length {
 			child.Release()
-			return nil, invalidf("record batch column %d length %d is shorter than root length %d", i, child.Len(), length)
+			return nil, invalidf("record batch column %d length %d is shorter than root length %d", i, childLen, length)
 		}
 		columns = append(columns, child)
 	}
@@ -144,21 +145,6 @@ func ImportRecordBatch(src *ArrowArray, schema *arrow.Schema) (arrow.RecordBatch
 	alloc.releaseIfIdle()
 	ok = true
 	return batch, nil
-}
-
-func consumeArray(src *ArrowArray) {
-	if src == nil {
-		return
-	}
-	fn := src.Release
-	src.Release = 0
-	if fn == 0 {
-		return
-	}
-	defer func() {
-		_ = recover()
-	}()
-	_, _, _ = purego.SyscallN(fn, uintptr(unsafe.Pointer(src)))
 }
 
 func newRecordBatch(schema *arrow.Schema, columns []arrow.Array, length int64) (batch arrow.RecordBatch, err error) {
@@ -215,12 +201,8 @@ func (a *importAllocator) release() {
 	if !a.released.CompareAndSwap(false, true) {
 		return
 	}
-	fn := a.root.Release
-	a.root.Release = 0
-	if fn != 0 {
-		_, _, _ = purego.SyscallN(fn, uintptr(unsafe.Pointer(&a.root)))
-	}
-	a.pinner.Unpin()
+	defer a.pinner.Unpin()
+	ReleaseArray(&a.root)
 }
 
 func importNode(src *ArrowArray, dt arrow.DataType, alloc *importAllocator) (arrow.Array, error) {
@@ -287,14 +269,15 @@ func importNode(src *ArrowArray, dt arrow.DataType, alloc *importAllocator) (arr
 		if err != nil {
 			return nil, fmt.Errorf("fixed-size list values: %w", err)
 		}
-		want, err := checkedMul(src.Length, int64(t.Len()))
+		want, err := checkedMul(src.Offset+src.Length, int64(t.Len()))
 		if err != nil {
 			child.Release()
 			return nil, err
 		}
-		if int64(child.Len()) < want {
+		childLen := int64(child.Len())
+		if childLen < want {
 			child.Release()
-			return nil, invalidf("fixed-size list child length %d is shorter than %d", child.Len(), want)
+			return nil, invalidf("fixed-size list child length %d is shorter than %d", childLen, want)
 		}
 		children = append(children, child)
 	case *arrow.StructType:
@@ -306,9 +289,11 @@ func importNode(src *ArrowArray, dt arrow.DataType, alloc *importAllocator) (arr
 			if err != nil {
 				return nil, fmt.Errorf("struct field %d: %w", i, err)
 			}
-			if int64(child.Len()) < src.Length {
+			childLen := int64(child.Len())
+			want := src.Offset + src.Length
+			if childLen < want {
 				child.Release()
-				return nil, invalidf("struct field %d length %d is shorter than %d", i, child.Len(), src.Length)
+				return nil, invalidf("struct field %d length %d is shorter than %d", i, childLen, want)
 			}
 			children = append(children, child)
 		}
@@ -515,6 +500,9 @@ func importBuffers(src *ArrowArray, dt arrow.DataType, alloc *importAllocator) (
 		if err != nil {
 			return nil, fmt.Errorf("binary offsets: %w", err)
 		}
+		if err := validateOffsets(buffers[1], validLen, width); err != nil {
+			return nil, err
+		}
 		last, err := lastOffset(buffers[1], validLen, width)
 		if err != nil {
 			return nil, err
@@ -580,7 +568,7 @@ func lastOffset(buf *memory.Buffer, index, width int64) (int64, error) {
 		if index < 0 || index >= int64(len(data))/4 {
 			return 0, invalidf("offset index %d is outside a %d-byte buffer", index, len(data))
 		}
-		return int64(binary.NativeEndian.Uint32(data[index*4:])), nil
+		return int64(int32(binary.NativeEndian.Uint32(data[index*4:]))), nil
 	}
 	if index < 0 || index >= int64(len(data))/8 {
 		return 0, invalidf("offset index %d is outside a %d-byte buffer", index, len(data))

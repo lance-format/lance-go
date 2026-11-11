@@ -27,8 +27,8 @@ func handleID(ptr unsafe.Pointer) uint64 {
 	return (*handleBox)(ptr).id
 }
 
-// ReleaseSchema invokes src.Release exactly once if it is non-zero and clears
-// it before the callback runs. It is safe for nil structures, already released
+// ReleaseSchema invokes src.Release if it is non-zero. The producer marks the
+// structure released inside its callback. It is safe for nil or already released
 // structures, foreign producers, and structures copied away from their
 // original address. It does not clear src.PrivateData: the producer's release
 // callback owns that state and may still need it.
@@ -37,7 +37,6 @@ func ReleaseSchema(src *ArrowSchema) {
 		return
 	}
 	fn := src.Release
-	src.Release = 0
 	defer func() {
 		_ = recover()
 	}()
@@ -51,7 +50,6 @@ func ReleaseArray(src *ArrowArray) {
 		return
 	}
 	fn := src.Release
-	src.Release = 0
 	defer func() {
 		_ = recover()
 	}()
@@ -65,7 +63,6 @@ func ReleaseStream(src *ArrowArrayStream) {
 		return
 	}
 	fn := src.Release
-	src.Release = 0
 	defer func() {
 		_ = recover()
 	}()
