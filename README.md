@@ -962,6 +962,12 @@ CGO_ENABLED=0 go test -count=1 -tags lance_external_lib ./...
 CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
+`benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
+long-running repeated use of the public API. CI compiles the package and runs
+its tests, but does not execute the long benchmark.
+See [`benchmarks/soak/README.md`](benchmarks/soak/README.md) for build and run
+commands, the measurement contract and the limits of RSS evidence.
+
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native loader tests. The
 Windows CI job currently proves compilation and the loader/cache/callback
@@ -999,6 +1005,7 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
+benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
 scripts/          build-lance-c.sh, check-abi-symbols.go
 ```
 
