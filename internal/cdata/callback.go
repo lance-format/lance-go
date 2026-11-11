@@ -1,0 +1,167 @@
+package cdata
+
+import (
+	"unsafe"
+
+	"github.com/ebitengine/purego"
+
+	"github.com/lance-format/lance-go/internal/handle"
+)
+
+// handleBox is the Go allocation named by a foreign PrivateData pointer. It is
+// pinned for as long as the corresponding C structure is owned by the foreign
+// side. This keeps the handle identifier valid even when a consumer copies the
+// C structure to another address before releasing it.
+type handleBox struct {
+	id uint64
+}
+
+func newHandleBox(v any) *handleBox {
+	return &handleBox{id: handle.New(v)}
+}
+
+func handleID(ptr unsafe.Pointer) uint64 {
+	if ptr == nil {
+		return 0
+	}
+	return (*handleBox)(ptr).id
+}
+
+// ReleaseSchema invokes src.Release exactly once if it is non-zero and clears
+// it before the callback runs. It is safe for nil structures, already released
+// structures, foreign producers, and structures copied away from their
+// original address. It does not clear src.PrivateData: the producer's release
+// callback owns that state and may still need it.
+func ReleaseSchema(src *ArrowSchema) {
+	if src == nil || src.Release == 0 {
+		return
+	}
+	fn := src.Release
+	src.Release = 0
+	defer func() {
+		_ = recover()
+	}()
+	_, _, _ = purego.SyscallN(fn, uintptr(unsafe.Pointer(src)))
+}
+
+// ReleaseArray invokes src.Release exactly once if it is non-zero. Its
+// semantics match ReleaseSchema, including support for moved structures.
+func ReleaseArray(src *ArrowArray) {
+	if src == nil || src.Release == 0 {
+		return
+	}
+	fn := src.Release
+	src.Release = 0
+	defer func() {
+		_ = recover()
+	}()
+	_, _, _ = purego.SyscallN(fn, uintptr(unsafe.Pointer(src)))
+}
+
+// ReleaseStream invokes src.Release exactly once if it is non-zero. Its
+// semantics match ReleaseSchema, including support for moved structures.
+func ReleaseStream(src *ArrowArrayStream) {
+	if src == nil || src.Release == 0 {
+		return
+	}
+	fn := src.Release
+	src.Release = 0
+	defer func() {
+		_ = recover()
+	}()
+	_, _, _ = purego.SyscallN(fn, uintptr(unsafe.Pointer(src)))
+}
+
+type schemaReleaser interface {
+	releaseSchema(*ArrowSchema)
+}
+
+type arrayReleaser interface {
+	releaseArray(*ArrowArray)
+}
+
+type streamReleaser interface {
+	releaseStream(*ArrowArrayStream)
+}
+
+// The callbacks below are installed once at package initialization. purego
+// callbacks are never freed and have a process-wide limit, so no export path
+// is allowed to create callbacks dynamically.
+var (
+	callbackSchemaRelease = purego.NewCallback(schemaReleaseCallback)
+	callbackArrayRelease  = purego.NewCallback(arrayReleaseCallback)
+	callbackStreamRelease = purego.NewCallback(streamReleaseCallback)
+
+	callbackStreamGetSchema    = purego.NewCallback(streamGetSchemaCallback)
+	callbackStreamGetNext      = purego.NewCallback(streamGetNextCallback)
+	callbackStreamGetLastError = purego.NewCallback(streamGetLastErrorCallback)
+)
+
+func schemaReleaseCallback(ptr uintptr) {
+	if ptr == 0 {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+
+	s := (*ArrowSchema)(unsafe.Pointer(ptr))
+	s.Release = 0
+	id := handleID(s.PrivateData)
+	if id == 0 {
+		return
+	}
+	v, ok := handle.Take(id)
+	if !ok {
+		return
+	}
+	if r, ok := v.(schemaReleaser); ok {
+		r.releaseSchema(s)
+	}
+}
+
+func arrayReleaseCallback(ptr uintptr) {
+	if ptr == 0 {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+
+	a := (*ArrowArray)(unsafe.Pointer(ptr))
+	a.Release = 0
+	id := handleID(a.PrivateData)
+	if id == 0 {
+		return
+	}
+	v, ok := handle.Take(id)
+	if !ok {
+		return
+	}
+	if r, ok := v.(arrayReleaser); ok {
+		r.releaseArray(a)
+	}
+}
+
+func streamReleaseCallback(ptr uintptr) {
+	if ptr == 0 {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+
+	s := (*ArrowArrayStream)(unsafe.Pointer(ptr))
+	s.Release = 0
+	id := handleID(s.PrivateData)
+	if id == 0 {
+		return
+	}
+	v, ok := handle.Take(id)
+	if !ok {
+		return
+	}
+	if r, ok := v.(streamReleaser); ok {
+		r.releaseStream(s)
+	}
+}
