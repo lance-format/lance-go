@@ -51,10 +51,14 @@ func (c Code) String() string {
 	}
 }
 
-// Error is an error reported by lance-c through its thread-local channel.
+// Error reports a Lance error code and message.
 type Error struct {
 	Code    Code
 	Message string
+}
+
+func invalidf(format string, args ...any) error {
+	return &Error{Code: CodeInvalidArgument, Message: fmt.Sprintf(format, args...)}
 }
 
 func (e *Error) Error() string {
