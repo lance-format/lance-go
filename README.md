@@ -8,7 +8,8 @@ official `lance-c` C ABI without cgo.
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, vector and full-text search,
 immutable row/schema mutations, version history, tags, branches, staged transactions,
-fragment inspection, and Blob reads. It uses Arrow Go v18 and requires Go 1.23
+fragment inspection, Blob reads, and native directory/REST namespaces with managed
+dataset open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
 or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
@@ -24,8 +25,8 @@ coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
 and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Index, maintenance
-and namespace APIs are tracked in
+Windows DLL belongs to the lance-c release process. Remaining API parity and
+platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
@@ -693,6 +694,46 @@ Native protobuf persistence normalizes empty property maps to absent on readback
 Registering bases does not route new writes to them. The pinned C API does not
 expose write placement, so `AddBases` only records and lists the registry.
 
+## Native namespaces
+
+The `namespace` package exposes typed namespace requests and responses through
+native Directory, REST and Connect implementations. A Directory namespace can
+manage local tables:
+
+```go
+ns, err := namespace.NewDirectory(map[string]string{"root": "./catalog"})
+if err != nil {
+    return err
+}
+defer ns.Close()
+
+ds, err := lance.OpenFromNamespace(ctx, ns, []string{"events"},
+    lance.WithSession(session))
+if err != nil {
+    return err
+}
+defer ds.Close()
+```
+
+Use `WriteToNamespace` to create or append Arrow batches, and
+`CommitTransactionToNamespace` to publish a staged transaction through the
+catalog. Readers remain caller-owned. `WithWriteBranch` applies only to
+namespace-managed writes. Opened datasets and REST adapters retain native
+ownership and remain usable after their namespace is closed.
+
+`namespace.NewRest` takes native properties such as `uri`.
+`WithDynamicContextProvider` supplies per-operation request context. The native
+contract logs provider errors or panics and continues with empty context; do
+not rely on provider failure to deny a request. Context cancellation is checked
+before synchronous native calls and does not interrupt an operation in flight.
+
+Models preserve absent, explicit-null and concrete values using pointers to
+`namespace.Nullable[T]`. Native namespace errors retain their separate error
+code space, including code zero (`Unsupported`). The standalone `namespace`
+package activates the same platform bundle as the root package. Custom Go
+namespace implementations require the upstream callback interface tracked in
+[lance-c#180](https://github.com/lance-format/lance-c/issues/180).
+
 ## How loading works
 
 `internal/loader` resolves the native library once per process:
@@ -867,7 +908,8 @@ Windows arm64; neither establishes native Windows DLL support.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
-lance_bundle_linux_amd64.go  generated selector that registers the bundle
+namespace/        typed native namespace API and managed dataset operations
+internal/bundled/ shared zero-config selector registration for root and namespace
 artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
