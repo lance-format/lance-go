@@ -832,7 +832,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_optimize_indices", &b.datasetOptimizeIndices},
 		{"lance_dataset_plan_optimize_indices", &b.datasetPlanOptimizeIndices},
 		{"lance_dataset_commit_optimize_indices", &b.datasetCommitOptimizeIndices},
-		{"lance_optimize_indices_plan_plan_id", &b.optimizeIndicesPlanPlanID},
+		{"lance_optimize_indices_plan_id", &b.optimizeIndicesPlanPlanID},
 		{"lance_optimize_indices_plan_read_version", &b.optimizeIndicesPlanReadVersion},
 		{"lance_optimize_indices_plan_task_count", &b.optimizeIndicesPlanTaskCount},
 		{"lance_optimize_indices_plan_merge_count", &b.optimizeIndicesPlanMergeCount},

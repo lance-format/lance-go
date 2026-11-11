@@ -1,6 +1,7 @@
 package lance_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"path/filepath"
@@ -126,6 +127,12 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	if restored.JSON() != plan.JSON() {
 		t.Fatal("restored plan JSON differs from native JSON")
 	}
+	if _, err := plan.Task(plan.TaskCount()); err == nil {
+		t.Fatal("Task accepted an out-of-range index")
+	}
+	if _, err := plan.Merge(plan.MergeCount()); err == nil {
+		t.Fatal("Merge accepted an out-of-range index")
+	}
 
 	for i := uint64(0); i < plan.TaskCount(); i++ {
 		task, err := plan.Task(i)
@@ -146,7 +153,8 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 		if roundTrip.PlanID() != task.PlanID() || roundTrip.Group() != task.Group() ||
 			roundTrip.FragmentCount() != task.FragmentCount() ||
 			roundTrip.NumIndicesToMerge() != task.NumIndicesToMerge() ||
-			roundTrip.Retrain() != task.Retrain() {
+			roundTrip.EnablePartitionRebalancing() != task.EnablePartitionRebalancing() ||
+			roundTrip.Retrain() != task.Retrain() || roundTrip.JSON() != task.JSON() {
 			t.Fatalf("task %d changed across JSON transport", i)
 		}
 
@@ -186,7 +194,11 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Task(%d): %v", i, err)
 		}
-		result, err := task.Execute(ctx, dataset)
+		restoredTask, err := lance.OptimizeIndexTaskFromJSON(task.JSON())
+		if err != nil {
+			t.Fatalf("OptimizeIndexTaskFromJSON(%d): %v", i, err)
+		}
+		result, err := restoredTask.Execute(ctx, dataset)
 		if err != nil {
 			t.Fatalf("task %d Execute: %v", i, err)
 		}
@@ -196,6 +208,43 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 		if result.PlanID() != plan.PlanID() || result.ReadVersion() != sourceVersion || result.Group() != task.Group() {
 			t.Fatalf("task %d result identity = %s/%d/%d, want %s/%d/%d",
 				i, result.PlanID(), result.ReadVersion(), result.Group(), plan.PlanID(), sourceVersion, task.Group())
+		}
+		restoredResult, err := lance.IndexSegmentResultFromJSON(result.JSON())
+		if err != nil {
+			t.Fatalf("IndexSegmentResultFromJSON(%d): %v", i, err)
+		}
+		if restoredResult.PlanID() != result.PlanID() || restoredResult.ReadVersion() != result.ReadVersion() ||
+			restoredResult.Group() != result.Group() || restoredResult.ReplaceCount() != result.ReplaceCount() ||
+			restoredResult.JSON() != result.JSON() {
+			t.Fatalf("task %d result changed across JSON transport", i)
+		}
+		segment, err := result.Segment()
+		if err != nil {
+			t.Fatalf("task %d result Segment: %v", i, err)
+		}
+		restoredSegment, err := restoredResult.Segment()
+		if err != nil {
+			t.Fatalf("restored task %d result Segment: %v", i, err)
+		}
+		segmentBytes, err := segment.Encode()
+		if err != nil {
+			t.Fatalf("task %d result segment Encode: %v", i, err)
+		}
+		restoredSegmentBytes, err := restoredSegment.Encode()
+		if err != nil {
+			t.Fatalf("restored task %d result segment Encode: %v", i, err)
+		}
+		if !bytes.Equal(restoredSegmentBytes, segmentBytes) {
+			t.Fatalf("task %d result segment changed across JSON transport", i)
+		}
+		if name, err := restoredSegment.Name(); err != nil || name != "id_bitmap" {
+			t.Fatalf("task %d result segment name = %q, %v; want id_bitmap", i, name, err)
+		}
+		if err := segment.Close(); err != nil {
+			t.Fatalf("close task %d result segment: %v", i, err)
+		}
+		if err := restoredSegment.Close(); err != nil {
+			t.Fatalf("close restored task %d result segment: %v", i, err)
 		}
 		taskResults = append(taskResults, result)
 	}
@@ -214,7 +263,44 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 					inputs = append(inputs, result)
 				}
 			}
-			result, err := merge.Execute(ctx, dataset, inputs)
+			restoredMerge, err := lance.OptimizeIndexMergeFromJSON(merge.JSON())
+			if err != nil {
+				t.Fatalf("OptimizeIndexMergeFromJSON(%d): %v", i, err)
+			}
+			if restoredMerge.PlanID() != merge.PlanID() || restoredMerge.ReadVersion() != merge.ReadVersion() ||
+				restoredMerge.Group() != merge.Group() ||
+				restoredMerge.OldSegmentCount() != merge.OldSegmentCount() ||
+				restoredMerge.ReplaceCount() != merge.ReplaceCount() || restoredMerge.JSON() != merge.JSON() {
+				t.Fatalf("merge %d changed across JSON transport", i)
+			}
+			for j := uint64(0); j < merge.OldSegmentCount(); j++ {
+				old, err := merge.OldSegment(j)
+				if err != nil {
+					t.Fatalf("merge %d OldSegment(%d): %v", i, j, err)
+				}
+				restoredOld, err := restoredMerge.OldSegment(j)
+				if err != nil {
+					t.Fatalf("restored merge %d OldSegment(%d): %v", i, j, err)
+				}
+				oldBytes, err := old.Encode()
+				if err != nil {
+					t.Fatalf("merge %d old segment %d Encode: %v", i, j, err)
+				}
+				restoredOldBytes, err := restoredOld.Encode()
+				if err != nil {
+					t.Fatalf("restored merge %d old segment %d Encode: %v", i, j, err)
+				}
+				if !bytes.Equal(restoredOldBytes, oldBytes) {
+					t.Fatalf("merge %d old segment %d changed across JSON transport", i, j)
+				}
+				if err := old.Close(); err != nil {
+					t.Fatalf("close merge %d old segment %d: %v", i, j, err)
+				}
+				if err := restoredOld.Close(); err != nil {
+					t.Fatalf("close restored merge %d old segment %d: %v", i, j, err)
+				}
+			}
+			result, err := restoredMerge.Execute(ctx, dataset, inputs)
 			if err != nil {
 				t.Fatalf("merge %d Execute: %v", i, err)
 			}
@@ -327,6 +413,16 @@ func TestOptimizeIndicesOptionSemantics(t *testing.T) {
 	}
 	if _, err := lance.IndexSegmentResultFromJSON("{}"); err == nil {
 		t.Fatal("IndexSegmentResultFromJSON accepted incomplete JSON")
+	}
+	if _, err := dataset.PlanOptimizeIndices(ctx, &compaction.OptimizeOptions{
+		IndexNames: compaction.Some([]string{"id\x00bitmap"}),
+	}); err == nil {
+		t.Fatal("PlanOptimizeIndices accepted an index name containing NUL")
+	}
+	if _, err := dataset.CommitOptimizeIndices(ctx, nil, &compaction.OptimizeOptions{
+		TransactionProperties: map[string]string{"key": "value\x00"},
+	}); err == nil {
+		t.Fatal("CommitOptimizeIndices accepted a transaction property containing NUL")
 	}
 
 	canceled, cancel := context.WithCancel(ctx)

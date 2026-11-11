@@ -6,21 +6,24 @@ package compaction
 // defaults (the C API's NULL options). A non-nil value starts from native
 // defaults and applies only the fields that are set.
 //
-// Pointer fields distinguish an absent value from an explicit zero or false.
-// Optional fields additionally distinguish an explicit native None from an
-// unset value. IndexNames and TransactionProperties are copied before the
-// call returns.
+// Unset optional fields leave the native default unchanged; None sets the
+// native option to None explicitly; Some sets it, including an explicit zero
+// or an empty slice. IndexNames and TransactionProperties are copied before
+// the call returns.
 //
-// Native plan, task, merge and result JSON does not serialize these options.
-// They only configure plan creation, single-process optimization and the
-// commit transaction, so pass TransactionProperties again to
-// CommitOptimizeIndices when the results crossed a JSON transport boundary.
+// Native plan, task, merge and result JSON do not serialize OptimizeOptions.
+// Task JSON carries the merge options that execution re-applies
+// (NumIndicesToMerge, EnablePartitionRebalancing and Retrain). IndexNames and
+// the row bounds only select and split the plan. TransactionProperties apply
+// only to a commit, so pass them again to CommitOptimizeIndices when the
+// results crossed a JSON transport boundary.
 type OptimizeOptions struct {
-	// NumIndicesToMerge limits how many existing delta index segments one
-	// index merge covers. Unset leaves the native default (none, which starts
-	// a new delta segment when an index is split); Some(n) merges up to n
-	// updates plus the latest delta segments, and Some(0) requests append-only
-	// behavior.
+	// NumIndicesToMerge limits how many existing index segments one merge
+	// absorbs. Unset leaves the native default (None): a split build appends a
+	// delta, while the single-process optimizer may instead merge all delta
+	// segments when a vector index's partitions need rebalancing. Some(n)
+	// merges the latest n segments plus the new updates, and Some(0) disables
+	// merging and appends a delta.
 	NumIndicesToMerge Optional[uint64]
 
 	// EnablePartitionRebalancing lets native optimization rebalance index
@@ -43,11 +46,12 @@ type OptimizeOptions struct {
 	// sets it. The map is copied before the call returns.
 	TransactionProperties map[string]string
 
-	// MaxRowsPerTask bounds the rows one task reads. None leaves the native
-	// option unset; unset also leaves it unset.
+	// MaxRowsPerTask bounds the rows one build task covers. Unset and None both
+	// leave the native bound unset (unbounded); Some sets it, including zero.
 	MaxRowsPerTask Optional[uint64]
 
-	// MaxRowsPerSegment bounds the rows in one output segment. None leaves
-	// the native option unset; unset also leaves it unset.
+	// MaxRowsPerSegment bounds the rows in one output segment. Unset and None
+	// both leave the native bound unset (unbounded); Some sets it, including
+	// zero.
 	MaxRowsPerSegment Optional[uint64]
 }

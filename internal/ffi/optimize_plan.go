@@ -45,7 +45,7 @@ func (p *OptimizeIndicesPlan) PlanID() ([16]byte, error) {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return [16]byte{}, nativeErr
 		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_indices_plan_plan_id failed without setting an error")
+		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_indices_plan_id failed without setting an error")
 	}
 	return uuid, nil
 }
@@ -319,7 +319,8 @@ func (t *OptimizeIndexTask) Reference() (*SegmentMetadata, error) {
 	return &SegmentMetadata{b: b, handle: metadata}, nil
 }
 
-// OldSegmentCount returns the number of replaced index segments.
+// OldSegmentCount returns the number of old index segments the task may fold
+// into its output.
 func (t *OptimizeIndexTask) OldSegmentCount() (uint64, error) {
 	handle := t.handle
 	if handle == 0 {
@@ -336,7 +337,7 @@ func (t *OptimizeIndexTask) OldSegmentCount() (uint64, error) {
 	return count, nil
 }
 
-// OldSegmentAt returns an owned copy of one replaced segment's metadata.
+// OldSegmentAt returns an owned copy of one old segment's metadata.
 func (t *OptimizeIndexTask) OldSegmentAt(index uint64) (*SegmentMetadata, error) {
 	handle := t.handle
 	if handle == 0 {
@@ -573,7 +574,8 @@ func (m *OptimizeIndexMerge) Group() (uint32, error) {
 	return group, nil
 }
 
-// OldSegmentCount returns the number of segments merged by this merge.
+// OldSegmentCount returns the number of old segments this merge folds into
+// its output.
 func (m *OptimizeIndexMerge) OldSegmentCount() (uint64, error) {
 	handle := m.handle
 	if handle == 0 {
@@ -590,7 +592,7 @@ func (m *OptimizeIndexMerge) OldSegmentCount() (uint64, error) {
 	return count, nil
 }
 
-// OldSegmentAt returns an owned copy of one merged segment's metadata.
+// OldSegmentAt returns an owned copy of one old segment's metadata.
 func (m *OptimizeIndexMerge) OldSegmentAt(index uint64) (*SegmentMetadata, error) {
 	handle := m.handle
 	if handle == 0 {

@@ -352,6 +352,109 @@ advisory build progress. Observers run on native worker threads, may be called
 concurrently, must not block or call back into Lance, and are recovered from
 panics. Stage names are diagnostic and may change between native releases.
 
+## Index optimization
+
+`OptimizeIndices` runs native single-process index optimization and returns a
+new `Dataset` at the committed version. The receiver keeps its version, rows
+and open scanners. A clean dataset is a native no-op and keeps the version
+unchanged. A nil `*compaction.OptimizeOptions` selects native defaults; a
+non-nil value starts from those defaults and applies only the fields that are
+set.
+
+```go
+taskRows := uint64(1 << 20)
+segmentRows := uint64(1 << 20)
+optimized, err := ds.OptimizeIndices(ctx, &compaction.OptimizeOptions{
+    IndexNames:        compaction.Some([]string{"vector_idx"}),
+    MaxRowsPerTask:    compaction.Some(taskRows),
+    MaxRowsPerSegment: compaction.Some(segmentRows),
+})
+if err != nil {
+    return err
+}
+defer optimized.Close()
+```
+
+For distributed work, `PlanOptimizeIndices` captures an immutable plan without
+publishing a version. Plan, task, merge and result snapshots expose native JSON
+with `JSON`; `OptimizeIndicesPlanFromJSON`, `OptimizeIndexTaskFromJSON`,
+`OptimizeIndexMergeFromJSON` and `IndexSegmentResultFromJSON` restore them.
+`OptimizeIndexTask.Execute` writes one uncommitted segment, and
+`OptimizeIndexMerge.Execute` combines the task results of one merge group.
+`CommitOptimizeIndices` publishes the result segments in one version and returns
+a new dataset.
+
+When a plan contains merges, commit the merge outputs rather than the raw task
+results: task outputs in a split group are inputs to that group's merge and do
+not by themselves replace the old segments. Plans expose `TaskCount`/`Task` and
+`MergeCount`/`Merge`. Tasks expose their fragment IDs, reference metadata and
+old segments; merges expose their old segments and replaced segment UUIDs;
+results expose the produced `Segment` metadata.
+
+```go
+plan, err := ds.PlanOptimizeIndices(ctx, &compaction.OptimizeOptions{
+    IndexNames: compaction.Some([]string{"vector_idx"}),
+})
+if err != nil {
+    return err
+}
+var taskResults []*lance.IndexSegmentResult
+for i := uint64(0); i < plan.TaskCount(); i++ {
+    task, err := plan.Task(i)
+    if err != nil {
+        return err
+    }
+    result, err := task.Execute(ctx, ds)
+    if err != nil {
+        return err
+    }
+    if result != nil {
+        taskResults = append(taskResults, result)
+    }
+}
+
+results := taskResults
+if plan.MergeCount() > 0 {
+    results = nil
+    for i := uint64(0); i < plan.MergeCount(); i++ {
+        merge, err := plan.Merge(i)
+        if err != nil {
+            return err
+        }
+        var inputs []*lance.IndexSegmentResult
+        for _, result := range taskResults {
+            if result.Group() == merge.Group() {
+                inputs = append(inputs, result)
+            }
+        }
+        result, err := merge.Execute(ctx, ds, inputs)
+        if err != nil {
+            return err
+        }
+        if result != nil {
+            results = append(results, result)
+        }
+    }
+}
+
+committed, err := ds.CommitOptimizeIndices(ctx, results,
+    &compaction.OptimizeOptions{
+        TransactionProperties: map[string]string{"job": "reindex-2026-11"},
+    })
+if err != nil {
+    return err
+}
+defer committed.Close()
+```
+
+Native JSON is authoritative across a transport boundary. Task JSON carries
+the dataset version and the merge options that execution re-applies;
+`IndexNames` and the row bounds only affect planning. `TransactionProperties`
+apply only to the commit, so pass them again to `CommitOptimizeIndices` after a
+JSON round trip. Native validates plan ID, merge group, read version and
+replacement ownership. Planning, execution and merging write index files but
+publish nothing; only the commit changes the dataset version.
+
 ## Versions, tags and branches
 
 `CurrentVersion` reports the checked-out version with its nanosecond timestamp

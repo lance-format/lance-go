@@ -156,7 +156,7 @@ func (p *OptimizeIndicesPlan) JSON() string {
 }
 
 // OptimizeIndexTask is an immutable snapshot of one build task. It carries the
-// task JSON, source fragment coverage, reference and replaced segment metadata
+// task JSON, source fragment coverage, reference and old segment metadata
 // copies, and the task's native merge options.
 type OptimizeIndexTask struct {
 	uri                        string
@@ -233,13 +233,14 @@ func (t *OptimizeIndexTask) Reference() (*IndexSegmentMetadata, error) {
 	return &IndexSegmentMetadata{native: native}, nil
 }
 
-// OldSegmentCount returns the number of index segments the task replaces.
+// OldSegmentCount returns the number of old index segments the task may fold
+// into its output.
 func (t *OptimizeIndexTask) OldSegmentCount() uint64 {
 	return uint64(len(t.oldSegments))
 }
 
-// OldSegment returns an owned copy of one replaced segment's metadata. Close
-// the metadata when it is no longer needed.
+// OldSegment returns an owned copy of one old segment's metadata. Close the
+// metadata when it is no longer needed.
 func (t *OptimizeIndexTask) OldSegment(index uint64) (*IndexSegmentMetadata, error) {
 	if index >= uint64(len(t.oldSegments)) {
 		return nil, invalidError("optimize index task old segment", t.uri,
@@ -363,12 +364,13 @@ func (m *OptimizeIndexMerge) Group() uint32 {
 	return m.group
 }
 
-// OldSegmentCount returns the number of index segments the merge replaces.
+// OldSegmentCount returns the number of old index segments the merge folds into
+// its output.
 func (m *OptimizeIndexMerge) OldSegmentCount() uint64 {
 	return uint64(len(m.oldSegments))
 }
 
-// OldSegment returns an owned copy of one merged segment's metadata. Close the
+// OldSegment returns an owned copy of one old segment's metadata. Close the
 // metadata when it is no longer needed.
 func (m *OptimizeIndexMerge) OldSegment(index uint64) (*IndexSegmentMetadata, error) {
 	if index >= uint64(len(m.oldSegments)) {
