@@ -11,6 +11,9 @@ import (
 
 // Write writes all batches from reader using the supplied options. The
 // default mode is Create.
+// Auto-cleanup is unset unless WithAutoCleanup is supplied; session and
+// progress options do not change this default. Append and Overwrite preserve
+// the existing dataset's stored cleanup policy.
 //
 // reader is borrowed and advanced during the call, possibly only partially
 // when a write fails. The caller retains ownership and must release reader
@@ -47,16 +50,27 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		}
 	}
 
-	if config.session != nil {
-		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted")
-	}
-	if config.hasTransactionProperties {
-		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")
+	if config.schema != nil {
+		return nil, invalidError("write", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
 	}
 	if config.branch != "" {
 		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	releaseLock, err := config.commitLock.pin("write", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
+	if config.params.hasNativeOptions() || config.session != nil || config.hasTransactionProperties {
+		return writeNativeDataset(uri, reader, config)
+	}
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +79,11 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	nativeOptions := nativeWriteOptions(config)
 
 	var native *ffi.Dataset
-	if storageAccessor != nil {
+	if config.commitLock != nil {
+		// Sessions always take the native-options path above, so this
+		// accessor-only overload receives the session through that handle.
+		native, err = ffi.WriteWithAccessorAndCommitLock(uri, reader, nativeOptions, storageAccessor, nil, config.commitLock.native)
+	} else if storageAccessor != nil {
 		native, err = ffi.WriteWithAccessor(uri, reader, nativeOptions, storageAccessor)
 	} else {
 		native, err = ffi.Write(uri, reader, nativeOptions, config.storageOptions)

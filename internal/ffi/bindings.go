@@ -20,28 +20,31 @@ type bindings struct {
 	freeString       func(*byte)
 	freeBytes        func(*byte)
 
-	datasetOpen              func(uri string, storageOpts []uintptr, version uint64) uintptr
-	datasetOpenWithSession   func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
-	datasetOpenWithOptions   func(uri string, options *datasetOpenOptions, session uintptr) uintptr
-	datasetClose             func(dataset uintptr)
-	datasetVersion           func(dataset uintptr) uint64
-	datasetCountRows         func(dataset uintptr) uint64
-	datasetCountRowsFiltered func(dataset uintptr, filter string) uint64
-	datasetLatestVersion     func(dataset uintptr) uint64
-	datasetValidate          func(dataset uintptr) int32
-	datasetSchema            func(dataset uintptr, out *cdata.ArrowSchema) int32
-	datasetDataStats         func(dataset uintptr) uintptr
-	dataStatsCount           func(stats uintptr) uint64
-	dataStatsFieldIDAt       func(stats uintptr, index uint64) uint32
-	dataStatsBytesAt         func(stats uintptr, index uint64) uint64
-	dataStatsClose           func(stats uintptr)
-	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	datasetTakeBlobs         func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
-	datasetTakeBlobsIndices  func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
-	datasetTakeBlobsAddrs    func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
-	datasetReadBlobs         func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
-	datasetReadBlobRanges    func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetOpen               func(uri string, storageOpts []uintptr, version uint64) uintptr
+	datasetOpenWithSession    func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
+	datasetOpenWithOptions    func(uri string, options *datasetOpenOptions, session uintptr) uintptr
+	datasetOpenWithCommitLock func(uri string, accessor uintptr, version uint64, session uintptr, lock uintptr, outDataset *uintptr) int32
+	commitLockNew             func(callbacks *commitLockCallbacks) uintptr
+	commitLockClose           func(lock uintptr)
+	datasetClose              func(dataset uintptr)
+	datasetVersion            func(dataset uintptr) uint64
+	datasetCountRows          func(dataset uintptr) uint64
+	datasetCountRowsFiltered  func(dataset uintptr, filter string) uint64
+	datasetLatestVersion      func(dataset uintptr) uint64
+	datasetValidate           func(dataset uintptr) int32
+	datasetSchema             func(dataset uintptr, out *cdata.ArrowSchema) int32
+	datasetDataStats          func(dataset uintptr) uintptr
+	dataStatsCount            func(stats uintptr) uint64
+	dataStatsFieldIDAt        func(stats uintptr, index uint64) uint32
+	dataStatsBytesAt          func(stats uintptr, index uint64) uint64
+	dataStatsClose            func(stats uintptr)
+	datasetTake               func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeRows           func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeBlobs          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
+	datasetTakeBlobsIndices   func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
+	datasetTakeBlobsAddrs     func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
+	datasetReadBlobs          func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetReadBlobRanges     func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
 
 	blobFileSize          func(blob uintptr) uint64
 	blobFileRead          func(blob uintptr, dst *byte, dstLen uint64) int32
@@ -151,18 +154,21 @@ type bindings struct {
 	datasetMerge         func(dataset uintptr, leftOn, rightOn string, source *cdata.ArrowArrayStream) int32
 	datasetTruncateTable func(dataset uintptr) int32
 
-	datasetCreateVectorIndexWithOptions func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, replace bool) int32
-	datasetCreateScalarIndexWithOptions func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, replace bool) int32
-	datasetDropIndex                    func(dataset uintptr, name string) int32
-	datasetIndexCount                   func(dataset uintptr) uint64
-	datasetIndexListJSON                func(dataset uintptr) *byte
-	datasetDescribeIndicesJSON          func(dataset uintptr) *byte
-	datasetIndexStatisticsJSON          func(dataset uintptr, name string) *byte
-	datasetIndexSegmentsJSON            func(dataset uintptr) *byte
-	datasetIndexSegmentCount            func(dataset uintptr, name string) uint64
-	datasetIndexSegments                func(dataset uintptr, name string, outUUIDs []byte, capacity uint64, outCount *uint64) int32
-	datasetPrewarmIndex                 func(dataset uintptr, name string) int32
-	datasetPrewarmIndexWithOptions      func(dataset uintptr, name string, options *indexPrewarmOptions) int32
+	datasetCreateVectorIndexWithOptions            func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, replace bool) int32
+	datasetCreateVectorIndexWithOptionsAndProgress func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, callback uintptr, ctx uintptr, replace bool) int32
+	datasetCreateScalarIndexWithOptions            func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, replace bool) int32
+	datasetCreateScalarIndexWithProgress           func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, callback uintptr, ctx uintptr, replace bool) int32
+	datasetCreateScalarIndexWithOptionsAndProgress func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, callback uintptr, ctx uintptr, replace bool) int32
+	datasetDropIndex                               func(dataset uintptr, name string) int32
+	datasetIndexCount                              func(dataset uintptr) uint64
+	datasetIndexListJSON                           func(dataset uintptr) *byte
+	datasetDescribeIndicesJSON                     func(dataset uintptr) *byte
+	datasetIndexStatisticsJSON                     func(dataset uintptr, name string) *byte
+	datasetIndexSegmentsJSON                       func(dataset uintptr) *byte
+	datasetIndexSegmentCount                       func(dataset uintptr, name string) uint64
+	datasetIndexSegments                           func(dataset uintptr, name string, outUUIDs []byte, capacity uint64, outCount *uint64) int32
+	datasetPrewarmIndex                            func(dataset uintptr, name string) int32
+	datasetPrewarmIndexWithOptions                 func(dataset uintptr, name string, options *indexPrewarmOptions) int32
 
 	segmentBuilderNewScalar            func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, options *segmentBuildOptions) uintptr
 	segmentBuilderNewScalarWithOptions func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, scalarOptions *scalarIndexOptions, options *segmentBuildOptions) uintptr
@@ -228,8 +234,12 @@ type bindings struct {
 	sessionGetSizeBytes      func(session uintptr, out *uint64) int32
 	sessionGetApproxNumItems func(session uintptr, out *uint64) int32
 
-	datasetWriteWithOptions            func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
-	datasetWriteWithOptionsAndAccessor func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptions               func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptionsAndAccessor    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, outDataset *uintptr) int32
+	datasetWriteWithOptionsWithCommitLock func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, accessor uintptr, session uintptr, lock uintptr, outDataset *uintptr) int32
+	datasetWriteWithNativeOptions         func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options uintptr, outDataset *uintptr) int32
+	nativeWriteOptionsNew                 func(spec *nativeWriteOptionsSpec) uintptr
+	nativeWriteOptionsClose               func(options uintptr)
 
 	scannerNew                          func(dataset uintptr, columns []uintptr, filter uintptr) uintptr
 	scannerClose                        func(scanner uintptr)
@@ -373,25 +383,44 @@ type bindings struct {
 	schemaProject      func(schema uintptr, columns []uintptr, count uint64, out *uintptr) int32
 	schemaFieldID      func(schema uintptr, column string, out *int32) int32
 
-	datasetFragmentCount     func(dataset uintptr) uint64
-	datasetFragmentIDs       func(dataset uintptr, outIDs []uint64) int32
-	datasetOpenFragment      func(dataset uintptr, fragmentID uint64) uintptr
-	fragmentClose            func(fragment uintptr)
-	fragmentID               func(fragment uintptr) uint64
-	fragmentDataFileCount    func(fragment uintptr) uint64
-	fragmentIsBound          func(fragment uintptr, out *bool) int32
-	fragmentDataFileAt       func(fragment uintptr, index uint64, out *uintptr) int32
-	fragmentDataFileForField func(fragment uintptr, fieldID int32, out *uintptr) int32
-	fragmentMetadataJSON     func(fragment uintptr) *byte
-	fragmentSchema           func(fragment uintptr, out *cdata.ArrowSchema) int32
-	fragmentSchemaClone      func(fragment uintptr, out *uintptr) int32
-	fragmentPhysicalRows     func(fragment uintptr, out *uint64) int32
-	fragmentDeletedRows      func(fragment uintptr, out *uint64) int32
-	fragmentLogicalRows      func(fragment uintptr, out *uint64) int32
-	fragmentScan             func(fragment uintptr) uintptr
-	fragmentTake             func(fragment uintptr, indices []uint32, count uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	fragmentCountRows        func(fragment uintptr, filter uintptr, out *uint64) int32
-	fragmentDelete           func(fragment uintptr, predicate string, out *uintptr) int32
+	datasetFragmentCount                           func(dataset uintptr) uint64
+	datasetFragmentIDs                             func(dataset uintptr, outIDs []uint64) int32
+	datasetOpenFragment                            func(dataset uintptr, fragmentID uint64) uintptr
+	fragmentClose                                  func(fragment uintptr)
+	fragmentID                                     func(fragment uintptr) uint64
+	fragmentDataFileCount                          func(fragment uintptr) uint64
+	fragmentIsBound                                func(fragment uintptr, out *bool) int32
+	fragmentDataFileAt                             func(fragment uintptr, index uint64, out *uintptr) int32
+	fragmentDataFileForField                       func(fragment uintptr, fieldID int32, out *uintptr) int32
+	fragmentMetadataJSON                           func(fragment uintptr) *byte
+	fragmentSchema                                 func(fragment uintptr, out *cdata.ArrowSchema) int32
+	fragmentSchemaClone                            func(fragment uintptr, out *uintptr) int32
+	fragmentPhysicalRows                           func(fragment uintptr, out *uint64) int32
+	fragmentDeletedRows                            func(fragment uintptr, out *uint64) int32
+	fragmentLogicalRows                            func(fragment uintptr, out *uint64) int32
+	fragmentScan                                   func(fragment uintptr) uintptr
+	fragmentTake                                   func(fragment uintptr, indices []uint32, count uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	fragmentCountRows                              func(fragment uintptr, filter uintptr, out *uint64) int32
+	fragmentDelete                                 func(fragment uintptr, predicate string, out *uintptr) int32
+	fragmentAddColumnsSQL                          func(fragment uintptr, columns *sqlColumn, count uint64, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsNulls                        func(fragment uintptr, schema *cdata.ArrowSchema, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsStream                       func(fragment uintptr, stream *cdata.ArrowArrayStream, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsBatchUDF                     func(fragment uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentMergeColumns                           func(fragment uintptr, stream *cdata.ArrowArrayStream, leftOn, rightOn string, outFragment, outSchema *uintptr) int32
+	fragmentUpdateColumns                          func(fragment uintptr, stream *cdata.ArrowArrayStream, leftOn, rightOn string, outResult *uintptr) int32
+	fragmentWriteColumns                           func(fragment uintptr, schema uintptr, stream *cdata.ArrowArrayStream, outGroup *uintptr) int32
+	fragmentWriteColumnWithVersion                 func(fragment uintptr, schema uintptr, stream *cdata.ArrowArrayStream, fileVersion int32, outGroup *uintptr) int32
+	fragmentDeleteRows                             func(fragment uintptr, offsets *uint32, count uint64, outFragment *uintptr) int32
+	fragmentUpdateColumnsResultClose               func(result uintptr)
+	fragmentUpdateColumnsResultFragment            func(result uintptr, out *uintptr) int32
+	fragmentUpdateColumnsResultFieldsModifiedCount func(result uintptr, out *uint64) int32
+	fragmentUpdateColumnsResultFieldsModifiedAt    func(result uintptr, index uint64, out *uint32) int32
+	fragmentUpdateColumnsResultMatchedOffsetCount  func(result uintptr, out *uint64) int32
+	fragmentUpdateColumnsResultMatchedOffsetAt     func(result uintptr, index uint64, out *uint32) int32
+	fragmentCreate                                 func(uri string, fragmentID uint64, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragment *uintptr) int32
+	fragmentCreateMany                             func(uri string, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragments **uintptr, outCount *uint64) int32
+	fragmentArrayFree                              func(fragments *uintptr, count uint64)
+	fragmentCreateFromFile                         func(dataset uintptr, filename string, fragmentID uint64, physicalRows *uint64, outFragment *uintptr) int32
 
 	datasetCreateDataFile    func(dataset uintptr, path string, baseID *uint32, out *uintptr) int32
 	dataFileClose            func(file uintptr)
@@ -405,57 +434,77 @@ type bindings struct {
 	dataFileFileSize         func(file uintptr, outSet *bool, outSize *uint64) int32
 	dataFileBaseID           func(file uintptr, outSet *bool, outBaseID *uint32) int32
 
-	datasetWriteUncommittedStream                func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
-	datasetWriteUncommittedStreamWithAccessor    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, out *uintptr) int32
-	transactionClose                             func(transaction uintptr)
-	operationClose                               func(operation uintptr)
-	dataReplacementGroupClose                    func(group uintptr)
-	dataReplacementGroupNew                      func(fragmentID uint64, file uintptr) uintptr
-	dataReplacementGroupClone                    func(group uintptr) uintptr
-	dataReplacementGroupFragmentID               func(group uintptr) uint64
-	dataReplacementGroupFile                     func(group uintptr, out *uintptr) int32
-	operationDataReplacementNew                  func(groups []uintptr, count uint64) uintptr
-	transactionReadVersion                       func(transaction uintptr, out *uint64) int32
-	operationDeleteNew                           func(updated []uintptr, updatedCount uint64, deletedIDs []uint64, deletedCount uint64, predicate string) uintptr
-	operationAppendNew                           func(fragments []uintptr, count uint64) uintptr
-	operationRestoreNew                          func(version uint64) uintptr
-	operationReserveFragmentsNew                 func(count uint32) uintptr
-	operationUpdateBasesNew                      func(bases *basePath, count uint64) uintptr
-	transactionNew                               func(readVersion uint64, operation uintptr, options *transactionOptions) uintptr
-	transactionUUID                              func(transaction uintptr) *byte
-	transactionTag                               func(transaction uintptr, outTag **byte) int32
-	transactionHasProperties                     func(transaction uintptr, out *bool) int32
-	transactionPropertyCount                     func(transaction uintptr, out *uint64) int32
-	transactionPropertyKeyAt                     func(transaction uintptr, index uint64) *byte
-	transactionPropertyValueAt                   func(transaction uintptr, index uint64) *byte
-	transactionOperation                         func(transaction uintptr, out *uintptr) int32
-	operationKind                                func(operation uintptr, out *int32) int32
-	operationFragmentCount                       func(operation uintptr, out *uint64) int32
-	operationAppendFragmentCount                 func(operation uintptr, out *uint64) int32
-	operationAppendFragmentAt                    func(operation uintptr, index uint64, out *uintptr) int32
-	operationRestoreVersion                      func(operation uintptr, out *uint64) int32
-	operationReserveFragmentsCount               func(operation uintptr, out *uint32) int32
-	operationUpdateBasesCount                    func(operation uintptr, out *uint64) int32
-	operationUpdateBasesAt                       func(operation uintptr, index uint64, out *basePathView) int32
-	operationDeleteUpdatedFragmentCount          func(operation uintptr, out *uint64) int32
-	operationDeleteUpdatedFragmentMetadataJSONAt func(operation uintptr, index uint64) *byte
-	operationDeleteDeletedFragmentCount          func(operation uintptr, out *uint64) int32
-	operationDeleteDeletedFragmentIDAt           func(operation uintptr, index uint64, out *uint64) int32
-	operationDeletePredicate                     func(operation uintptr) *byte
-	operationDataReplacementCount                func(operation uintptr, out *uint64) int32
-	operationDataReplacementAt                   func(operation uintptr, index uint64, out *uintptr) int32
-	operationSchemaClone                         func(operation uintptr, out *uintptr) int32
-	operationProjectNew                          func(schema uintptr, preserves bool, out *uintptr) int32
-	operationPreservesNullability                func(operation uintptr, out *bool) int32
-	operationSchema                              func(operation uintptr, out *cdata.ArrowSchema) int32
-	transactionToProto                           func(transaction uintptr, outBytes **byte, outLen *uint64) int32
-	transactionFromProto                         func(bytes []byte, length uint64) uintptr
-	datasetReadTransaction                       func(dataset uintptr, out *uintptr) int32
-	datasetReadTransactionByVersion              func(dataset uintptr, version uint64, out *uintptr) int32
-	transactionCommit                            func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
-	transactionCommitWithAccessor                func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, out *uintptr) int32
-	transactionCommitBatch                       func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
-	transactionCommitBatchWithAccessor           func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+	datasetWriteUncommittedStream                  func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	datasetWriteUncommittedStreamWithAccessor      func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, out *uintptr) int32
+	datasetWriteUncommittedStreamWithCommitLock    func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *uncommittedWriteOptions, accessor uintptr, session uintptr, lock uintptr, out *uintptr) int32
+	datasetWriteUncommittedStreamWithNativeOptions func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options uintptr, out *uintptr) int32
+	transactionClose                               func(transaction uintptr)
+	operationClose                                 func(operation uintptr)
+	dataReplacementGroupClose                      func(group uintptr)
+	dataReplacementGroupNew                        func(fragmentID uint64, file uintptr) uintptr
+	dataReplacementGroupClone                      func(group uintptr) uintptr
+	dataReplacementGroupFragmentID                 func(group uintptr) uint64
+	dataReplacementGroupFile                       func(group uintptr, out *uintptr) int32
+	operationDataReplacementNew                    func(groups []uintptr, count uint64) uintptr
+	transactionReadVersion                         func(transaction uintptr, out *uint64) int32
+	operationDeleteNew                             func(updated []uintptr, updatedCount uint64, deletedIDs []uint64, deletedCount uint64, predicate string) uintptr
+	operationAppendNew                             func(fragments []uintptr, count uint64) uintptr
+	operationRestoreNew                            func(version uint64) uintptr
+	operationReserveFragmentsNew                   func(count uint32) uintptr
+	operationUpdateBasesNew                        func(bases *basePath, count uint64) uintptr
+	transactionNew                                 func(readVersion uint64, operation uintptr, options *transactionOptions) uintptr
+	transactionUUID                                func(transaction uintptr) *byte
+	transactionTag                                 func(transaction uintptr, outTag **byte) int32
+	transactionHasProperties                       func(transaction uintptr, out *bool) int32
+	transactionPropertyCount                       func(transaction uintptr, out *uint64) int32
+	transactionPropertyKeyAt                       func(transaction uintptr, index uint64) *byte
+	transactionPropertyValueAt                     func(transaction uintptr, index uint64) *byte
+	transactionOperation                           func(transaction uintptr, out *uintptr) int32
+	operationKind                                  func(operation uintptr, out *int32) int32
+	operationFragmentCount                         func(operation uintptr, out *uint64) int32
+	operationAppendFragmentCount                   func(operation uintptr, out *uint64) int32
+	operationAppendFragmentAt                      func(operation uintptr, index uint64, out *uintptr) int32
+	operationRestoreVersion                        func(operation uintptr, out *uint64) int32
+	operationReserveFragmentsCount                 func(operation uintptr, out *uint32) int32
+	operationUpdateBasesCount                      func(operation uintptr, out *uint64) int32
+	operationUpdateBasesAt                         func(operation uintptr, index uint64, out *basePathView) int32
+	operationDeleteUpdatedFragmentCount            func(operation uintptr, out *uint64) int32
+	operationDeleteUpdatedFragmentMetadataJSONAt   func(operation uintptr, index uint64) *byte
+	operationDeleteDeletedFragmentCount            func(operation uintptr, out *uint64) int32
+	operationDeleteDeletedFragmentIDAt             func(operation uintptr, index uint64, out *uint64) int32
+	operationDeletePredicate                       func(operation uintptr) *byte
+	operationMergeFragmentCount                    func(operation uintptr, out *uint64) int32
+	operationMergeFragmentAt                       func(operation uintptr, index uint64, out *uintptr) int32
+	operationUpdateUpdatedFragmentCount            func(operation uintptr, out *uint64) int32
+	operationUpdateUpdatedFragmentAt               func(operation uintptr, index uint64, out *uintptr) int32
+	operationUpdateFieldsModifiedCount             func(operation uintptr, out *uint64) int32
+	operationUpdateFieldsModifiedAt                func(operation uintptr, index uint64, out *uint32) int32
+	operationUpdateUpdatedFragmentOffsets          func(operation uintptr, outPresent *bool, out *uintptr) int32
+	operationMergeNew                              func(schema uintptr, fragments *uintptr, count uint64, preservesNullability bool) uintptr
+	operationUpdateNew                             func(options *updateOperationOptions) uintptr
+	updatedFragmentOffsetsNew                      func(entries *updatedFragmentOffsetsView, count uint64) uintptr
+	updatedFragmentOffsetsClone                    func(offsets uintptr) uintptr
+	updatedFragmentOffsetsClose                    func(offsets uintptr)
+	updatedFragmentOffsetsCount                    func(offsets uintptr, out *uint64) int32
+	updatedFragmentOffsetsFragmentIDAt             func(offsets uintptr, index uint64, out *uint64) int32
+	updatedFragmentOffsetsOffsetCountAt            func(offsets uintptr, index uint64, out *uint64) int32
+	updatedFragmentOffsetsOffsetAt                 func(offsets uintptr, index, position uint64, out *uint32) int32
+	operationDataReplacementCount                  func(operation uintptr, out *uint64) int32
+	operationDataReplacementAt                     func(operation uintptr, index uint64, out *uintptr) int32
+	operationSchemaClone                           func(operation uintptr, out *uintptr) int32
+	operationProjectNew                            func(schema uintptr, preserves bool, out *uintptr) int32
+	operationPreservesNullability                  func(operation uintptr, out *bool) int32
+	operationSchema                                func(operation uintptr, out *cdata.ArrowSchema) int32
+	transactionToProto                             func(transaction uintptr, outBytes **byte, outLen *uint64) int32
+	transactionFromProto                           func(bytes []byte, length uint64) uintptr
+	datasetReadTransaction                         func(dataset uintptr, out *uintptr) int32
+	datasetReadTransactionByVersion                func(dataset uintptr, version uint64, out *uintptr) int32
+	transactionCommit                              func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
+	transactionCommitWithAccessor                  func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, out *uintptr) int32
+	transactionCommitWithCommitLock                func(uri string, transaction uintptr, options *commitOptions, accessor uintptr, session uintptr, lock uintptr, out *uintptr) int32
+	transactionCommitBatch                         func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+	transactionCommitBatchWithAccessor             func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
+	transactionCommitBatchWithCommitLock           func(uri string, transactions []uintptr, count uint64, options *commitOptions, accessor uintptr, session uintptr, lock uintptr, outDataset *uintptr, outTransaction *uintptr) int32
 
 	namespaceResultClose          func(result *lanceNamespaceResult)
 	namespaceID                   func(namespace uintptr) *byte
@@ -464,6 +513,7 @@ type bindings struct {
 	namespaceDirectoryNew         func(propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
 	namespaceRestNew              func(propertiesJSON string, spec *namespaceContextProviderSpec) uintptr
 	namespaceConnectNew           func(implName, propertiesJSON string, session uintptr, spec *namespaceContextProviderSpec) uintptr
+	namespaceCustomDispatchNew    func(spec *namespaceCustomDispatchSpec) uintptr
 	namespaceClose                func(namespace uintptr)
 	namespaceCall                 func(namespace uintptr, operation, requestJSON string, requestBytes []byte, requestBytesLen uint64, result *lanceNamespaceResult) int32
 	datasetOpenNamespace          func(namespace uintptr, tableIDJSON, storageOptionsJSON string, version uint64, session uintptr) uintptr
@@ -624,6 +674,9 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_open", &b.datasetOpen},
 		{"lance_dataset_open_with_session", &b.datasetOpenWithSession},
 		{"lance_dataset_open_with_options", &b.datasetOpenWithOptions},
+		{"lance_dataset_open_with_commit_lock", &b.datasetOpenWithCommitLock},
+		{"lance_commit_lock_new", &b.commitLockNew},
+		{"lance_commit_lock_close", &b.commitLockClose},
 		{"lance_dataset_close", &b.datasetClose},
 		{"lance_dataset_version", &b.datasetVersion},
 		{"lance_dataset_count_rows", &b.datasetCountRows},
@@ -750,7 +803,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_merge", &b.datasetMerge},
 		{"lance_dataset_truncate_table", &b.datasetTruncateTable},
 		{"lance_dataset_create_vector_index_with_options", &b.datasetCreateVectorIndexWithOptions},
+		{"lance_dataset_create_vector_index_with_options_and_progress", &b.datasetCreateVectorIndexWithOptionsAndProgress},
 		{"lance_dataset_create_scalar_index_with_options", &b.datasetCreateScalarIndexWithOptions},
+		{"lance_dataset_create_scalar_index_with_progress", &b.datasetCreateScalarIndexWithProgress},
+		{"lance_dataset_create_scalar_index_with_options_and_progress", &b.datasetCreateScalarIndexWithOptionsAndProgress},
 		{"lance_dataset_drop_index", &b.datasetDropIndex},
 		{"lance_dataset_index_count", &b.datasetIndexCount},
 		{"lance_dataset_index_list_json", &b.datasetIndexListJSON},
@@ -823,6 +879,10 @@ func (b *bindings) symbols() []symbol {
 
 		{"lance_dataset_write_with_options", &b.datasetWriteWithOptions},
 		{"lance_dataset_write_with_options_and_accessor", &b.datasetWriteWithOptionsAndAccessor},
+		{"lance_dataset_write_with_options_with_commit_lock", &b.datasetWriteWithOptionsWithCommitLock},
+		{"lance_dataset_write_with_native_options", &b.datasetWriteWithNativeOptions},
+		{"lance_native_write_options_new", &b.nativeWriteOptionsNew},
+		{"lance_native_write_options_close", &b.nativeWriteOptionsClose},
 
 		{"lance_dataset_schema_clone", &b.datasetSchemaClone},
 		{"lance_schema_close", &b.schemaClose},
@@ -850,6 +910,25 @@ func (b *bindings) symbols() []symbol {
 		{"lance_fragment_take", &b.fragmentTake},
 		{"lance_fragment_count_rows", &b.fragmentCountRows},
 		{"lance_fragment_delete", &b.fragmentDelete},
+		{"lance_fragment_add_columns_sql", &b.fragmentAddColumnsSQL},
+		{"lance_fragment_add_columns_nulls", &b.fragmentAddColumnsNulls},
+		{"lance_fragment_add_columns_stream", &b.fragmentAddColumnsStream},
+		{"lance_fragment_add_columns_batch_udf", &b.fragmentAddColumnsBatchUDF},
+		{"lance_fragment_merge_columns", &b.fragmentMergeColumns},
+		{"lance_fragment_update_columns", &b.fragmentUpdateColumns},
+		{"lance_fragment_write_columns", &b.fragmentWriteColumns},
+		{"lance_fragment_write_column_with_version", &b.fragmentWriteColumnWithVersion},
+		{"lance_fragment_delete_rows", &b.fragmentDeleteRows},
+		{"lance_fragment_update_columns_result_close", &b.fragmentUpdateColumnsResultClose},
+		{"lance_fragment_update_columns_result_fragment", &b.fragmentUpdateColumnsResultFragment},
+		{"lance_fragment_update_columns_result_fields_modified_count", &b.fragmentUpdateColumnsResultFieldsModifiedCount},
+		{"lance_fragment_update_columns_result_fields_modified_at", &b.fragmentUpdateColumnsResultFieldsModifiedAt},
+		{"lance_fragment_update_columns_result_matched_offset_count", &b.fragmentUpdateColumnsResultMatchedOffsetCount},
+		{"lance_fragment_update_columns_result_matched_offset_at", &b.fragmentUpdateColumnsResultMatchedOffsetAt},
+		{"lance_fragment_create", &b.fragmentCreate},
+		{"lance_fragment_create_many", &b.fragmentCreateMany},
+		{"lance_fragment_array_free", &b.fragmentArrayFree},
+		{"lance_fragment_create_from_file", &b.fragmentCreateFromFile},
 
 		{"lance_dataset_create_data_file", &b.datasetCreateDataFile},
 		{"lance_data_file_close", &b.dataFileClose},
@@ -865,6 +944,8 @@ func (b *bindings) symbols() []symbol {
 
 		{"lance_dataset_write_uncommitted_stream", &b.datasetWriteUncommittedStream},
 		{"lance_dataset_write_uncommitted_stream_with_accessor", &b.datasetWriteUncommittedStreamWithAccessor},
+		{"lance_dataset_write_uncommitted_stream_with_commit_lock", &b.datasetWriteUncommittedStreamWithCommitLock},
+		{"lance_dataset_write_uncommitted_stream_with_native_options", &b.datasetWriteUncommittedStreamWithNativeOptions},
 		{"lance_transaction_close", &b.transactionClose},
 		{"lance_operation_close", &b.operationClose},
 		{"lance_data_replacement_group_close", &b.dataReplacementGroupClose},
@@ -900,6 +981,22 @@ func (b *bindings) symbols() []symbol {
 		{"lance_operation_delete_deleted_fragment_count", &b.operationDeleteDeletedFragmentCount},
 		{"lance_operation_delete_deleted_fragment_id_at", &b.operationDeleteDeletedFragmentIDAt},
 		{"lance_operation_delete_predicate", &b.operationDeletePredicate},
+		{"lance_operation_merge_fragment_count", &b.operationMergeFragmentCount},
+		{"lance_operation_merge_fragment_at", &b.operationMergeFragmentAt},
+		{"lance_operation_update_updated_fragment_count", &b.operationUpdateUpdatedFragmentCount},
+		{"lance_operation_update_updated_fragment_at", &b.operationUpdateUpdatedFragmentAt},
+		{"lance_operation_update_fields_modified_count", &b.operationUpdateFieldsModifiedCount},
+		{"lance_operation_update_fields_modified_at", &b.operationUpdateFieldsModifiedAt},
+		{"lance_operation_update_updated_fragment_offsets", &b.operationUpdateUpdatedFragmentOffsets},
+		{"lance_operation_merge_new", &b.operationMergeNew},
+		{"lance_operation_update_new", &b.operationUpdateNew},
+		{"lance_updated_fragment_offsets_new", &b.updatedFragmentOffsetsNew},
+		{"lance_updated_fragment_offsets_clone", &b.updatedFragmentOffsetsClone},
+		{"lance_updated_fragment_offsets_close", &b.updatedFragmentOffsetsClose},
+		{"lance_updated_fragment_offsets_count", &b.updatedFragmentOffsetsCount},
+		{"lance_updated_fragment_offsets_fragment_id_at", &b.updatedFragmentOffsetsFragmentIDAt},
+		{"lance_updated_fragment_offsets_offset_count_at", &b.updatedFragmentOffsetsOffsetCountAt},
+		{"lance_updated_fragment_offsets_offset_at", &b.updatedFragmentOffsetsOffsetAt},
 		{"lance_operation_data_replacement_count", &b.operationDataReplacementCount},
 		{"lance_operation_data_replacement_at", &b.operationDataReplacementAt},
 		{"lance_operation_schema_clone", &b.operationSchemaClone},
@@ -912,8 +1009,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
 		{"lance_transaction_commit_with_accessor", &b.transactionCommitWithAccessor},
+		{"lance_transaction_commit_with_commit_lock", &b.transactionCommitWithCommitLock},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
 		{"lance_transaction_commit_batch_with_accessor", &b.transactionCommitBatchWithAccessor},
+		{"lance_transaction_commit_batch_with_commit_lock", &b.transactionCommitBatchWithCommitLock},
 
 		{"lance_namespace_result_close", &b.namespaceResultClose},
 		{"lance_namespace_id", &b.namespaceID},
@@ -922,6 +1021,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_namespace_directory_new", &b.namespaceDirectoryNew},
 		{"lance_namespace_rest_new", &b.namespaceRestNew},
 		{"lance_namespace_connect_new", &b.namespaceConnectNew},
+		{"lance_namespace_custom_dispatch_new", &b.namespaceCustomDispatchNew},
 		{"lance_namespace_close", &b.namespaceClose},
 		{"lance_namespace_call", &b.namespaceCall},
 		{"lance_dataset_open_namespace", &b.datasetOpenNamespace},

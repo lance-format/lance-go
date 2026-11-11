@@ -334,6 +334,53 @@ func (d *Dataset) nativeHandle() (uintptr, error) {
 	return handle, nil
 }
 
+// runIndexBuild registers the observer, invokes call with the static native
+// callback and retires the observer after native returns. Native retires and
+// drains its callback before returning, so release cannot race with a new
+// observation.
+func (d *Dataset) runIndexBuild(symbol string, progress func(ProgressObservation), call func(callback, ctx uintptr) int32) error {
+	callback, ctx, state, release := registerProgressObserver(progress)
+	defer release()
+	runtime.LockOSThread()
+	rc := call(callback, ctx)
+	var nativeErr *Error
+	if rc != 0 {
+		nativeErr = d.b.takeError()
+	}
+	runtime.UnlockOSThread()
+	runtime.KeepAlive(state)
+	if rc != 0 {
+		if nativeErr != nil {
+			return nativeErr
+		}
+		return fmt.Errorf("ffi: %s failed without setting an error", symbol)
+	}
+	return nil
+}
+
+// CreateVectorIndexWithOptionsAndProgress creates a vector index from additive
+// options with a progress observer.
+func (d *Dataset) CreateVectorIndexWithOptionsAndProgress(column, name string, opts *VectorIndexOptions, progress func(ProgressObservation), replace bool) error {
+	handle, err := d.nativeHandle()
+	if err != nil {
+		return err
+	}
+	raw, cleanup, err := buildVectorIndexOptions(opts)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	nameList, err := newOptionalCString(name)
+	if err != nil {
+		return err
+	}
+	err = d.runIndexBuild("lance_dataset_create_vector_index_with_options_and_progress", progress, func(callback, ctx uintptr) int32 {
+		return d.b.datasetCreateVectorIndexWithOptionsAndProgress(handle, column, cStringPointer(nameList), raw, callback, ctx, replace)
+	})
+	nameList.keepAlive()
+	return err
+}
+
 // CreateVectorIndex creates a vector index on the open dataset handle.
 func (d *Dataset) CreateVectorIndex(column, name string, opts *VectorIndexOptions, replace bool) error {
 	handle, err := d.nativeHandle()
@@ -378,12 +425,9 @@ func (d *Dataset) CreateScalarIndex(column, name string, indexType int32, params
 	if err != nil {
 		return err
 	}
-	var paramsList *cStringList
-	if len(params) > 0 {
-		paramsList, err = newCStringList([]string{string(params)})
-		if err != nil {
-			return err
-		}
+	paramsList, err := optionalCStringList(params)
+	if err != nil {
+		return err
 	}
 	var raw *scalarIndexOptions
 	if opts != nil && opts.Train != nil {
@@ -405,6 +449,65 @@ func (d *Dataset) CreateScalarIndex(column, name string, indexType int32, params
 		return fmt.Errorf("ffi: lance_dataset_create_scalar_index_with_options failed without setting an error")
 	}
 	return nil
+}
+
+// CreateScalarIndexWithProgress creates a scalar index through the legacy
+// entry point with a progress observer.
+func (d *Dataset) CreateScalarIndexWithProgress(column, name string, indexType int32, params []byte, progress func(ProgressObservation), replace bool) error {
+	handle, err := d.nativeHandle()
+	if err != nil {
+		return err
+	}
+	nameList, err := newOptionalCString(name)
+	if err != nil {
+		return err
+	}
+	paramsList, err := optionalCStringList(params)
+	if err != nil {
+		return err
+	}
+	err = d.runIndexBuild("lance_dataset_create_scalar_index_with_progress", progress, func(callback, ctx uintptr) int32 {
+		return d.b.datasetCreateScalarIndexWithProgress(handle, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), callback, ctx, replace)
+	})
+	nameList.keepAlive()
+	paramsList.keepAlive()
+	return err
+}
+
+// CreateScalarIndexWithOptionsAndProgress creates a scalar index with additive
+// train controls and a progress observer.
+func (d *Dataset) CreateScalarIndexWithOptionsAndProgress(column, name string, indexType int32, params []byte, opts *ScalarIndexOptions, progress func(ProgressObservation), replace bool) error {
+	handle, err := d.nativeHandle()
+	if err != nil {
+		return err
+	}
+	nameList, err := newOptionalCString(name)
+	if err != nil {
+		return err
+	}
+	paramsList, err := optionalCStringList(params)
+	if err != nil {
+		return err
+	}
+	var raw *scalarIndexOptions
+	if opts != nil && opts.Train != nil {
+		raw = &scalarIndexOptions{hasTrain: true, train: *opts.Train}
+	}
+	err = d.runIndexBuild("lance_dataset_create_scalar_index_with_options_and_progress", progress, func(callback, ctx uintptr) int32 {
+		return d.b.datasetCreateScalarIndexWithOptionsAndProgress(handle, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), raw, callback, ctx, replace)
+	})
+	nameList.keepAlive()
+	paramsList.keepAlive()
+	return err
+}
+
+// optionalCStringList forwards nil or empty params as NULL and non-empty
+// params verbatim as one C string.
+func optionalCStringList(params []byte) (*cStringList, error) {
+	if len(params) == 0 {
+		return nil, nil
+	}
+	return newCStringList([]string{string(params)})
 }
 
 // DropIndex drops a user index by name.
