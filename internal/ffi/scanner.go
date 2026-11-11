@@ -142,17 +142,17 @@ var pollWaker = sync.OnceValue(func() uintptr {
 })
 
 var statisticsCallback = sync.OnceValue(func() uintptr {
-	return purego.NewCallback(func(ctx, raw uintptr) {
+	return purego.NewCallback(func(ctx uintptr, raw *scanStatistics) {
 		defer func() { _ = recover() }()
 		value, ok := handle.Get(uint64(ctx))
-		if !ok || raw == 0 {
+		if !ok || raw == nil {
 			return
 		}
 		state, ok := value.(*statsState)
 		if !ok {
 			return
 		}
-		state.store((*scanStatistics)(unsafe.Pointer(raw)))
+		state.store(raw)
 	})
 })
 

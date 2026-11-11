@@ -3,7 +3,6 @@ package ffi
 import (
 	"fmt"
 	"runtime"
-	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/array"
 
@@ -113,7 +112,7 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	rawOptions.Params.MaxBytesPerFile = opts.Params.MaxBytesPerFile
 	rawOptions.Params.EnableStableRowIDs = opts.Params.EnableStableRowIDs
 	if len(versionList.ptrs) > 0 {
-		rawOptions.Params.DataStorageVersion = (*byte)(unsafe.Pointer(versionList.ptrs[0]))
+		rawOptions.Params.DataStorageVersion = &versionList.bufs[0][0]
 	}
 	if opts.AutoCleanup != nil {
 		if opts.AutoCleanup.OlderThanNanos < -999999999 || opts.AutoCleanup.OlderThanNanos > 999999999 {
