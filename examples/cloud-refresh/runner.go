@@ -45,21 +45,27 @@ func execute(cfg config, prefix targetPrefix) *report {
 	var oldReopened *lance.Dataset
 
 	defer func() {
-		if oldReopened != nil {
-			_ = oldReopened.Close()
-			rep.Resources.ReopenedOldDatasetClosed = true
-		}
-		if reopened != nil {
-			_ = reopened.Close()
-			rep.Resources.ReopenedDatasetClosed = true
-		}
-		if mutated != nil {
-			_ = mutated.Close()
-			rep.Resources.MutatedDatasetClosed = true
-		}
-		if created != nil {
-			_ = created.Close()
-			rep.Resources.CreatedDatasetClosed = true
+		for _, resource := range []struct {
+			dataset *lance.Dataset
+			closed  *bool
+			name    string
+		}{
+			{oldReopened, &rep.Resources.ReopenedOldDatasetClosed, "reopened_old"},
+			{reopened, &rep.Resources.ReopenedDatasetClosed, "reopened"},
+			{mutated, &rep.Resources.MutatedDatasetClosed, "mutated"},
+			{created, &rep.Resources.CreatedDatasetClosed, "created"},
+		} {
+			if resource.dataset == nil {
+				continue
+			}
+			err := resource.dataset.Close()
+			*resource.closed = err == nil
+			if err != nil {
+				rep.Notes = append(rep.Notes, red.redact(fmt.Sprintf("close %s: %v", resource.name, err)))
+				if rep.Status == "passed" {
+					rep.fail(red, "cleanup", "close_"+resource.name, err)
+				}
+			}
 		}
 		if accessor != nil {
 			accessor.Close()
@@ -67,7 +73,6 @@ func execute(cfg config, prefix targetPrefix) *report {
 		if reopenAccessor != nil {
 			reopenAccessor.Close()
 		}
-		rep.Resources.ClosedOnAllPaths = true
 	}()
 
 	fail := func(stage, category string, err error) *report {
@@ -144,7 +149,7 @@ func execute(cfg config, prefix targetPrefix) *report {
 	// The initial accessor options carry A and a future expires_at_millis, so
 	// native must not have called the provider while creating or scanning A.
 	baselineStats := provider.Stats()
-	rep.NativeFetchesBefore = baselineStats.Records
+	rep.NativeFetchesBefore = append(rep.NativeFetchesBefore, baselineStats.Records...)
 	if baselineStats.Total != 0 {
 		return fail("baseline", "unexpected_native_fetch", fmt.Errorf("native fetched credentials before the refresh window; A was not used as the initial credential"))
 	}
@@ -166,6 +171,9 @@ func execute(cfg config, prefix targetPrefix) *report {
 	mutated = next
 	if err != nil {
 		return fail("mutation", "delete", err)
+	}
+	if deleted != 1 {
+		return fail("mutation", "deleted_rows", fmt.Errorf("deleted rows = %d, want 1", deleted))
 	}
 	if err := ctx.Err(); err != nil {
 		return fail("mutation", "deadline", err)
@@ -340,10 +348,10 @@ func computeSchedule(expiration, fetchedAt time.Time, requestedHold time.Duratio
 	if remaining < minSeedLifetime {
 		return 0, 0, time.Time{}, fmt.Errorf("credential lifetime remaining %s is shorter than the %s minimum", remaining.Round(time.Second), minSeedLifetime)
 	}
-	hold := requestedHold
-	if hold <= 0 {
-		return 0, 0, time.Time{}, fmt.Errorf("hold must be greater than zero")
+	if requestedHold < 5*time.Second {
+		return 0, 0, time.Time{}, fmt.Errorf("hold is shorter than the 5s minimum")
 	}
+	hold := requestedHold
 	if hold >= remaining-5*time.Second {
 		hold = remaining / 3
 	}
@@ -422,6 +430,7 @@ func checkDataset(ctx context.Context, dataset *lance.Dataset, wantRows []int64,
 	if count != uint64(len(wantRows)) {
 		return nil, fmt.Errorf("row count = %d, want %d", count, len(wantRows))
 	}
+	slices.Sort(rows)
 	if !slices.Equal(rows, wantRows) {
 		return nil, fmt.Errorf("scanned rows = %v, want %v", rows, wantRows)
 	}

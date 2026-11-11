@@ -63,6 +63,9 @@ func TestRedactorRemovesKnownSecrets(t *testing.T) {
 
 func TestComputeScheduleUsesRealExpiration(t *testing.T) {
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	if _, _, _, err := computeSchedule(now.Add(time.Hour), now, 3*time.Second); err == nil || !strings.Contains(err.Error(), "hold is shorter") {
+		t.Fatalf("short hold error = %v", err)
+	}
 
 	hold, offset, due, err := computeSchedule(now.Add(10*time.Minute), now, 30*time.Second)
 	if err != nil {

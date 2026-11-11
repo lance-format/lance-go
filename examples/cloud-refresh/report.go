@@ -94,7 +94,6 @@ type resourceReport struct {
 	CreatedDatasetClosed              bool   `json:"created_dataset_closed"`
 	ReopenedDatasetClosed             bool   `json:"reopened_dataset_closed"`
 	ReopenedOldDatasetClosed          bool   `json:"reopened_old_dataset_closed"`
-	ClosedOnAllPaths                  bool   `json:"closed_on_all_paths"`
 	Retained                          string `json:"retained"`
 	Recreated                         string `json:"recreated"`
 }

@@ -130,6 +130,13 @@ before native calls and after they return. If A's remaining lifetime is short, t
 to one third of the remaining lifetime. The actual hold, native refresh offset,
 and refresh due time are recorded in the report; they are not fabricated.
 
+The helper must keep credential B stable through mutation and reopen. A helper
+that mints a different credential on every invocation does not satisfy this
+runner's two-credential contract. Native fixes the refresh offset from the
+initial map; when B expires near A, repeated native accesses can invoke the
+helper repeatedly. Keep the helper bounded and account for those calls in the
+deadline. The runner compares sorted row IDs and requires exactly one deletion.
+
 ## Report
 
 The report is JSON and contains no AccessKeyId, secret access key, or session

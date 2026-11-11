@@ -119,8 +119,8 @@ func parseConfig(args []string) (config, targetPrefix, error) {
 	if cfg.deadline > maxDeadline {
 		return config{}, targetPrefix{}, fmt.Errorf("--deadline must be at most %s", maxDeadline)
 	}
-	if cfg.hold <= 0 || cfg.hold > maxHold {
-		return config{}, targetPrefix{}, fmt.Errorf("--hold must be greater than zero and at most %s", maxHold)
+	if cfg.hold < 5*time.Second || cfg.hold > maxHold {
+		return config{}, targetPrefix{}, fmt.Errorf("--hold must be at least 5s and at most %s", maxHold)
 	}
 	if cfg.fetchTimeout <= 0 || cfg.fetchTimeout > maxFetchTimeout {
 		return config{}, targetPrefix{}, fmt.Errorf("--fetch-timeout must be greater than zero and at most %s", maxFetchTimeout)
