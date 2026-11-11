@@ -144,7 +144,7 @@ selection and retain native validation semantics. `Take` uses fragment-local
 logical row indices. `Delete` stages a deletion and returns a new scannable
 fragment; build a Delete operation from it and commit the transaction to
 publish the deletion. Detached fragments cloned from an Append operation expose
-metadata and data-file information but reject data access.
+metadata and data-file information but reject logical schema and data access.
 
 `DataFile` parses an existing Lance data file; `Dataset.CreateDataFile` does
 not write one. A `DataReplacementGroup` pairs a fragment ID with a parsed

@@ -493,9 +493,6 @@ func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 	if metadata, err := fragment.MetadataJSON(); err != nil || !json.Valid(metadata) {
 		t.Fatalf("MetadataJSON = %q, %v", metadata, err)
 	}
-	if _, err := fragment.Schema(); err != nil {
-		t.Fatalf("detached fragment Schema: %v", err)
-	}
 	file, found, err := fragment.DataFileForField(fieldID)
 	if err != nil || !found {
 		t.Fatalf("DataFileForField(%d) = %v, %v; want found", fieldID, found, err)
@@ -509,6 +506,14 @@ func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 		t.Fatalf("NewAppendOperation from detached fragment: %v", err)
 	}
 	for name, call := range map[string]func() error{
+		"schema": func() error { _, err := fragment.Schema(); return err },
+		"native schema": func() error {
+			schema, err := fragment.NativeSchema()
+			if schema != nil {
+				schema.Close()
+			}
+			return err
+		},
 		"scan": func() error { _, err := fragment.Scan(); return err },
 		"take": func() error { _, err := fragment.Take(ctx, nil); return err },
 		"count": func() error {
@@ -520,8 +525,9 @@ func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 			return err
 		},
 	} {
-		requireErrorCode(t, call(), lance.CodeNotSupported)
-		_ = name
+		t.Run(name, func(t *testing.T) {
+			requireErrorCode(t, call(), lance.CodeNotSupported)
+		})
 	}
 	fragment.Close()
 	op.Close()

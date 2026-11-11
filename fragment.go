@@ -88,7 +88,7 @@ func (s *NativeSchema) FieldID(column string) (int32, error) {
 // Fragment is a native Lance fragment snapshot. A fragment opened from a
 // dataset and one returned by Fragment.Delete own a dataset snapshot and
 // support scans, take, row counts and deletes. Fragments cloned from a
-// transaction operation are detached: metadata is readable, but data access
+// transaction operation are detached: metadata is readable, but logical schema and data access
 // returns CodeNotSupported.
 type Fragment struct {
 	native *ffi.Fragment
