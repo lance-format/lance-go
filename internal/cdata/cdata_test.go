@@ -69,6 +69,13 @@ type fixture struct {
 	schemas []*ArrowSchema
 }
 
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := newFixture(t)
+	t.Cleanup(f.pinner.Unpin)
+	return f
+}
+
 func (f *fixture) bytes(b []byte) *byte {
 	if len(b) == 0 {
 		b = []byte{0}
@@ -315,7 +322,7 @@ func TestExportSchemaStructureAndRelease(t *testing.T) {
 }
 
 func TestImportSchemaForeignFixture(t *testing.T) {
-	f := &fixture{}
+	f := newFixture(t)
 	item := f.schema()
 	item.Format = f.cstr("i")
 	item.Name = f.cstr("item")
@@ -380,7 +387,7 @@ func TestImportSchemaForeignFixture(t *testing.T) {
 
 func TestImportForeignArrayReleaseOnce(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	src := f.int32Array([]int32{10, 20, 30}, []byte{0b101}, 1)
 	arr, err := ImportArray(src, arrow.PrimitiveTypes.Int32)
 	if err != nil {
@@ -418,7 +425,7 @@ func TestImportForeignArrayReleaseOnce(t *testing.T) {
 
 func TestImportForeignNestedList(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	values := f.int32Array([]int32{10, 20, 30, 40}, nil, 0)
 	root := f.array()
 	root.Length = 2
@@ -454,7 +461,7 @@ func TestImportForeignNestedList(t *testing.T) {
 
 func TestImportChildWithoutReleaseIsOwnedByRoot(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	values := f.int32Array([]int32{10, 20}, nil, 0)
 	values.Release = 0
 	root := f.array()
@@ -535,7 +542,7 @@ func TestMovedChildStructuresAreReleasedByParent(t *testing.T) {
 
 func TestImportForeignRecordBatch(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	ids := f.int32Array([]int32{7, 8}, nil, 0)
 	names := f.stringArray([]string{"ab", "cde"})
 	root := f.array()
@@ -571,7 +578,7 @@ func TestImportForeignRecordBatch(t *testing.T) {
 
 func TestImportInvalidArrayConsumesSource(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	src := f.array()
 	src.Length = 1
 	src.NBuffers = 1 // Int32 requires two buffers.
@@ -590,7 +597,7 @@ func TestImportInvalidArrayConsumesSource(t *testing.T) {
 
 func TestImportDictionaryFixture(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	dict := f.stringArray([]string{"zero", "one"})
 	root := f.array()
 	root.Length = 3
@@ -856,7 +863,7 @@ func goString(p *byte) string {
 
 func TestImportInvalidDataTypeConsumesSource(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	src := f.int32Array([]int32{1}, nil, 0)
 	if _, err := ImportArray(src, &arrow.BinaryViewType{}); err == nil {
 		t.Fatal("ImportArray accepted a view type")
@@ -871,7 +878,7 @@ func TestImportInvalidDataTypeConsumesSource(t *testing.T) {
 
 func TestImportRecordBatchInvalidSchemaConsumesSource(t *testing.T) {
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	src := f.int32Array([]int32{1}, nil, 0)
 	if _, err := ImportRecordBatch(src, nil); err == nil {
 		t.Fatal("ImportRecordBatch accepted a nil schema")
@@ -917,7 +924,7 @@ func TestPublicReleaseHelpers(t *testing.T) {
 	ReleaseArray(nil)
 
 	resetFixtureRelease()
-	f := &fixture{}
+	f := newFixture(t)
 	foreign := f.int32Array([]int32{7}, nil, 0)
 	ReleaseArray(foreign)
 	ReleaseArray(foreign)
