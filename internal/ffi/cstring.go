@@ -37,6 +37,21 @@ func newCStringList(values []string) (*cStringList, error) {
 	return list, nil
 }
 
+// newPresentCStringList is like newCStringList but always produces a non-NULL
+// pointer array, including for an empty input. Use it for native parameters
+// where NULL means "inherit" and a non-NULL empty list means "explicitly
+// empty".
+func newPresentCStringList(values []string) (*cStringList, error) {
+	list, err := newCStringList(values)
+	if err != nil {
+		return nil, err
+	}
+	if list.ptrs == nil {
+		list.ptrs = []uintptr{0}
+	}
+	return list, nil
+}
+
 func (l *cStringList) keepAlive() {
 	if l == nil {
 		return

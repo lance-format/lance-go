@@ -35,6 +35,59 @@ type bindings struct {
 	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 
+	datasetCurrentVersion  func(dataset uintptr) uintptr
+	versionID              func(version uintptr) uint64
+	versionTimestampNS     func(version uintptr) int64
+	versionMetadataCount   func(version uintptr) uint64
+	versionMetadataKeyAt   func(version uintptr, index uint64) uintptr
+	versionMetadataValueAt func(version uintptr, index uint64) uintptr
+	versionClose           func(version uintptr)
+	datasetVersions        func(dataset uintptr) uintptr
+	versionsCount          func(versions uintptr) uint64
+	versionsAt             func(versions uintptr, index uint64) uintptr
+	versionsIDAt           func(versions uintptr, index uint64) uint64
+	versionsTimestampMSAt  func(versions uintptr, index uint64) uint64
+	versionsClose          func(versions uintptr)
+	datasetVersionRefs     func(dataset uintptr) uintptr
+	versionRefsCount       func(refs uintptr) uint64
+	versionRefsIDAt        func(refs uintptr, index uint64) uint64
+	versionRefsClose       func(refs uintptr)
+	refVersionNumber       func(version uint64) uintptr
+	refVersion             func(branch string, hasVersion bool, version uint64) uintptr
+	refTag                 func(tag string) uintptr
+	refClose               func(ref uintptr)
+	datasetCheckoutRef     func(dataset uintptr, ref uintptr) uintptr
+	datasetCheckoutBranch  func(dataset uintptr, branch string) uintptr
+	datasetRestore         func(dataset uintptr, version uint64) uintptr
+
+	datasetTags               func(dataset uintptr) uintptr
+	tagsCount                 func(tags uintptr) uint64
+	tagsAt                    func(tags uintptr, index uint64) uintptr
+	tagsClose                 func(tags uintptr)
+	datasetTagGet             func(dataset uintptr, name string) uintptr
+	datasetTagCreate          func(dataset uintptr, name string, ref uintptr) int32
+	datasetTagUpdate          func(dataset uintptr, name string, ref uintptr) int32
+	datasetTagDelete          func(dataset uintptr, name string) int32
+	datasetTagReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
+	tagName                   func(tag uintptr) uintptr
+	tagVersion                func(tag uintptr) uint64
+	tagBranch                 func(tag uintptr, out *uintptr) int32
+	tagCreatedAtNS            func(tag uintptr, out *int64) int32
+	tagUpdatedAtNS            func(tag uintptr, out *int64) int32
+	tagManifestSize           func(tag uintptr) uint64
+	tagMetadataCount          func(tag uintptr) uint64
+	tagMetadataKeyAt          func(tag uintptr, index uint64) uintptr
+	tagMetadataValueAt        func(tag uintptr, index uint64) uintptr
+	tagClose                  func(tag uintptr)
+
+	datasetBranchesJSON          func(dataset uintptr) uintptr
+	datasetBranchGetJSON         func(dataset uintptr, name string) uintptr
+	datasetBranchIdentifierJSON  func(dataset uintptr) uintptr
+	datasetBranchCreate          func(dataset uintptr, name string, ref uintptr, storageOpts []uintptr) uintptr
+	datasetBranchDelete          func(dataset uintptr, name string) int32
+	datasetBranchForceDelete     func(dataset uintptr, name string) int32
+	datasetBranchReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
+
 	datasetCloneHandle   func(dataset uintptr) uintptr
 	datasetDelete        func(dataset uintptr, predicate string, outNumDeleted *uint64) int32
 	datasetUpdate        func(dataset uintptr, predicate uintptr, columns []uintptr, values []uintptr, numUpdates uint64, outNumUpdated *uint64) int32
@@ -102,6 +155,59 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_statistics_close", &b.dataStatsClose},
 		{"lance_dataset_take", &b.datasetTake},
 		{"lance_dataset_take_rows", &b.datasetTakeRows},
+
+		{"lance_dataset_current_version", &b.datasetCurrentVersion},
+		{"lance_version_id", &b.versionID},
+		{"lance_version_timestamp_ns", &b.versionTimestampNS},
+		{"lance_version_metadata_count", &b.versionMetadataCount},
+		{"lance_version_metadata_key_at", &b.versionMetadataKeyAt},
+		{"lance_version_metadata_value_at", &b.versionMetadataValueAt},
+		{"lance_version_close", &b.versionClose},
+		{"lance_dataset_versions", &b.datasetVersions},
+		{"lance_versions_count", &b.versionsCount},
+		{"lance_versions_at", &b.versionsAt},
+		{"lance_versions_id_at", &b.versionsIDAt},
+		{"lance_versions_timestamp_ms_at", &b.versionsTimestampMSAt},
+		{"lance_versions_close", &b.versionsClose},
+		{"lance_dataset_version_refs", &b.datasetVersionRefs},
+		{"lance_version_refs_count", &b.versionRefsCount},
+		{"lance_version_refs_id_at", &b.versionRefsIDAt},
+		{"lance_version_refs_close", &b.versionRefsClose},
+		{"lance_ref_version_number", &b.refVersionNumber},
+		{"lance_ref_version", &b.refVersion},
+		{"lance_ref_tag", &b.refTag},
+		{"lance_ref_close", &b.refClose},
+		{"lance_dataset_checkout_ref", &b.datasetCheckoutRef},
+		{"lance_dataset_checkout_branch", &b.datasetCheckoutBranch},
+		{"lance_dataset_restore", &b.datasetRestore},
+
+		{"lance_dataset_tags", &b.datasetTags},
+		{"lance_tags_count", &b.tagsCount},
+		{"lance_tags_at", &b.tagsAt},
+		{"lance_tags_close", &b.tagsClose},
+		{"lance_dataset_tag_get", &b.datasetTagGet},
+		{"lance_dataset_tag_create", &b.datasetTagCreate},
+		{"lance_dataset_tag_update", &b.datasetTagUpdate},
+		{"lance_dataset_tag_delete", &b.datasetTagDelete},
+		{"lance_dataset_tag_replace_metadata", &b.datasetTagReplaceMetadata},
+		{"lance_tag_name", &b.tagName},
+		{"lance_tag_version", &b.tagVersion},
+		{"lance_tag_branch", &b.tagBranch},
+		{"lance_tag_created_at_ns", &b.tagCreatedAtNS},
+		{"lance_tag_updated_at_ns", &b.tagUpdatedAtNS},
+		{"lance_tag_manifest_size", &b.tagManifestSize},
+		{"lance_tag_metadata_count", &b.tagMetadataCount},
+		{"lance_tag_metadata_key_at", &b.tagMetadataKeyAt},
+		{"lance_tag_metadata_value_at", &b.tagMetadataValueAt},
+		{"lance_tag_close", &b.tagClose},
+
+		{"lance_dataset_branches_json", &b.datasetBranchesJSON},
+		{"lance_dataset_branch_get_json", &b.datasetBranchGetJSON},
+		{"lance_dataset_branch_identifier_json", &b.datasetBranchIdentifierJSON},
+		{"lance_dataset_branch_create", &b.datasetBranchCreate},
+		{"lance_dataset_branch_delete", &b.datasetBranchDelete},
+		{"lance_dataset_branch_force_delete", &b.datasetBranchForceDelete},
+		{"lance_dataset_branch_replace_metadata", &b.datasetBranchReplaceMetadata},
 
 		{"lance_dataset_clone_handle", &b.datasetCloneHandle},
 		{"lance_dataset_delete", &b.datasetDelete},

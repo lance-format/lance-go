@@ -86,6 +86,15 @@ func (d *Dataset) acquire(op string) error {
 	return nil
 }
 
+// adopt wraps an independently owned native dataset returned by a checkout or
+// restore operation. The receiver supplies only the URI and is not otherwise
+// shared with the result.
+func (d *Dataset) adopt(native *ffi.Dataset) *Dataset {
+	derived := &Dataset{native: native, uri: d.uri}
+	derived.res = newResource(native.Close)
+	return derived
+}
+
 // Schema returns the dataset schema.
 func (d *Dataset) Schema() (*arrow.Schema, error) {
 	if err := d.acquire("schema"); err != nil {
