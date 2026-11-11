@@ -7,9 +7,9 @@ official `lance-c` C ABI without cgo.
 
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, vector and full-text search,
-immutable mutations, version history, tags, branches, staged transactions, and
-fragment inspection. It uses Arrow Go v18
-and requires Go 1.23 or newer.
+immutable row/schema mutations, version history, tags, branches, staged transactions,
+fragment inspection, and Blob reads. It uses Arrow Go v18 and requires Go 1.23
+or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
 and load it automatically after verifying and unpacking it into the user cache.
@@ -24,7 +24,7 @@ coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
 and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Index, blob, maintenance
+Windows DLL belongs to the lance-c release process. Index, maintenance
 and namespace APIs are tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
@@ -228,6 +228,44 @@ Scan cancellation parks and wakes the goroutine without holding an OS thread
 while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
+
+## Blob columns
+
+`BlobField` and `BlobFieldWithOptions` return the native `lance.blob.v2` field.
+A logical blob row carries either inline `data` bytes or a `uri` reference;
+native write validates the layout. `NewBlobDescriptorBuilder` builds the
+writer-prepared descriptor representation directly: inline, null, packed,
+dedicated, managed and external values, including explicit `None` versus
+`Some(0)` base IDs. `Finish` consumes the builder and returns the prepared
+array and field; `Field` keeps working until `Close`.
+
+`Dataset.TakeBlobs`, `TakeBlobsByIndices` and `TakeBlobsByAddresses` return one
+handle per requested row, preserving order and duplicates. A `nil` handle means
+a null blob; an empty blob has size zero. Handles stay readable after the
+dataset is closed, and the caller must close each non-nil handle. `BlobFile`
+implements `io.Reader`, `io.ReaderAt`, `io.Seeker` and `io.Closer`:
+`ReadAt` and `ReadRanges` do not move the cursor, `ReadRanges` validates the
+whole request before writing any destination, and a short `ReadAt` returns the
+available prefix with `io.EOF`. Seeking past the end is allowed, and
+`SetReadAhead` only changes native read-ahead behavior. `BlobFile.Close` waits
+for in-flight calls, releases the opaque native handle exactly once and makes
+later calls fail with `ErrClosed`; this Go lifecycle is distinct from the
+native `mark_closed` operation, which changes native file state without
+freeing the handle and is intentionally not exposed.
+
+`ReadBlobs` and `ReadBlobRanges` plan a native read and return an incremental
+`array.RecordReader`. `ReadBlobs` yields `row_address` and nullable `data`;
+`ReadBlobRanges` yields `request_index`, `row_address`, `offset`, `length` and
+nullable `data`, preserving the zero-based input position for duplicate or
+unordered requests. Null and empty blobs remain distinct. Returned batches own
+their buffers and survive reader release and dataset close; release batches
+kept across `Next` calls. The context is checked before planning and between
+batches, but a native planning or payload call already in flight cannot be
+interrupted.
+
+Scanner blob-handling modes and raw packed/dedicated file writers are not
+exposed yet. The lance-c#167 raw v2.2 projection gap is not worked around here;
+blob reads use native descriptors.
 
 ## Vector search
 
@@ -529,8 +567,8 @@ Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
 shared sessions, version history and restore, tags, branches, uncommitted and
 detached transactions, fragment scans and deletions, protobuf round trips,
-data replacement, project operations, and
-cancellation/close interactions. Arrow bridge tests check
+data replacement, project operations, blob fields and descriptors, blob handle
+and planned reads, and cancellation/close interactions. Arrow bridge tests check
 C layouts, producer ownership, release callbacks and stream reader lifetimes.
 The race lane also enables Go's pointer checks; native Rust internals are outside
 Go's race detector.

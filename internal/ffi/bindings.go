@@ -36,6 +36,36 @@ type bindings struct {
 	dataStatsClose           func(stats uintptr)
 	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeBlobs         func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
+	datasetTakeBlobsIndices  func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
+	datasetTakeBlobsAddrs    func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
+	datasetReadBlobs         func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetReadBlobRanges    func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+
+	blobFileSize          func(blob uintptr) uint64
+	blobFileRead          func(blob uintptr, dst *byte, dstLen uint64) int32
+	blobFileReadUpTo      func(blob uintptr, dst *byte, dstLen uint64, bytesRead *uint64) int32
+	blobFileReadRange     func(blob uintptr, offset uint64, dst *byte, dstLen uint64) int32
+	blobFileReadRanges    func(blob uintptr, ranges []blobRange, numRanges uint64, destinations []unsafe.Pointer, destinationLens []uintptr) int32
+	blobFileSeek          func(blob uintptr, pos uint64) int32
+	blobFileTell          func(blob uintptr, pos *uint64) int32
+	blobFileSetBufferSize func(blob uintptr, size uint64) int32
+	blobFileClose         func(blob uintptr)
+
+	blobField               func(name string, nullable bool, out *cdata.ArrowSchema) int32
+	blobFieldWithOptions    func(name string, nullable bool, options *blobFieldOptions, out *cdata.ArrowSchema) int32
+	blobDescriptorNew       func(column string) uintptr
+	blobDescriptorField     func(builder uintptr, out *cdata.ArrowSchema) int32
+	blobDescriptorInline    func(builder uintptr, data *byte, length uint64) int32
+	blobDescriptorNull      func(builder uintptr) int32
+	blobDescriptorPacked    func(builder uintptr, blobID uint32, offset uint64, length uint64) int32
+	blobDescriptorExtend    func(builder uintptr, blobID uint32, ranges []blobRange, numRanges uint64) int32
+	blobDescriptorDedicated func(builder uintptr, blobID uint32, length uint64) int32
+	blobDescriptorManaged   func(builder uintptr, uri string, offset uint64, length uint64, hasBaseID bool, baseID uint32) int32
+	blobDescriptorExtern    func(builder uintptr, baseID uint32, uri string, offset uint64, length uint64) int32
+	blobDescriptorPush      func(builder uintptr, uri string, hasRange bool, offset uint64, length uint64) int32
+	blobDescriptorFinish    func(builder uintptr, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	blobDescriptorClose     func(builder uintptr)
 
 	datasetMetadataJSON             func(dataset uintptr) *byte
 	datasetUpdateMetadataJSON       func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
@@ -431,6 +461,34 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_statistics_close", &b.dataStatsClose},
 		{"lance_dataset_take", &b.datasetTake},
 		{"lance_dataset_take_rows", &b.datasetTakeRows},
+		{"lance_dataset_take_blobs", &b.datasetTakeBlobs},
+		{"lance_dataset_take_blobs_by_indices", &b.datasetTakeBlobsIndices},
+		{"lance_dataset_take_blobs_by_addresses", &b.datasetTakeBlobsAddrs},
+		{"lance_dataset_read_blobs", &b.datasetReadBlobs},
+		{"lance_dataset_read_blob_ranges", &b.datasetReadBlobRanges},
+		{"lance_blob_file_size", &b.blobFileSize},
+		{"lance_blob_file_read", &b.blobFileRead},
+		{"lance_blob_file_read_up_to", &b.blobFileReadUpTo},
+		{"lance_blob_file_read_range", &b.blobFileReadRange},
+		{"lance_blob_file_read_ranges", &b.blobFileReadRanges},
+		{"lance_blob_file_seek", &b.blobFileSeek},
+		{"lance_blob_file_tell", &b.blobFileTell},
+		{"lance_blob_file_set_buffer_size", &b.blobFileSetBufferSize},
+		{"lance_blob_file_close", &b.blobFileClose},
+		{"lance_blob_field", &b.blobField},
+		{"lance_blob_field_with_options", &b.blobFieldWithOptions},
+		{"lance_blob_descriptor_array_builder_new", &b.blobDescriptorNew},
+		{"lance_blob_descriptor_array_builder_field", &b.blobDescriptorField},
+		{"lance_blob_descriptor_array_builder_append_inline", &b.blobDescriptorInline},
+		{"lance_blob_descriptor_array_builder_append_null", &b.blobDescriptorNull},
+		{"lance_blob_descriptor_array_builder_append_packed", &b.blobDescriptorPacked},
+		{"lance_blob_descriptor_array_builder_extend_packed", &b.blobDescriptorExtend},
+		{"lance_blob_descriptor_array_builder_append_dedicated", &b.blobDescriptorDedicated},
+		{"lance_blob_descriptor_array_builder_append_managed", &b.blobDescriptorManaged},
+		{"lance_blob_descriptor_array_builder_append_external", &b.blobDescriptorExtern},
+		{"lance_blob_descriptor_array_builder_push_external", &b.blobDescriptorPush},
+		{"lance_blob_descriptor_array_builder_finish", &b.blobDescriptorFinish},
+		{"lance_blob_descriptor_array_builder_close", &b.blobDescriptorClose},
 
 		{"lance_dataset_metadata_json", &b.datasetMetadataJSON},
 		{"lance_dataset_update_metadata_json", &b.datasetUpdateMetadataJSON},
