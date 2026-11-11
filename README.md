@@ -694,6 +694,46 @@ Native protobuf persistence normalizes empty property maps to absent on readback
 Registering bases does not route new writes to them. The pinned C API does not
 expose write placement, so `AddBases` only records and lists the registry.
 
+## Native namespaces
+
+The `namespace` package exposes typed namespace requests and responses through
+native Directory, REST and Connect implementations. A Directory namespace can
+manage local tables:
+
+```go
+ns, err := namespace.NewDirectory(map[string]string{"root": "./catalog"})
+if err != nil {
+    return err
+}
+defer ns.Close()
+
+ds, err := lance.OpenFromNamespace(ctx, ns, []string{"events"},
+    lance.WithSession(session))
+if err != nil {
+    return err
+}
+defer ds.Close()
+```
+
+Use `WriteToNamespace` to create or append Arrow batches, and
+`CommitTransactionToNamespace` to publish a staged transaction through the
+catalog. Readers remain caller-owned. `WithWriteBranch` applies only to
+namespace-managed writes. Opened datasets and REST adapters retain native
+ownership and remain usable after their namespace is closed.
+
+`namespace.NewRest` takes native properties such as `uri`.
+`WithDynamicContextProvider` supplies per-operation request context. The native
+contract logs provider errors or panics and continues with empty context; do
+not rely on provider failure to deny a request. Context cancellation is checked
+before synchronous native calls and does not interrupt an operation in flight.
+
+Models preserve absent, explicit-null and concrete values using pointers to
+`namespace.Nullable[T]`. Native namespace errors retain their separate error
+code space, including code zero (`Unsupported`). The standalone `namespace`
+package activates the same platform bundle as the root package. Custom Go
+namespace implementations require the upstream callback interface tracked in
+[lance-c#180](https://github.com/lance-format/lance-c/issues/180).
+
 ## How loading works
 
 `internal/loader` resolves the native library once per process:

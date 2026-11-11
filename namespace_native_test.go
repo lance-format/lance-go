@@ -50,6 +50,11 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 	ctx := context.Background()
 	ns, root := newManagedDirectory(t)
 	defer ns.Close()
+	session, err := lance.NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
 
 	tableID := []string{"managed_events"}
 	schema := arrow.NewSchema([]arrow.Field{
@@ -59,7 +64,7 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 
 	created, err := lance.WriteToNamespace(ctx, ns, tableID, makeReader(t, schema,
 		makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true}),
-	))
+	), lance.WithWriteSession(session))
 	if err != nil {
 		t.Fatalf("WriteToNamespace create: %v", err)
 	}
@@ -70,7 +75,7 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 		t.Fatalf("close created dataset: %v", err)
 	}
 
-	opened, err := lance.OpenFromNamespace(ctx, ns, tableID)
+	opened, err := lance.OpenFromNamespace(ctx, ns, tableID, lance.WithSession(session))
 	if err != nil {
 		t.Fatalf("OpenFromNamespace: %v", err)
 	}
@@ -83,7 +88,7 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 
 	appended, err := lance.WriteToNamespace(ctx, ns, tableID, makeReader(t, schema,
 		makeRecord(t, schema, []int64{3, 4}, []string{"c", "d"}, []bool{true, true}),
-	), lance.WithWriteMode(lance.WriteModeAppend))
+	), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteSession(session))
 	if err != nil {
 		t.Fatalf("WriteToNamespace append: %v", err)
 	}
@@ -105,13 +110,13 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 
 	tx, err := lance.WriteUncommitted(ctx, location, makeReader(t, schema,
 		makeRecord(t, schema, []int64{5, 6}, []string{"e", "f"}, []bool{true, true}),
-	), lance.WithWriteMode(lance.WriteModeAppend))
+	), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteSession(session))
 	if err != nil {
 		t.Fatalf("WriteUncommitted: %v", err)
 	}
 	defer tx.Close()
 
-	committed, err := lance.CommitTransactionToNamespace(ctx, ns, tableID, location, tx)
+	committed, err := lance.CommitTransactionToNamespace(ctx, ns, tableID, location, tx, lance.WithCommitSession(session))
 	if err != nil {
 		t.Fatalf("CommitTransactionToNamespace: %v", err)
 	}
@@ -122,11 +127,14 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 		t.Fatalf("close committed dataset: %v", err)
 	}
 
-	survivor, err := lance.OpenFromNamespace(ctx, ns, tableID)
+	survivor, err := lance.OpenFromNamespace(ctx, ns, tableID, lance.WithSession(session))
 	if err != nil {
 		t.Fatalf("OpenFromNamespace before namespace close: %v", err)
 	}
 	defer survivor.Close()
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := ns.Close(); err != nil {
 		t.Fatalf("close namespace: %v", err)
 	}
