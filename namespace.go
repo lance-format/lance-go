@@ -117,6 +117,9 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 	if config.storageOptionsAccessor != nil {
 		return nil, invalidError("write namespace", "", "WithWriteStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}
+	if field := config.params.firstNativeOptionField(); field != "" {
+		return nil, invalidError("write namespace", "", "WriteParams.%s is not supported for namespace writes", field)
+	}
 	session, releaseSession, err := acquireSession("write namespace", "", config.session)
 	if err != nil {
 		return nil, err

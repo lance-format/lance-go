@@ -111,12 +111,82 @@ const (
 
 // WriteParams controls file layout and stable row IDs. Zero values select
 // native Lance defaults.
+//
+// The native-only fields below are routed through the owned native write
+// options handle. Entry points that still pass the older static write options
+// structure, including namespace writes and fragment creation, must reject
+// EnableV2ManifestPaths, InitialBases, TargetBases, TargetBaseNamesOrPaths,
+// TargetAllBases, BaseStoreParams, AllowExternalBlobOutsideBases,
+// ExternalBlobMode, BlobPackFileSizeThreshold, FileWriterOptions and Progress
+// instead of silently dropping them. A commit-lock handle is not represented
+// in the Go API yet.
 type WriteParams struct {
 	MaxRowsPerFile     uint64
 	MaxRowsPerGroup    uint64
 	MaxBytesPerFile    uint64
 	DataStorageVersion string
 	EnableStableRowIDs bool
+
+	EnableV2ManifestPaths         *bool
+	InitialBases                  []BasePath
+	TargetBases                   []uint32
+	TargetBaseNamesOrPaths        []string
+	TargetAllBases                *bool
+	BaseStoreParams               map[string]BaseStoreParams
+	AllowExternalBlobOutsideBases bool
+	ExternalBlobMode              ExternalBlobMode
+	BlobPackFileSizeThreshold     *uint64
+	FileWriterOptions             *DatasetFileWriterOptions
+	Progress                      *WriteProgress
+}
+
+// ExternalBlobMode selects how external blob references are written.
+type ExternalBlobMode int32
+
+const (
+	// ExternalBlobModeReference stores external references without uploading.
+	ExternalBlobModeReference ExternalBlobMode = 0
+	// ExternalBlobModeIngest uploads referenced payloads into managed storage.
+	ExternalBlobModeIngest ExternalBlobMode = 1
+)
+
+// BaseStoreParams configures representable storage parameters for one base
+// path. Pointer fields preserve native absence versus explicit false or zero.
+type BaseStoreParams struct {
+	StorageOptionsAccessor     *StorageOptionsAccessor
+	BlockSize                  *uint64
+	S3CredentialsRefreshOffset *time.Duration
+	UseConstantSizeUploadParts *bool
+	ListIsLexicallyOrdered     *bool
+}
+
+// DatasetFileWriterOptions controls representable dataset file-writer settings.
+type DatasetFileWriterOptions struct {
+	DataCacheBytes    *uint64
+	MaxPageBytes      *uint64
+	KeepOriginalArray *bool
+}
+
+// WriteFragmentProgress is one begin- or complete-fragment progress event.
+type WriteFragmentProgress struct {
+	FragmentID   uint64
+	PhysicalRows *uint64
+	FileCount    uint64
+}
+
+// WriteStats is a native cumulative write-statistics snapshot.
+type WriteStats struct {
+	BytesWritten uint64
+	RowsWritten  uint64
+	FilesWritten uint32
+}
+
+// WriteProgress receives native write callbacks. Callbacks run on native worker
+// threads and must be safe for concurrent use.
+type WriteProgress struct {
+	BeginFragment    func(WriteFragmentProgress) error
+	CompleteFragment func(WriteFragmentProgress) error
+	WriteStats       func(WriteStats)
 }
 
 // AutoCleanupParams configures native old-version cleanup.
@@ -156,11 +226,146 @@ func WithWriteMode(mode WriteMode) WriteOption {
 // WithWriteParams sets native write parameters.
 func WithWriteParams(params WriteParams) WriteOption {
 	return func(config *writeConfig) error {
-		if err := validateCString(params.DataStorageVersion); err != nil {
-			return fmt.Errorf("data storage version: %w", err)
+		copied, err := cloneWriteParams(params)
+		if err != nil {
+			return err
 		}
-		config.params = params
+		config.params = copied
 		return nil
+	}
+}
+
+func cloneWriteParams(params WriteParams) (WriteParams, error) {
+	copied := params
+	if err := validateCString(params.DataStorageVersion); err != nil {
+		return WriteParams{}, fmt.Errorf("data storage version: %w", err)
+	}
+
+	if params.EnableV2ManifestPaths != nil {
+		value := *params.EnableV2ManifestPaths
+		copied.EnableV2ManifestPaths = &value
+	}
+	if params.InitialBases != nil {
+		copied.InitialBases = make([]BasePath, len(params.InitialBases))
+		for i, base := range params.InitialBases {
+			if err := validateCString(base.Path); err != nil {
+				return WriteParams{}, fmt.Errorf("initial base %d path: %w", i, err)
+			}
+			copied.InitialBases[i] = base
+			if base.Name != nil {
+				if err := validateCString(*base.Name); err != nil {
+					return WriteParams{}, fmt.Errorf("initial base %d name: %w", i, err)
+				}
+				name := *base.Name
+				copied.InitialBases[i].Name = &name
+			}
+		}
+	}
+	if params.TargetBases != nil {
+		copied.TargetBases = make([]uint32, len(params.TargetBases))
+		copy(copied.TargetBases, params.TargetBases)
+	}
+	if params.TargetBaseNamesOrPaths != nil {
+		copied.TargetBaseNamesOrPaths = make([]string, len(params.TargetBaseNamesOrPaths))
+		copy(copied.TargetBaseNamesOrPaths, params.TargetBaseNamesOrPaths)
+		for i, target := range copied.TargetBaseNamesOrPaths {
+			if err := validateCString(target); err != nil {
+				return WriteParams{}, fmt.Errorf("target base %d: %w", i, err)
+			}
+		}
+	}
+	if params.TargetAllBases != nil {
+		value := *params.TargetAllBases
+		copied.TargetAllBases = &value
+	}
+	if params.BaseStoreParams != nil {
+		copied.BaseStoreParams = make(map[string]BaseStoreParams, len(params.BaseStoreParams))
+		for path, base := range params.BaseStoreParams {
+			if err := validateCString(path); err != nil {
+				return WriteParams{}, fmt.Errorf("base store params path: %w", err)
+			}
+			clone := base
+			if base.BlockSize != nil {
+				value := *base.BlockSize
+				clone.BlockSize = &value
+			}
+			if base.S3CredentialsRefreshOffset != nil {
+				if *base.S3CredentialsRefreshOffset < 0 {
+					return WriteParams{}, fmt.Errorf("base store params %q: S3 credentials refresh offset must not be negative", path)
+				}
+				value := *base.S3CredentialsRefreshOffset
+				clone.S3CredentialsRefreshOffset = &value
+			}
+			if base.UseConstantSizeUploadParts != nil {
+				value := *base.UseConstantSizeUploadParts
+				clone.UseConstantSizeUploadParts = &value
+			}
+			if base.ListIsLexicallyOrdered != nil {
+				value := *base.ListIsLexicallyOrdered
+				clone.ListIsLexicallyOrdered = &value
+			}
+			copied.BaseStoreParams[path] = clone
+		}
+	}
+	if params.BlobPackFileSizeThreshold != nil {
+		value := *params.BlobPackFileSizeThreshold
+		copied.BlobPackFileSizeThreshold = &value
+	}
+	if params.FileWriterOptions != nil {
+		fileOptions := *params.FileWriterOptions
+		if params.FileWriterOptions.DataCacheBytes != nil {
+			value := *params.FileWriterOptions.DataCacheBytes
+			fileOptions.DataCacheBytes = &value
+		}
+		if params.FileWriterOptions.MaxPageBytes != nil {
+			value := *params.FileWriterOptions.MaxPageBytes
+			fileOptions.MaxPageBytes = &value
+		}
+		if params.FileWriterOptions.KeepOriginalArray != nil {
+			value := *params.FileWriterOptions.KeepOriginalArray
+			fileOptions.KeepOriginalArray = &value
+		}
+		copied.FileWriterOptions = &fileOptions
+	}
+	if params.Progress != nil {
+		progress := *params.Progress
+		copied.Progress = &progress
+	}
+	return copied, nil
+}
+
+// hasNativeOptions reports whether params requires the native-options entry
+// point. Explicit empty slices and maps still count as present.
+func (params WriteParams) hasNativeOptions() bool {
+	return params.firstNativeOptionField() != ""
+}
+
+func (params WriteParams) firstNativeOptionField() string {
+	switch {
+	case params.EnableV2ManifestPaths != nil:
+		return "EnableV2ManifestPaths"
+	case params.InitialBases != nil:
+		return "InitialBases"
+	case params.TargetBases != nil:
+		return "TargetBases"
+	case params.TargetBaseNamesOrPaths != nil:
+		return "TargetBaseNamesOrPaths"
+	case params.TargetAllBases != nil:
+		return "TargetAllBases"
+	case params.BaseStoreParams != nil:
+		return "BaseStoreParams"
+	case params.AllowExternalBlobOutsideBases:
+		return "AllowExternalBlobOutsideBases"
+	case params.ExternalBlobMode != ExternalBlobModeReference:
+		return "ExternalBlobMode"
+	case params.BlobPackFileSizeThreshold != nil:
+		return "BlobPackFileSizeThreshold"
+	case params.FileWriterOptions != nil:
+		return "FileWriterOptions"
+	case params.Progress != nil:
+		return "Progress"
+	default:
+		return ""
 	}
 }
 
@@ -184,8 +389,8 @@ func WithSkipAutoCleanup(skip bool) WriteOption {
 	}
 }
 
-// WithWriteSession pins the write to a session. It is valid only for
-// WriteUncommitted.
+// WithWriteSession pins the write to a session. It is valid for ordinary
+// writes and WriteUncommitted.
 func WithWriteSession(session *Session) WriteOption {
 	return func(config *writeConfig) error {
 		if session == nil {
@@ -209,7 +414,8 @@ func WithWriteBranch(branch string) WriteOption {
 }
 
 // WithWriteTransactionProperties attaches properties to the transaction
-// created by WriteUncommitted. Passing nil records a present, empty map.
+// created by an ordinary write or WriteUncommitted. Passing nil records a
+// present, empty map.
 func WithWriteTransactionProperties(properties map[string]string) WriteOption {
 	return func(config *writeConfig) error {
 		copied := make(map[string]string, len(properties))

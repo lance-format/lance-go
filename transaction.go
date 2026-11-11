@@ -1055,6 +1055,9 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 	if config.branch != "" {
 		return nil, invalidError("write uncommitted", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
+	if config.params.hasNativeOptions() {
+		return writeUncommittedNative(uri, reader, config)
+	}
 	storageAccessor, releaseStorage, err := resolveStorageOptions("write uncommitted", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
 	if err != nil {
 		return nil, err

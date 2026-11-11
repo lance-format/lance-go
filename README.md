@@ -80,6 +80,16 @@ The caller owns the reader and releases it after the write. `Append` creates
 an absent dataset; `Overwrite` commits a replacement version while preserving
 older versions. `WriteParams` exposes the options available in the pinned C ABI.
 
+`WriteParams` also exposes native write options for V2 manifest selection,
+initial and target bases, per-base storage parameters, external blob handling,
+dataset file-writer controls, sessions and write progress. These fields use the
+native write-options entry point; `WithWriteParams` copies their values and
+the slices and maps they contain. Progress callbacks may run on native worker
+threads, and native write errors do not guarantee rollback. Namespace writes
+reject these fields because the namespace ABI accepts only the older write
+options structure. A commit-lock handle is not represented in Go yet, and
+fragment-create entry points remain on the older options structure.
+
 `Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
 snapshot and return a new committed `Dataset`. The receiver keeps its version
 and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
@@ -109,7 +119,8 @@ restored with `ParseTransaction`, or built directly from an `Operation`.
 dataset; `CommitTransactionBatch` atomically commits append transactions.
 `Dataset.ReadTransaction` and `ReadTransactionByVersion` read transactions
 that the manifest references. Committing is explicit: closing a transaction
-does not publish it or delete uncommitted data files.
+does not publish it or delete uncommitted data files. A failed staged write
+does not publish a version, but may leave uncommitted data files.
 
 ```go
 tx, err := lance.WriteUncommitted(ctx, "data.lance", reader)
@@ -915,7 +926,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 08d28ac304e6e8d7d23bf2f0d6004091c0728451:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show c13182cfa72c6a5b78873ea34cac152163fabe11:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
