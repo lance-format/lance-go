@@ -39,8 +39,8 @@ type bindings struct {
 	versionID              func(version uintptr) uint64
 	versionTimestampNS     func(version uintptr) int64
 	versionMetadataCount   func(version uintptr) uint64
-	versionMetadataKeyAt   func(version uintptr, index uint64) uintptr
-	versionMetadataValueAt func(version uintptr, index uint64) uintptr
+	versionMetadataKeyAt   func(version uintptr, index uint64) *byte
+	versionMetadataValueAt func(version uintptr, index uint64) *byte
 	versionClose           func(version uintptr)
 	datasetVersions        func(dataset uintptr) uintptr
 	versionsCount          func(versions uintptr) uint64
@@ -69,20 +69,20 @@ type bindings struct {
 	datasetTagUpdate          func(dataset uintptr, name string, ref uintptr) int32
 	datasetTagDelete          func(dataset uintptr, name string) int32
 	datasetTagReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
-	tagName                   func(tag uintptr) uintptr
+	tagName                   func(tag uintptr) *byte
 	tagVersion                func(tag uintptr) uint64
-	tagBranch                 func(tag uintptr, out *uintptr) int32
+	tagBranch                 func(tag uintptr, out **byte) int32
 	tagCreatedAtNS            func(tag uintptr, out *int64) int32
 	tagUpdatedAtNS            func(tag uintptr, out *int64) int32
 	tagManifestSize           func(tag uintptr) uint64
 	tagMetadataCount          func(tag uintptr) uint64
-	tagMetadataKeyAt          func(tag uintptr, index uint64) uintptr
-	tagMetadataValueAt        func(tag uintptr, index uint64) uintptr
+	tagMetadataKeyAt          func(tag uintptr, index uint64) *byte
+	tagMetadataValueAt        func(tag uintptr, index uint64) *byte
 	tagClose                  func(tag uintptr)
 
-	datasetBranchesJSON          func(dataset uintptr) uintptr
-	datasetBranchGetJSON         func(dataset uintptr, name string) uintptr
-	datasetBranchIdentifierJSON  func(dataset uintptr) uintptr
+	datasetBranchesJSON          func(dataset uintptr) *byte
+	datasetBranchGetJSON         func(dataset uintptr, name string) *byte
+	datasetBranchIdentifierJSON  func(dataset uintptr) *byte
 	datasetBranchCreate          func(dataset uintptr, name string, ref uintptr, storageOpts []uintptr) uintptr
 	datasetBranchDelete          func(dataset uintptr, name string) int32
 	datasetBranchForceDelete     func(dataset uintptr, name string) int32

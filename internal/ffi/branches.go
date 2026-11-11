@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"sort"
 	"time"
-	"unsafe"
 )
 
 // BranchVersionMapping records one version-to-manifest mapping in a branch
@@ -103,7 +102,7 @@ func (w branchJSON) info(name string) (BranchInfo, error) {
 
 // Branches snapshots all branches. The result is ordered by name.
 func (d *Dataset) Branches() ([]BranchInfo, error) {
-	text, err := d.jsonString("lance_dataset_branches_json", func(handle uintptr) uintptr {
+	text, err := d.jsonString("lance_dataset_branches_json", func(handle uintptr) *byte {
 		return d.b.datasetBranchesJSON(handle)
 	})
 	if err != nil {
@@ -135,7 +134,7 @@ func (d *Dataset) Branch(name string) (BranchInfo, error) {
 	if err := validateRefName(name, "branch"); err != nil {
 		return BranchInfo{}, err
 	}
-	text, err := d.jsonString("lance_dataset_branch_get_json", func(handle uintptr) uintptr {
+	text, err := d.jsonString("lance_dataset_branch_get_json", func(handle uintptr) *byte {
 		return d.b.datasetBranchGetJSON(handle, name)
 	})
 	if err != nil {
@@ -154,7 +153,7 @@ func (d *Dataset) Branch(name string) (BranchInfo, error) {
 
 // CurrentBranchIdentifier reports the receiver's branch lineage.
 func (d *Dataset) CurrentBranchIdentifier() (BranchIdentifier, error) {
-	text, err := d.jsonString("lance_dataset_branch_identifier_json", func(handle uintptr) uintptr {
+	text, err := d.jsonString("lance_dataset_branch_identifier_json", func(handle uintptr) *byte {
 		return d.b.datasetBranchIdentifierJSON(handle)
 	})
 	if err != nil {
@@ -273,7 +272,7 @@ func (d *Dataset) ReplaceBranchMetadata(name string, metadata map[string]string)
 	return nil
 }
 
-func (d *Dataset) jsonString(op string, call func(handle uintptr) uintptr) (string, error) {
+func (d *Dataset) jsonString(op string, call func(handle uintptr) *byte) (string, error) {
 	handle := d.handle.Load()
 	if handle == 0 {
 		return "", ErrClosed
@@ -284,11 +283,11 @@ func (d *Dataset) jsonString(op string, call func(handle uintptr) uintptr) (stri
 	defer runtime.UnlockOSThread()
 
 	ptr := call(handle)
-	if ptr == 0 {
+	if ptr == nil {
 		return "", nativeNullError(b, op)
 	}
-	text := goString((*byte)(unsafe.Pointer(ptr)))
-	b.freeString((*byte)(unsafe.Pointer(ptr)))
+	text := goString(ptr)
+	b.freeString(ptr)
 	return text, nil
 }
 

@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sort"
 	"time"
-	"unsafe"
 )
 
 // TagInfo is a copied snapshot of one named tag.
@@ -171,17 +170,17 @@ func (d *Dataset) tagRefAction(op, name string, ref Ref, call func(handle, nativ
 
 func tagInfoLocked(b *bindings, tag uintptr) (TagInfo, error) {
 	namePtr := b.tagName(tag)
-	if namePtr == 0 {
+	if namePtr == nil {
 		return TagInfo{}, nativeNullError(b, "lance_tag_name")
 	}
-	info := TagInfo{Name: goString((*byte)(unsafe.Pointer(namePtr)))}
+	info := TagInfo{Name: goString(namePtr)}
 
 	info.Version = b.tagVersion(tag)
 	if err := b.takeError(); err != nil {
 		return TagInfo{}, err
 	}
 
-	var branchPtr uintptr
+	var branchPtr *byte
 	rc := b.tagBranch(tag, &branchPtr)
 	if err := b.takeError(); err != nil {
 		return TagInfo{}, err
@@ -189,10 +188,10 @@ func tagInfoLocked(b *bindings, tag uintptr) (TagInfo, error) {
 	switch rc {
 	case 0:
 	case 1:
-		if branchPtr == 0 {
+		if branchPtr == nil {
 			return TagInfo{}, fmt.Errorf("ffi: lance_tag_branch returned a NULL branch without setting an error")
 		}
-		info.Branch = goString((*byte)(unsafe.Pointer(branchPtr)))
+		info.Branch = goString(branchPtr)
 	default:
 		return TagInfo{}, fmt.Errorf("ffi: lance_tag_branch returned %d without setting an error", rc)
 	}
@@ -247,15 +246,15 @@ func tagMetadataLocked(b *bindings, tag uintptr) (map[string]string, error) {
 	metadata := make(map[string]string, count)
 	for i := uint64(0); i < count; i++ {
 		keyPtr := b.tagMetadataKeyAt(tag, i)
-		if keyPtr == 0 {
+		if keyPtr == nil {
 			return nil, nativeNullError(b, "lance_tag_metadata_key_at")
 		}
-		key := goString((*byte)(unsafe.Pointer(keyPtr)))
+		key := goString(keyPtr)
 		valuePtr := b.tagMetadataValueAt(tag, i)
-		if valuePtr == 0 {
+		if valuePtr == nil {
 			return nil, nativeNullError(b, "lance_tag_metadata_value_at")
 		}
-		metadata[key] = goString((*byte)(unsafe.Pointer(valuePtr)))
+		metadata[key] = goString(valuePtr)
 	}
 	return metadata, nil
 }

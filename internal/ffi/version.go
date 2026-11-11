@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"time"
-	"unsafe"
 )
 
 // VersionInfo is one snapshot of a committed dataset version.
@@ -275,15 +274,15 @@ func versionMetadataLocked(b *bindings, version uintptr) (map[string]string, err
 	metadata := make(map[string]string, count)
 	for i := uint64(0); i < count; i++ {
 		keyPtr := b.versionMetadataKeyAt(version, i)
-		if keyPtr == 0 {
+		if keyPtr == nil {
 			return nil, nativeNullError(b, "lance_version_metadata_key_at")
 		}
-		key := goString((*byte)(unsafe.Pointer(keyPtr)))
+		key := goString(keyPtr)
 		valuePtr := b.versionMetadataValueAt(version, i)
-		if valuePtr == 0 {
+		if valuePtr == nil {
 			return nil, nativeNullError(b, "lance_version_metadata_value_at")
 		}
-		metadata[key] = goString((*byte)(unsafe.Pointer(valuePtr)))
+		metadata[key] = goString(valuePtr)
 	}
 	return metadata, nil
 }
