@@ -308,6 +308,18 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 		if got := scanIDs(t, mustFragmentScan(t, fragment)); len(got) != 1 || got[0] != ids[0] {
 			t.Fatalf("fragment %d scan = %v, take = %v", fragment.ID(), got, ids)
 		}
+		filtered, err := fragment.Scan(lance.WithAdditionalSQLFilter("id >= 2"))
+		if err != nil {
+			t.Fatalf("fragment %d additional SQL filter: %v", fragment.ID(), err)
+		}
+		got := scanIDs(t, filtered)
+		if ids[0] < 2 {
+			if len(got) != 0 {
+				t.Fatalf("fragment %d filtered rows = %v, want none", fragment.ID(), got)
+			}
+		} else if len(got) != 1 || got[0] != ids[0] {
+			t.Fatalf("fragment %d filtered rows = %v, want %v", fragment.ID(), got, ids)
+		}
 		if count, err := fragment.CountRows(nil); err != nil || count != 1 {
 			t.Fatalf("fragment %d count = %d, %v; want 1", fragment.ID(), count, err)
 		}

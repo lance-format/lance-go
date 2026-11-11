@@ -172,7 +172,7 @@ generator uses only that same compression package plus the standard library.
 The root requirement for the artifact module adds these `go.sum` entries:
 
 ```text
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349 h1:ONS0APX2hx2QnE1sApwS/XJ2Dqk2ix+VR1WvECRcNow=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349 h1:bxguQIT+5JYUyUf3ZSejAvgI/sZVvhRW/kYqtRKqXgY=
 github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111143555-4bc42e026349/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
 ```
 

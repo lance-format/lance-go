@@ -136,8 +136,11 @@ schema's IDs, which can therefore be nonconsecutive.
 `Dataset.FragmentIDs` and `Dataset.OpenFragment` expose fragment snapshots.
 A bound fragment supports `Scan`, `Take`, `CountRows` and `Delete` without the
 source dataset. Fragment scans accept projection, limit, offset, batch sizing,
-ordering and row-address options, but not `WithColumns` or `WithSQLFilter`,
-which the native fragment scanner cannot apply. `Take` uses fragment-local
+ordering and row-address options. `WithColumns` and `WithSQLFilter` require
+constructor arguments that the native fragment API does not expose; they return
+`ErrNotSupported`. For filtering, `WithAdditionalSQLFilter`, `WithSubstraitFilter`
+and `WithSubstraitAggregate` use the ordinary scanner setters after fragment
+selection and retain native validation semantics. `Take` uses fragment-local
 logical row indices. `Delete` stages a deletion and returns a new scannable
 fragment; build a Delete operation from it and commit the transaction to
 publish the deletion. Detached fragments cloned from an Append operation expose

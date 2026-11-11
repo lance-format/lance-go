@@ -247,9 +247,11 @@ func (f *Fragment) nativePhysicalRows() (uint64, error) { return f.native.Physic
 func (f *Fragment) nativeDeletedRows() (uint64, error)  { return f.native.DeletedRows() }
 func (f *Fragment) nativeLogicalRows() (uint64, error)  { return f.native.LogicalRows() }
 
-// Scan scans this fragment. Columns and SQL filters filtered at the fragment
-// level are not supported by the native API; passing WithColumns or
-// WithSQLFilter returns CodeNotSupported rather than ignoring the filter.
+// Scan scans this fragment. The native fragment constructor does not accept
+// WithColumns or WithSQLFilter; these return CodeNotSupported. The returned
+// native scanner supports WithAdditionalSQLFilter, WithSubstraitFilter and
+// WithSubstraitAggregate through its ordinary scanner setters. These options
+// operate on this fragment snapshot and preserve native validation semantics.
 func (f *Fragment) Scan(opts ...ScanOption) (*Scanner, error) {
 	if f == nil || !f.res.acquire() {
 		return nil, closedError("scan fragment", f.uriOrEmpty())
