@@ -21,6 +21,11 @@ const (
 	maxFetchTimeout     = 2 * time.Minute
 	verificationReserve = 30 * time.Second
 	maxPrefixBytes      = 512
+	maxTableIDBytes     = 256
+
+	modeDirectAccessor = "direct-accessor"
+	modeNamespace      = "namespace"
+	tableIDSeparator   = "$"
 )
 
 var (
@@ -30,6 +35,8 @@ var (
 )
 
 type config struct {
+	mode                 string
+	namespaceTableID     []string
 	uri                  string
 	region               string
 	credentialExecutable string
@@ -66,9 +73,12 @@ func (s *stringList) Set(value string) error {
 func parseConfig(args []string) (config, targetPrefix, error) {
 	var cfg config
 	var credentialArgs stringList
+	var namespaceTableID string
 
 	flags := flag.NewFlagSet("cloud-refresh", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	flags.StringVar(&cfg.mode, "mode", modeDirectAccessor, "credential path: direct-accessor or namespace")
+	flags.StringVar(&namespaceTableID, "namespace-table-id", "", "namespace mode table ID; separate segments with $")
 	flags.StringVar(&cfg.uri, "uri", "", "explicit s3://bucket/non-root-prefix dataset parent")
 	flags.StringVar(&cfg.region, "region", "", "AWS region for the bucket")
 	flags.StringVar(&cfg.credentialExecutable, "credential-executable", "", "operator executable implementing AWS credential_process v1")
@@ -85,6 +95,24 @@ func parseConfig(args []string) (config, targetPrefix, error) {
 		return config{}, targetPrefix{}, errors.New("unexpected positional arguments; pass credential arguments with --credential-arg")
 	}
 	cfg.credentialArgs = []string(credentialArgs)
+
+	switch cfg.mode {
+	case modeDirectAccessor:
+		if namespaceTableID != "" {
+			return config{}, targetPrefix{}, errors.New("--namespace-table-id requires --mode namespace")
+		}
+	case modeNamespace:
+		if namespaceTableID == "" {
+			return config{}, targetPrefix{}, errors.New("missing required --namespace-table-id when --mode namespace")
+		}
+		parts, err := parseNamespaceTableID(namespaceTableID)
+		if err != nil {
+			return config{}, targetPrefix{}, fmt.Errorf("--namespace-table-id: %w", err)
+		}
+		cfg.namespaceTableID = parts
+	default:
+		return config{}, targetPrefix{}, errors.New("--mode must be direct-accessor or namespace")
+	}
 
 	if cfg.uri == "" {
 		return config{}, targetPrefix{}, errors.New("missing required --uri")
@@ -133,6 +161,25 @@ func parseConfig(args []string) (config, targetPrefix, error) {
 	}
 
 	return cfg, prefix, nil
+}
+
+func parseNamespaceTableID(raw string) ([]string, error) {
+	if len(raw) > maxTableIDBytes {
+		return nil, fmt.Errorf("must be at most %d bytes", maxTableIDBytes)
+	}
+	parts := strings.Split(raw, tableIDSeparator)
+	for _, part := range parts {
+		if part == "" {
+			return nil, errors.New("segments must be non-empty")
+		}
+		if part == "." || part == ".." {
+			return nil, errors.New("segments must not be . or ..")
+		}
+		if !prefixSegmentPattern.MatchString(part) {
+			return nil, errors.New("segments may contain only letters, digits, dot, underscore, and hyphen")
+		}
+	}
+	return parts, nil
 }
 
 func parseTargetPrefix(raw string) (targetPrefix, error) {

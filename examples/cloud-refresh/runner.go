@@ -19,6 +19,13 @@ var fixtureRows = []int64{10, 20, 30}
 var fixtureAfterDelete = []int64{10, 30}
 
 func execute(cfg config, prefix targetPrefix) *report {
+	if cfg.mode == modeNamespace {
+		return executeNamespace(cfg, prefix)
+	}
+	return executeDirect(cfg, prefix)
+}
+
+func executeDirect(cfg config, prefix targetPrefix) *report {
 	startedAt := time.Now()
 	deadlineAt := startedAt.Add(cfg.deadline)
 	ctx, cancel := context.WithDeadline(context.Background(), deadlineAt)
@@ -27,11 +34,13 @@ func execute(cfg config, prefix targetPrefix) *report {
 	suffix, err := randomRunSuffix()
 	if err != nil {
 		rep := newReport("", cfg.region, startedAt, cfg.deadline)
+		rep.Mode = modeDirectAccessor
 		rep.fail(newRedactor(), "setup", "random_suffix", err)
 		return rep
 	}
 	runURI := prefix.withSuffix(suffix)
 	rep := newReport(runURI, cfg.region, startedAt, cfg.deadline)
+	rep.Mode = modeDirectAccessor
 	red := newRedactor()
 	source := newCredentialSource(cfg.credentialExecutable, cfg.credentialArgs, cfg.fetchTimeout, deadlineAt, red)
 	providerID := stableProviderID(cfg.credentialExecutable, cfg.credentialArgs, cfg.region)
