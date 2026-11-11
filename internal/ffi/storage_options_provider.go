@@ -60,13 +60,13 @@ type StorageOptionsProvider struct {
 func ValidateStorageOptions(values map[string]string) error {
 	for key, value := range values {
 		if key == "" {
-			return fmt.Errorf("ffi: storage option key must not be empty")
+			return &Error{Code: CodeInvalidArgument, Message: "storage option key must not be empty"}
 		}
 		if err := validateCString(key); err != nil {
-			return fmt.Errorf("ffi: storage option key: %w", err)
+			return &Error{Code: CodeInvalidArgument, Message: fmt.Sprintf("storage option key: %v", err)}
 		}
 		if err := validateCString(value); err != nil {
-			return fmt.Errorf("ffi: storage option value: %w", err)
+			return &Error{Code: CodeInvalidArgument, Message: fmt.Sprintf("storage option value: %v", err)}
 		}
 	}
 	return nil
@@ -198,13 +198,15 @@ func initStorageOptionsProviderCallbacks() {
 }
 
 // storageOptionsForceFetchCallback is a distinct trampoline so native can tell
-// an explicit force-fetch implementation from the default fallback.
-func storageOptionsForceFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) int32 {
-	return storageOptionsFetch(ctx, true, out, outError)
+// an explicit force-fetch implementation from the default fallback. Both
+// trampolines return uintptr for Windows syscall.NewCallback; C consumes the
+// low int32 status, which is always zero or one.
+func storageOptionsForceFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) uintptr {
+	return uintptr(storageOptionsFetch(ctx, true, out, outError))
 }
 
-func storageOptionsFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) int32 {
-	return storageOptionsFetch(ctx, false, out, outError)
+func storageOptionsFetchCallback(ctx uintptr, out *storageOptionsFetchResult, outError *callbackError) uintptr {
+	return uintptr(storageOptionsFetch(ctx, false, out, outError))
 }
 
 func storageOptionsFetch(ctx uintptr, force bool, out *storageOptionsFetchResult, outError *callbackError) (ret int32) {
