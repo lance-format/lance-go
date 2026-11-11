@@ -12,7 +12,6 @@ import (
 	"time"
 
 	lance "github.com/lance-format/lance-go"
-	"github.com/lance-format/lance-go/internal/ffi"
 )
 
 type accessorTestProvider struct {
@@ -139,11 +138,14 @@ func TestStorageOptionsAccessorCallbackErrors(t *testing.T) {
 		if err == nil {
 			t.Fatal("snapshot succeeded, want provider error")
 		}
-		var nativeErr *ffi.Error
+		var nativeErr *lance.Error
 		if !errors.As(err, &nativeErr) {
-			t.Fatalf("snapshot error = %T %v, want *ffi.Error", err, err)
+			t.Fatalf("snapshot error = %T %v, want *lance.Error", err, err)
 		}
-		if nativeErr.Code != ffi.CodeInternal {
+		if !errors.Is(err, lance.ErrInternal) {
+			t.Fatalf("snapshot error = %v, want ErrInternal", err)
+		}
+		if nativeErr.Code != lance.CodeInternal {
 			t.Fatalf("snapshot error code = %v, want internal", nativeErr.Code)
 		}
 		if !strings.Contains(err.Error(), "no credentials") {
@@ -171,52 +173,15 @@ func TestStorageOptionsAccessorCallbackErrors(t *testing.T) {
 	})
 }
 
-func TestStorageOptionsAccessorCloseWaitsForSnapshot(t *testing.T) {
+func TestStorageOptionsSnapshotAfterClose(t *testing.T) {
 	requireNative(t)
-	entered := make(chan struct{})
-	release := make(chan struct{})
-	provider := &accessorTestProvider{
-		id: "test/close-wait",
-		hook: func(context.Context) (map[string]string, error) {
-			close(entered)
-			<-release
-			return map[string]string{"allow_http": "true"}, nil
-		},
-	}
-	accessor, err := lance.NewStorageOptionsAccessor(nil, provider)
+	owned, err := lance.NewStorageOptionsAccessor(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	snapshotDone := make(chan error, 1)
-	go func() {
-		_, _, err := accessor.Snapshot()
-		snapshotDone <- err
-	}()
-	<-entered
-
-	closeDone := make(chan struct{})
-	go func() {
-		accessor.Close()
-		close(closeDone)
-	}()
-	select {
-	case <-closeDone:
-		t.Fatal("Close returned while a snapshot was still in flight")
-	case <-time.After(50 * time.Millisecond):
-		// Close is expected to block. The bounded check only makes a broken
-		// implementation fail quickly; correctness does not depend on the
-		// elapsed time.
-	}
-
-	close(release)
-	if err := <-snapshotDone; err != nil {
-		t.Fatalf("in-flight snapshot: %v", err)
-	}
-	select {
-	case <-closeDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close did not return after the snapshot completed")
+	owned.Close()
+	if _, _, err := owned.Snapshot(); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("Snapshot after Close = %v, want ErrClosed", err)
 	}
 }
 

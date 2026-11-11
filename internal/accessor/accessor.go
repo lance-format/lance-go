@@ -44,15 +44,18 @@ type Accessor struct {
 	native     *ffi.StorageOptionsAccessor
 	life       *lifetime.Resource
 	providerID string
+	wrapError  func(op, uri string, err error) error
 }
 
-// New creates an accessor from optional initial options and an optional
+// New uses the caller error conversion for Snapshot, preserving public
+// error identities without exposing the FFI error type. It creates an
+// accessor from optional initial options and an optional
 // provider. A nil initial map means native None; a non-nil map, including an
 // empty one, means Some(initial). With neither initial options nor a provider
 // the accessor is native None.
-func New(initial map[string]string, provider Provider) (*Accessor, error) {
+func New(initial map[string]string, provider Provider, wrapError func(op, uri string, err error) error) (*Accessor, error) {
 	if provider == nil {
-		return NewStaticPresence(initial, initial != nil)
+		return NewStaticPresence(initial, initial != nil, wrapError)
 	}
 	if err := ffi.ValidateStorageOptions(initial); err != nil {
 		return nil, err
@@ -86,31 +89,31 @@ func New(initial map[string]string, provider Provider) (*Accessor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newOwned(nativeAccessor, id), nil
+	return newOwned(nativeAccessor, id, wrapError), nil
 }
 
 // NewStaticPresence creates a static accessor with explicit nil/empty
 // presence. A nil initial map with hasInitial false means native None.
-func NewStaticPresence(initial map[string]string, hasInitial bool) (*Accessor, error) {
+func NewStaticPresence(initial map[string]string, hasInitial bool, wrapError func(op, uri string, err error) error) (*Accessor, error) {
 	native, err := ffi.NewStorageOptionsAccessorWithPresence(initial, hasInitial, nil)
 	if err != nil {
 		return nil, err
 	}
-	return newOwned(native, ""), nil
+	return newOwned(native, "", wrapError), nil
 }
 
 // NewStatic creates a static accessor. A nil or empty map means Some(empty),
 // matching the historical file StorageOptions behavior; use a nil accessor for
 // native None.
-func NewStatic(values map[string]string) (*Accessor, error) {
-	return NewStaticPresence(values, true)
+func NewStatic(values map[string]string, wrapError func(op, uri string, err error) error) (*Accessor, error) {
+	return NewStaticPresence(values, true, wrapError)
 }
 
 // NewFromProvider adopts a provider created by native namespace bindings. The
 // temporary provider handle is closed after the accessor retains its native
 // Arc. Initial options are not accepted here; the namespace provider supplies
 // them from its own describe-table response.
-func NewFromProvider(provider *ffi.StorageOptionsProvider) (*Accessor, error) {
+func NewFromProvider(provider *ffi.StorageOptionsProvider, wrapError func(op, uri string, err error) error) (*Accessor, error) {
 	if provider == nil {
 		return nil, fmt.Errorf("storage options provider must not be nil")
 	}
@@ -130,14 +133,15 @@ func NewFromProvider(provider *ffi.StorageOptionsProvider) (*Accessor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newOwned(native, id), nil
+	return newOwned(native, id, wrapError), nil
 }
 
-func newOwned(native *ffi.StorageOptionsAccessor, providerID string) *Accessor {
+func newOwned(native *ffi.StorageOptionsAccessor, providerID string, wrapError func(op, uri string, err error) error) *Accessor {
 	return &Accessor{
 		native:     native,
 		life:       lifetime.New(native.Close),
 		providerID: providerID,
+		wrapError:  wrapError,
 	}
 }
 
@@ -154,12 +158,16 @@ func (a *Accessor) ProviderID() string {
 // false means native None; a non-nil empty map with true means Some(empty).
 // The map is an independent copy and may be mutated by the caller.
 func (a *Accessor) Snapshot() (map[string]string, bool, error) {
-	native, release, ok := Acquire(a)
-	if !ok {
+	if a == nil {
 		return nil, false, ffi.ErrClosed
 	}
+	native, release, ok := Acquire(a)
+	if !ok {
+		return nil, false, a.wrapError("storage options snapshot", "", ffi.ErrClosed)
+	}
 	defer release()
-	return native.Snapshot()
+	options, present, err := native.Snapshot()
+	return options, present, a.wrapError("storage options snapshot", "", err)
 }
 
 // Close releases the caller's accessor handle and waits for in-flight local

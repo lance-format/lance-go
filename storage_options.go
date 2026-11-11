@@ -39,7 +39,7 @@ type StorageOptionsAccessor = accessor.Accessor
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map
 // means native None; a non-nil map, including an empty one, means Some(initial).
 func NewStorageOptionsAccessor(initial map[string]string, provider StorageOptionsProvider) (*StorageOptionsAccessor, error) {
-	created, err := accessor.New(initial, provider)
+	created, err := accessor.New(initial, provider, wrapError)
 	if err != nil {
 		return nil, wrapError("create storage options accessor", "", err)
 	}
@@ -69,7 +69,7 @@ func NewNamespaceStorageOptionsAccessor(ns namespace.Namespace, tableID []string
 	if err != nil {
 		return nil, wrapError("create namespace storage options provider", "", err)
 	}
-	created, err := accessor.NewFromProvider(provider)
+	created, err := accessor.NewFromProvider(provider, wrapError)
 	if err != nil {
 		return nil, wrapError("create namespace storage options accessor", "", err)
 	}

@@ -31,7 +31,7 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 	for key, value := range values {
 		copied[key] = value
 	}
-	owned, err := accessor.NewStatic(copied)
+	owned, err := accessor.NewStatic(copied, wrapError)
 	if err != nil {
 		return nil, wrapError("storage options", "", err)
 	}
