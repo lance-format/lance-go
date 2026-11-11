@@ -184,44 +184,58 @@ type bindings struct {
 
 	datasetWriteWithOptions func(uri string, schema *cdata.ArrowSchema, stream *cdata.ArrowArrayStream, mode int32, options *writeOptions, storageOpts []uintptr, outDataset *uintptr) int32
 
-	scannerNew                   func(dataset uintptr, columns []uintptr, filter uintptr) uintptr
-	scannerClose                 func(scanner uintptr)
-	scannerSetLimit              func(scanner uintptr, limit int64) int32
-	scannerSetOffset             func(scanner uintptr, offset int64) int32
-	scannerSetBatchSize          func(scanner uintptr, size int64) int32
-	scannerSetBatchSizeBytes     func(scanner uintptr, size uint64) int32
-	scannerSetProjection         func(scanner uintptr, columns []projectionColumn, count uint64) int32
-	scannerSetOrderBy            func(scanner uintptr, orderings []columnOrdering, count uint64) int32
-	scannerWithRowID             func(scanner uintptr, enabled bool) int32
-	scannerWithRowAddress        func(scanner uintptr, enabled bool) int32
-	scannerSetSubstraitFilter    func(scanner uintptr, data []byte, length uint64) int32
-	scannerSetSubstraitAggregate func(scanner uintptr, data []byte, length uint64) int32
-	scannerAdditionalSQLFilter   func(scanner uintptr, filter string) int32
-	scannerNearest               func(scanner uintptr, column string, queryData unsafe.Pointer, queryLen uint64, elementType int32, k uint32) int32
-	scannerNearestBatch          func(scanner uintptr, column string, queries unsafe.Pointer, dimension uint64, numQueries uint64, elementType int32, k uint32) int32
-	scannerNearestMultiVector    func(scanner uintptr, column string, subvectors unsafe.Pointer, dimension uint64, numVectors uint64, elementType int32, k uint32) int32
-	scannerSetDistanceRange      func(scanner uintptr, lowerDistance *float32, upperDistance *float32) int32
-	scannerSetMetric             func(scanner uintptr, metric int32) int32
-	scannerSetNProbes            func(scanner uintptr, nprobes uint32) int32
-	scannerSetMinimumNProbes     func(scanner uintptr, nprobes uint32) int32
-	scannerSetMaximumNProbes     func(scanner uintptr, nprobes uint32) int32
-	scannerSetSearchEffort       func(scanner uintptr, effort float64) int32
-	scannerSetApproxMode         func(scanner uintptr, mode int32) int32
-	scannerSetQueryParallelism   func(scanner uintptr, parallelism int32) int32
-	scannerSetRefineFactor       func(scanner uintptr, factor uint32) int32
-	scannerSetEF                 func(scanner uintptr, ef uint32) int32
-	scannerSetUseIndex           func(scanner uintptr, useIndex bool) int32
-	scannerSetFastSearch         func(scanner uintptr, fastSearch bool) int32
-	scannerSetPrefilter          func(scanner uintptr, prefilter bool) int32
-	scannerSetRowAddrAllowlist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
-	scannerSetRowAddrBlocklist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
-	scannerSetStatisticsCallback func(scanner uintptr, callback uintptr, ctx uintptr) int32
-	scannerSetFTSQuery           func(scanner uintptr, query uintptr) int32
-	scannerSetFTSQueryContext    func(scanner uintptr, context uintptr) int32
-	scannerSetMinHashQuery       func(scanner uintptr, column, text string) int32
-	scannerSetFTSIndexSegments   func(scanner uintptr, uuids []byte, count uint64) int32
-	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
-	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
+	scannerNew                          func(dataset uintptr, columns []uintptr, filter uintptr) uintptr
+	scannerClose                        func(scanner uintptr)
+	scannerSetLimit                     func(scanner uintptr, limit int64) int32
+	scannerSetOffset                    func(scanner uintptr, offset int64) int32
+	scannerSetBatchSize                 func(scanner uintptr, size int64) int32
+	scannerSetBatchSizeBytes            func(scanner uintptr, size uint64) int32
+	scannerSetIOBufferSize              func(scanner uintptr, size uint64) int32
+	scannerSetBatchReadahead            func(scanner uintptr, batches uint64) int32
+	scannerSetFragmentReadahead         func(scanner uintptr, fragments uint64) int32
+	scannerSetTargetParallelism         func(scanner uintptr, tasks uint64) int32
+	scannerSetScanInOrder               func(scanner uintptr, enabled bool) int32
+	scannerSetUseScalarIndex            func(scanner uintptr, enabled bool) int32
+	scannerSetStrictBatchSize           func(scanner uintptr, enabled bool) int32
+	scannerSetUseStats                  func(scanner uintptr, enabled bool) int32
+	scannerSetIncludeDeletedRows        func(scanner uintptr, enabled bool) int32
+	scannerSetBlobHandling              func(scanner uintptr, handling int32) int32
+	scannerSetMaterializationStyle      func(scanner uintptr, style int32, earlyExcept []uintptr, count uint64) int32
+	scannerSetFragmentIDs               func(scanner uintptr, ids []uint64, count uint64) int32
+	scannerDisableScoringAutoprojection func(scanner uintptr) int32
+	scannerSetScalarIndexSegment        func(scanner uintptr, segment []byte) int32
+	scannerSetProjection                func(scanner uintptr, columns []projectionColumn, count uint64) int32
+	scannerSetOrderBy                   func(scanner uintptr, orderings []columnOrdering, count uint64) int32
+	scannerWithRowID                    func(scanner uintptr, enabled bool) int32
+	scannerWithRowAddress               func(scanner uintptr, enabled bool) int32
+	scannerSetSubstraitFilter           func(scanner uintptr, data []byte, length uint64) int32
+	scannerSetSubstraitAggregate        func(scanner uintptr, data []byte, length uint64) int32
+	scannerAdditionalSQLFilter          func(scanner uintptr, filter string) int32
+	scannerNearest                      func(scanner uintptr, column string, queryData unsafe.Pointer, queryLen uint64, elementType int32, k uint32) int32
+	scannerNearestBatch                 func(scanner uintptr, column string, queries unsafe.Pointer, dimension uint64, numQueries uint64, elementType int32, k uint32) int32
+	scannerNearestMultiVector           func(scanner uintptr, column string, subvectors unsafe.Pointer, dimension uint64, numVectors uint64, elementType int32, k uint32) int32
+	scannerSetDistanceRange             func(scanner uintptr, lowerDistance *float32, upperDistance *float32) int32
+	scannerSetMetric                    func(scanner uintptr, metric int32) int32
+	scannerSetNProbes                   func(scanner uintptr, nprobes uint32) int32
+	scannerSetMinimumNProbes            func(scanner uintptr, nprobes uint32) int32
+	scannerSetMaximumNProbes            func(scanner uintptr, nprobes uint32) int32
+	scannerSetSearchEffort              func(scanner uintptr, effort float64) int32
+	scannerSetApproxMode                func(scanner uintptr, mode int32) int32
+	scannerSetQueryParallelism          func(scanner uintptr, parallelism int32) int32
+	scannerSetRefineFactor              func(scanner uintptr, factor uint32) int32
+	scannerSetEF                        func(scanner uintptr, ef uint32) int32
+	scannerSetUseIndex                  func(scanner uintptr, useIndex bool) int32
+	scannerSetFastSearch                func(scanner uintptr, fastSearch bool) int32
+	scannerSetPrefilter                 func(scanner uintptr, prefilter bool) int32
+	scannerSetRowAddrAllowlist          func(scanner uintptr, rowIDs []uint64, count uint64) int32
+	scannerSetRowAddrBlocklist          func(scanner uintptr, rowIDs []uint64, count uint64) int32
+	scannerSetStatisticsCallback        func(scanner uintptr, callback uintptr, ctx uintptr) int32
+	scannerSetFTSQuery                  func(scanner uintptr, query uintptr) int32
+	scannerSetFTSQueryContext           func(scanner uintptr, context uintptr) int32
+	scannerSetMinHashQuery              func(scanner uintptr, column, text string) int32
+	scannerSetFTSIndexSegments          func(scanner uintptr, uuids []byte, count uint64) int32
+	scannerSchema                       func(scanner uintptr, out *cdata.ArrowSchema) int32
+	scannerPollNext                     func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
 
 	batchToArrow func(batch uintptr, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
 	batchFree    func(batch uintptr)
@@ -659,6 +673,20 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_offset", &b.scannerSetOffset},
 		{"lance_scanner_set_batch_size", &b.scannerSetBatchSize},
 		{"lance_scanner_set_batch_size_bytes", &b.scannerSetBatchSizeBytes},
+		{"lance_scanner_set_io_buffer_size", &b.scannerSetIOBufferSize},
+		{"lance_scanner_set_batch_readahead", &b.scannerSetBatchReadahead},
+		{"lance_scanner_set_fragment_readahead", &b.scannerSetFragmentReadahead},
+		{"lance_scanner_set_target_parallelism", &b.scannerSetTargetParallelism},
+		{"lance_scanner_set_scan_in_order", &b.scannerSetScanInOrder},
+		{"lance_scanner_set_use_scalar_index", &b.scannerSetUseScalarIndex},
+		{"lance_scanner_set_strict_batch_size", &b.scannerSetStrictBatchSize},
+		{"lance_scanner_set_use_stats", &b.scannerSetUseStats},
+		{"lance_scanner_set_include_deleted_rows", &b.scannerSetIncludeDeletedRows},
+		{"lance_scanner_set_blob_handling", &b.scannerSetBlobHandling},
+		{"lance_scanner_set_materialization_style", &b.scannerSetMaterializationStyle},
+		{"lance_scanner_set_fragment_ids", &b.scannerSetFragmentIDs},
+		{"lance_scanner_disable_scoring_autoprojection", &b.scannerDisableScoringAutoprojection},
+		{"lance_scanner_set_scalar_index_segment", &b.scannerSetScalarIndexSegment},
 		{"lance_scanner_set_projection", &b.scannerSetProjection},
 		{"lance_scanner_set_order_by", &b.scannerSetOrderBy},
 		{"lance_scanner_with_row_id", &b.scannerWithRowID},

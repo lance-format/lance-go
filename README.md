@@ -149,11 +149,13 @@ schema's IDs, which can therefore be nonconsecutive.
 `Dataset.FragmentIDs` and `Dataset.OpenFragment` expose fragment snapshots.
 A bound fragment supports `Scan`, `Take`, `CountRows` and `Delete` without the
 source dataset. Fragment scans accept projection, limit, offset, batch sizing,
-ordering and row-address options. `WithColumns` and `WithSQLFilter` require
-constructor arguments that the native fragment API does not expose; they return
-`ErrNotSupported`. For filtering, `WithAdditionalSQLFilter`, `WithSubstraitFilter`
-and `WithSubstraitAggregate` use the ordinary scanner setters after fragment
-selection and retain native validation semantics. `Take` uses fragment-local
+ordering, row-address, fragment-selection and scanner-tuning options.
+`WithColumns` and `WithSQLFilter` require constructor arguments that the native
+fragment API does not expose; they return `ErrNotSupported`. For filtering,
+`WithAdditionalSQLFilter`, `WithSubstraitFilter` and `WithSubstraitAggregate`
+use the ordinary scanner setters after fragment selection and retain native
+validation semantics. `WithFragmentIDs` replaces the fragment scan's initial
+metadata selection, including its staged deletions. `Take` uses fragment-local
 logical row indices. `Delete` stages a deletion and returns a new scannable
 fragment; build a Delete operation from it and commit the transaction to
 publish the deletion. Detached fragments cloned from an Append operation expose
@@ -224,6 +226,36 @@ Ending iteration, including an early break, closes the scanner. Alternatively,
 Batches returned by `Take` and `TakeRows` are owned by the caller and must each
 be released.
 
+## Scanner controls
+
+`WithIOBufferSize`, `WithBatchReadahead`, `WithFragmentReadahead`,
+`WithTargetParallelism`, `WithScanInOrder`, `WithUseStats` and
+`WithUseScalarIndex` tune native scan planning. Scans are ordered and use scalar
+indexes and file statistics by default; fragment readahead only applies when
+ordered scans are disabled. `WithStrictBatchSize(true)` requires every batch
+except the last to contain exactly the configured `WithBatchSize` rows, and
+cannot be combined with `WithBatchSizeBytes`. The batch buffer and readahead
+sizes must be positive.
+
+`WithIncludeDeletedRows(true)` includes rows deleted from the scanned snapshot.
+It requires `WithRowID(true)`; deleted rows have a null `_rowid`. A filtered
+scan that includes deleted rows must also set `WithUseScalarIndex(false)`.
+
+`WithFragmentIDs` restricts a scan to the given native fragment IDs. Calling it
+without IDs selects no fragments, and IDs absent from the snapshot contribute
+no fragments. This is useful for assigning disjoint fragments to independent
+scanners. `WithScalarIndexSegment` restricts a filtered scan to one scalar index
+segment identified by its `index.UUID`; it requires an explicit, non-empty
+fragment selection that defines both the segment read and fallback domains. It
+does not support vector, MinHash or FTS queries, or scans of deleted rows.
+
+`WithMaterializationStyle` selects heuristic, all-late, all-early or
+all-early-except column loading. For all-early-except, pass Lance schema column
+paths whose payloads should load late; an empty exception list loads every
+projected column early. `WithBlobHandling` selects blob descriptors (the
+default), binary payloads for every blob column, or descriptions for every
+column carrying blob metadata.
+
 Scan cancellation parks and wakes the goroutine without holding an OS thread
 while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
@@ -263,9 +295,13 @@ kept across `Next` calls. The context is checked before planning and between
 batches, but a native planning or payload call already in flight cannot be
 interrupted.
 
-Scanner blob-handling modes and raw packed/dedicated file writers are not
-exposed yet. The lance-c#167 raw v2.2 projection gap is not worked around here;
-blob reads use native descriptors.
+`WithBlobHandling` controls scanner output for blob columns. The default
+descriptor mode keeps other binary columns inline; `BlobHandlingAllBinary`
+materializes every blob column as binary payloads, while
+`BlobHandlingAllDescriptions` returns descriptors for every column carrying
+blob metadata. Raw packed/dedicated file writers are not exposed yet. The
+lance-c#167 raw v2.2 projection gap is not worked around here; blob reads use
+native descriptors.
 
 ## Vector search
 
@@ -286,6 +322,10 @@ for batch, err := range scan.Records(ctx) {
     // batch also contains the dataset columns and `_distance`.
 }
 ```
+
+FTS and vector scans add `_score` or `_distance` automatically, including when
+a column projection is explicit. `WithoutScoringAutoprojection()` disables that
+behavior for the scanner; project the score column explicitly to keep it.
 
 `NewFloat16Vector` takes IEEE 754 binary16 bit patterns in `uint16` values,
 not pre-converted `float16.Num` values. `NewFloat64Vector`, `NewUInt8Vector`
