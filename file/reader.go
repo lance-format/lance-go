@@ -223,6 +223,7 @@ func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordRea
 		return nil, err
 	}
 
+	opts = opts.withDefaults()
 	stream, err := native.ReadAll(opts.BatchSize, opts.BatchReadahead)
 	if err != nil {
 		return nil, wrapError("read all", r.uri, err)
@@ -247,6 +248,7 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 		return nil, err
 	}
 
+	opts = opts.withDefaults()
 	stream, err := native.ReadRange(offset, numRows, opts.BatchSize, opts.BatchReadahead)
 	if err != nil {
 		return nil, wrapError("read range", r.uri, err)
@@ -268,6 +270,7 @@ func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOpt
 		return nil, err
 	}
 
+	opts = opts.withDefaults()
 	stream, err := native.ReadIndices(indices, opts.BatchSize, opts.BatchReadahead)
 	if err != nil {
 		return nil, wrapError("read indices", r.uri, err)

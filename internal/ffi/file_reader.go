@@ -160,8 +160,8 @@ func (r *FileReader) ReadGlobalBuffer(index uint32) ([]byte, error) {
 	return data, err
 }
 
-// ReadAll streams all rows. A zero batchSize or batchReadahead selects the
-// native default for that parameter.
+// ReadAll streams all rows. batchSize and batchReadahead must be positive;
+// the native C API does not supply defaults.
 func (r *FileReader) ReadAll(batchSize, batchReadahead uint32) (*StreamReader, error) {
 	handle := r.handle
 	if handle == 0 {
