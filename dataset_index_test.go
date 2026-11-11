@@ -42,7 +42,7 @@ func TestIndexLifecycleAndMetadata(t *testing.T) {
 		t.Fatalf("IndexCount before create = %d, want 0", sourceCount)
 	}
 
-	indexed, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("name_fts"))
+	indexed, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("name_fts"))
 	if err != nil {
 		t.Fatalf("CreateScalarIndex: %v", err)
 	}
@@ -78,8 +78,8 @@ func TestIndexLifecycleAndMetadata(t *testing.T) {
 	if len(indices[0].Columns) != 1 || indices[0].Columns[0] != "name" {
 		t.Fatalf("index columns = %v, want [name]", indices[0].Columns)
 	}
-	if indices[0].DatasetVersion != indexedVersion {
-		t.Fatalf("index dataset version = %d, want %d", indices[0].DatasetVersion, indexedVersion)
+	if indices[0].DatasetVersion != sourceVersion {
+		t.Fatalf("index dataset version = %d, want %d", indices[0].DatasetVersion, sourceVersion)
 	}
 	if indices[0].Type == "" {
 		t.Fatalf("index type is empty")
@@ -184,21 +184,21 @@ func TestIndexNameReplaceAndInvalidScalarParams(t *testing.T) {
 	}
 	defer dataset.Close()
 
-	first, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup"))
+	first, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("dup"))
 	if err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 	defer first.Close()
-	if _, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup")); err == nil {
+	if _, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("dup")); err == nil {
 		t.Fatalf("duplicate create succeeded")
 	}
-	replaced, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup"), lance.WithIndexReplace(true))
+	replaced, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("dup"), lance.WithIndexReplace(true))
 	if err != nil {
 		t.Fatalf("replace create: %v", err)
 	}
 	replaced.Close()
 
-	badParams := json.RawMessage(`{"position":"not-a-bool"}`)
+	badParams := json.RawMessage(`{"with_position":"not-a-bool"}`)
 	if _, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, badParams, index.ScalarOptions{}); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("invalid plugin params = %v, want ErrInvalidArgument", err)
 	}

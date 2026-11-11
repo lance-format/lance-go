@@ -89,12 +89,10 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 		SubstraitFilter:      config.substraitFilter,
 		SubstraitAggregate:   config.substraitAggregate,
 		AdditionalSQLFilters: config.additionalSQLFilters,
+	}, func(native *ffi.Scanner) error {
+		return applyFTSScan(native, &config)
 	})
 	if err != nil {
-		return nil, wrapError("scan", d.uri, err)
-	}
-	if err := applyFTSScan(native, &config); err != nil {
-		native.Close()
 		return nil, wrapError("scan", d.uri, err)
 	}
 	return &Scanner{

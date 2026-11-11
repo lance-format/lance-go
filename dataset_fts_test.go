@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -30,7 +31,7 @@ func ftsTestDataset(t *testing.T) (*lance.Dataset, string) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { dataset.Close() })
-	indexed, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("name_fts"))
+	indexed, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("name_fts"))
 	if err != nil {
 		t.Fatalf("CreateScalarIndex: %v", err)
 	}
@@ -177,12 +178,12 @@ func TestFTSMultiMatchAndConstructionErrors(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	defer dataset.Close()
-	indexed, err := dataset.CreateScalarIndex(ctx, "title", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("title_fts"))
+	indexed, err := dataset.CreateScalarIndex(ctx, "title", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("title_fts"))
 	if err != nil {
 		t.Fatalf("CreateScalarIndex title: %v", err)
 	}
 	defer indexed.Close()
-	withBody, err := indexed.CreateScalarIndex(ctx, "body", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("body_fts"))
+	withBody, err := indexed.CreateScalarIndex(ctx, "body", index.ScalarInverted, json.RawMessage(`{"with_position":true}`), index.ScalarOptions{}, lance.WithIndexName("body_fts"))
 	if err != nil {
 		t.Fatalf("CreateScalarIndex body: %v", err)
 	}
@@ -220,9 +221,7 @@ func TestFTSMultiMatchAndConstructionErrors(t *testing.T) {
 		t.Fatalf("NewFTSBooleanQuery empty: %v", err)
 	}
 	defer emptyBoolean.Close()
-	if _, err := withBody.Scan(lance.WithFTSQuery(emptyBoolean)); err == nil {
-		t.Fatalf("scan with empty boolean query succeeded")
-	}
+	assertFTSPlanningError(t, withBody, "boolean query must have at least one", lance.WithFTSQuery(emptyBoolean))
 }
 
 func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {
@@ -302,8 +301,11 @@ func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {
 		t.Fatalf("NewFTSMatchQuery: %v", err)
 	}
 	defer segmentQuery.Close()
-	if ids := scanIDs(t, dataset, lance.WithFTSQuery(segmentQuery), lance.WithFTSIndexSegments(uuids...)); !equalIDs(ids, 1, 2, 4) {
-		t.Fatalf("segment-selected ids = %v, want [1 2 4]", ids)
+	if scanner, err := dataset.Scan(lance.WithFTSQuery(segmentQuery), lance.WithFTSIndexSegments(uuids...)); err == nil {
+		scanner.Close()
+		t.Fatal("segment selection with an unprepared query succeeded")
+	} else if !strings.Contains(err.Error(), "prepared query context") {
+		t.Fatalf("unexpected segment-selection error: %v", err)
 	}
 	if ids := scanIDs(t, dataset, lance.WithFTSQueryContext(prepared), lance.WithFTSIndexSegments(uuids...)); !equalIDs(ids, 1, 2, 4) {
 		t.Fatalf("prepared segment-selected ids = %v, want [1 2 4]", ids)
@@ -359,14 +361,31 @@ func TestMinHashLSHScan(t *testing.T) {
 		t.Fatalf("MinHash scan did not return _distance")
 	}
 
-	if ids := scanIDs(t, indexed, lance.WithMinHashQuery("name", ""), lance.WithLimit(1)); len(ids) != 1 {
-		t.Fatalf("MinHash empty text ids = %v, want one row", ids)
+	if ids := scanIDs(t, indexed, lance.WithMinHashQuery("name", ""), lance.WithLimit(1)); len(ids) != 0 {
+		t.Fatalf("MinHash empty text ids = %v, want no rows", ids)
 	}
 
-	if _, err := indexed.Scan(lance.WithMinHashQuery("name", "hello world")); err == nil {
-		t.Fatalf("MinHash scan without limit succeeded")
-	}
+	assertFTSPlanningError(t, indexed, "MinHash search requires a limit", lance.WithMinHashQuery("name", "hello world"))
 	if _, err := indexed.Scan(lance.WithMinHashQuery("", "hello world"), lance.WithLimit(1)); err == nil {
 		t.Fatalf("MinHash scan with empty column succeeded")
 	}
+}
+
+// Planning errors must be observed by consuming the lazy native stream.
+func assertFTSPlanningError(t *testing.T, dataset *lance.Dataset, message string, opts ...lance.ScanOption) {
+	t.Helper()
+	scanner, err := dataset.Scan(opts...)
+	if err != nil {
+		t.Fatalf("Scan failed before planning: %v", err)
+	}
+	defer scanner.Close()
+	for _, err := range scanner.Records(context.Background()) {
+		if err != nil {
+			if !strings.Contains(err.Error(), message) {
+				t.Fatalf("planning error = %v, want %q", err, message)
+			}
+			return
+		}
+	}
+	t.Fatalf("planning succeeded, want %q", message)
 }

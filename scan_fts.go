@@ -64,8 +64,8 @@ func WithMinHashQuery(column, text string) ScanOption {
 }
 
 // WithFTSIndexSegments restricts an FTS scan to the given physical index
-// segments. No arguments clears the selection. Unknown or duplicate UUIDs are
-// rejected by native planning.
+// segments. A nonempty selection requires WithFTSQueryContext. No arguments
+// clears the selection. Native planning rejects unknown UUIDs.
 func WithFTSIndexSegments(uuids ...index.UUID) ScanOption {
 	return func(config *scanConfig) error {
 		config.fts.segments = append([]index.UUID(nil), uuids...)
@@ -88,6 +88,9 @@ func applyFTSScan(native *ffi.Scanner, config *scanConfig) error {
 	}
 	if attached > 1 {
 		return fmt.Errorf("FTS query, prepared context, and MinHash query are mutually exclusive")
+	}
+	if fts.segmentsSet && len(fts.segments) > 0 && fts.context == nil {
+		return fmt.Errorf("FTS index segments require a prepared query context")
 	}
 	switch {
 	case fts.query != nil:

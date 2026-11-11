@@ -63,6 +63,8 @@ func buildCreateIndexConfig(opts []CreateIndexOption) (createIndexConfig, error)
 // CreateVectorIndex builds a vector index and returns a new Dataset snapshot.
 // This Dataset keeps its current version and catalog. Options cover every
 // native vector index build field; nil optional fields keep native defaults.
+// An error can occur after the index version is committed, during metadata
+// reload. Reopen the dataset to determine the published state before retrying.
 func (d *Dataset) CreateVectorIndex(ctx context.Context, column string, options index.VectorOptions, opts ...CreateIndexOption) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err

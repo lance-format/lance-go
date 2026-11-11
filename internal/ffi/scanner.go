@@ -222,7 +222,9 @@ type Scanner struct {
 }
 
 // NewScanner creates and configures a native scanner for ds.
-func NewScanner(ds *Dataset, opts ScannerOptions) (*Scanner, error) {
+// initialize attaches search configuration before the output schema is resolved.
+// It runs synchronously during construction and must not publish the scanner.
+func NewScanner(ds *Dataset, opts ScannerOptions, initialize func(*Scanner) error) (*Scanner, error) {
 	if ds == nil {
 		return nil, fmt.Errorf("ffi: dataset must not be nil")
 	}
@@ -281,6 +283,12 @@ func NewScanner(ds *Dataset, opts ScannerOptions) (*Scanner, error) {
 	if err := s.registerStatistics(); err != nil {
 		s.abort()
 		return nil, err
+	}
+	if initialize != nil {
+		if err := initialize(s); err != nil {
+			s.abort()
+			return nil, err
+		}
 	}
 	schema, err := s.loadSchema()
 	if err != nil {
