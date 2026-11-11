@@ -132,6 +132,8 @@ func executeNamespace(cfg config, prefix targetPrefix) *report {
 				recordNamespaceCleanupError(rep, red, "close custom namespace", err)
 			}
 		}
+		finished := time.Now().UTC()
+		rep.FinishedAt = &finished
 	}()
 
 	fail := func(stage, category string, err error) *report {
