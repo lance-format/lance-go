@@ -264,6 +264,15 @@ func TestNearestTypedVectors(t *testing.T) {
 			want:    []float32{0, 5, 20},
 		},
 		{
+			name:    "float32 query coerced to float64 column",
+			data:    lance.VectorDataTypeFloat64,
+			element: arrow.PrimitiveTypes.Float64,
+			query:   lance.NewFloat32Vector([]float32{1, 2}),
+			values:  [][]float64{{0, 0}, {1, 2}, {3, 6}},
+			wantIDs: []int64{2, 1, 3},
+			want:    []float32{0, 5, 20},
+		},
+		{
 			name:    "float16",
 			data:    lance.VectorDataTypeFloat16,
 			element: arrow.FixedWidthTypes.Float16,
@@ -504,7 +513,7 @@ func TestNearestBatch(t *testing.T) {
 	want := map[int32][]nearestRow{
 		0: {{id: 1, distance: 0}, {id: 2, distance: 1}},
 		1: {{id: 3, distance: 0}, {id: 2, distance: 1}},
-		2: {{id: 5, distance: 0}, {id: 4, distance: 1}},
+		2: {{id: 5, distance: 7921}, {id: 4, distance: 8100}},
 	}
 	if len(groups) != len(want) {
 		t.Fatalf("query groups = %v, want %v", groups, want)
@@ -655,8 +664,8 @@ func TestNearestArgumentValidation(t *testing.T) {
 
 func TestNearestInvalidArgumentTypeMismatch(t *testing.T) {
 	requireNative(t)
-	schema := vectorSchema(2, arrow.PrimitiveTypes.Float64)
-	record := makeVectorRecord(t, schema, []int64{1}, [][]float64{{0, 0}}, lance.VectorDataTypeFloat64)
+	schema := vectorSchema(2, arrow.PrimitiveTypes.Uint8)
+	record := makeVectorRecord(t, schema, []int64{1}, [][]float64{{0, 0}}, lance.VectorDataTypeUInt8)
 	dataset := createVectorDataset(t, schema, record)
 	scan, err := dataset.Scan(
 		lance.WithNearest("vector", lance.NewFloat32Vector([]float32{0, 0}), 1),
@@ -667,6 +676,7 @@ func TestNearestInvalidArgumentTypeMismatch(t *testing.T) {
 		}
 		return
 	}
+	defer scan.Close()
 	var scanErr error
 	for _, err := range scan.Records(context.Background()) {
 		scanErr = err

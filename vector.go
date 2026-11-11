@@ -203,8 +203,9 @@ const (
 )
 
 // WithNearest returns the k nearest rows to a single query vector. The column
-// must contain the same vector element type and dimension as query. k must be
-// positive.
+// must have the same vector dimension as query. Native also accepts Float32
+// queries for Float16 and Float64 columns by coercing their element type; other
+// combinations require matching element types. k must be positive.
 //
 // This option is mutually exclusive with WithNearestBatch and
 // WithNearestMultiVector; when several are given, the last one wins. A scan
