@@ -176,16 +176,30 @@ func buildStringMap(options map[string]string) (*stringMap, []*cStringList, erro
 	}, []*cStringList{keyList, valueList}, nil
 }
 
+// modelFieldProvider is implemented by model arrays that carry the Arrow field
+// they were trained with. Native model validation reads provenance keys from
+// that field's metadata, so dropping the field would discard the metric,
+// dimension, and model identity.
+type modelFieldProvider interface {
+	ModelField() arrow.Field
+}
+
 func exportModel(arr arrow.Array) (*cdata.ArrowArray, *cdata.ArrowSchema, error) {
+	if arr == nil || arr.Data() == nil {
+		return nil, nil, fmt.Errorf("ffi: index model array must not be nil")
+	}
+	field := arrow.Field{Name: "model", Type: arr.DataType(), Nullable: false}
+	if model, ok := arr.(modelFieldProvider); ok {
+		field = model.ModelField()
+	}
 	raw := &cdata.ArrowArray{}
 	if err := cdata.ExportArray(arr, raw); err != nil {
 		return nil, nil, fmt.Errorf("ffi: export index model array: %w", err)
 	}
-	schema := arrow.NewSchema([]arrow.Field{{Name: "model", Type: arr.DataType(), Nullable: false}}, nil)
 	rawSchema := &cdata.ArrowSchema{}
-	if err := cdata.ExportSchema(schema, rawSchema); err != nil {
+	if err := cdata.ExportField(field, rawSchema); err != nil {
 		cdata.ReleaseArray(raw)
-		return nil, nil, fmt.Errorf("ffi: export index model schema: %w", err)
+		return nil, nil, fmt.Errorf("ffi: export index model field: %w", err)
 	}
 	return raw, rawSchema, nil
 }
