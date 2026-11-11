@@ -288,9 +288,13 @@ jobs:
           JOBS: ${{ matrix.jobs }}
         run: |
           set -euo pipefail
+          pinned_commit=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
+          if [[ ! $pinned_commit =~ ^[0-9a-f]{40}$ ]]; then
+            echo "upstreamCommit must identify one exact native commit" >&2
+            exit 1
+          fi
           ./scripts/build-lance-c.sh --out "$RUNNER_TEMP/lance-c-install"
           source_commit=$(git -C "$RUNNER_TEMP/lance-c-build/src" rev-parse HEAD)
-          pinned_commit=$(sed -n 's/.*upstreamCommit = "\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
           if [[ $source_commit != "$pinned_commit" ]]; then
             echo "built $source_commit, pin is $pinned_commit" >&2
             exit 1
