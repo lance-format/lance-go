@@ -24,7 +24,7 @@ type BatchInfo struct {
 // returning a cached batch that must stay alive. GetFragment returns
 // found=false when a fragment has no stored checkpoint. InsertBatch receives a
 // borrowed batch; call Retain before keeping it beyond the method. Strings
-// passed to InsertFragment are copied and may not be retained.
+// passed to InsertFragment are copied and may be retained.
 type BatchUDFCheckpointStore interface {
 	GetBatch(info BatchInfo) (arrow.RecordBatch, bool, error)
 	InsertBatch(info BatchInfo, batch arrow.RecordBatch) error
@@ -34,9 +34,10 @@ type BatchUDFCheckpointStore interface {
 
 // BatchUDF describes one mapper used by AddColumnsBatchUDF.
 //
-// Mapper receives a Go-owned copy of the native input and must return a
-// Go-owned output batch. Input and output buffers are copied by the adapter as
-// needed, so retaining either batch after the callback is safe. ReadColumns
+// Mapper borrows a Go-owned copy of the native input and returns an owned
+// output reference, which the adapter releases after exporting it. Call Retain
+// before keeping the input or returning an output reference owned elsewhere.
+// Exporting the output retains its buffers without copying them. ReadColumns
 // nil means all columns; a non-nil empty slice means no columns. BatchSize nil
 // leaves the native default; a non-nil value, including zero, is forwarded.
 type BatchUDF struct {
