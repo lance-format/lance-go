@@ -137,10 +137,10 @@ type bindings struct {
 	segmentBuilderSetProgressCallback  func(builder uintptr, callback uintptr, ctx uintptr) int32
 	segmentBuilderFree                 func(builder uintptr)
 
-	indexTrainIVFModel            func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
-	indexTrainIVFModelWithOptions func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
-	indexTrainPQModel             func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
-	indexTrainPQModelWithOptions  func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs []uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainIVFModel            func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainIVFModelWithOptions func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModel             func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModelWithOptions  func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
 	indexBuildRQModel             func(dimension uint32, numBits uint32) *byte
 
 	datasetCommitIndexSegments func(dataset uintptr, indexName, column string, segmentBytes []*byte, segmentLens []uint64, segmentCount uint64) int32
@@ -159,7 +159,7 @@ type bindings struct {
 	metadataFragmentCount        func(metadata uintptr) uint64
 	metadataFragmentIDs          func(metadata uintptr, outFragmentIDs []uint32, capacity uint64, outCount *uint64) int32
 	metadataClone                func(metadata uintptr) uintptr
-	metadataCloneWithFragmentIDs func(metadata uintptr, hasFragmentIDs bool, fragmentIDs []uint32, fragmentCount uint64) uintptr
+	metadataCloneWithFragmentIDs func(metadata uintptr, hasFragmentIDs bool, fragmentIDs *uint32, fragmentCount uint64) uintptr
 	metadataEncode               func(metadata uintptr, outBytes **byte, outLen *uint64) int32
 	metadataCoveringFieldCount   func(metadata uintptr) uint64
 	metadataCoveringFieldIDAt    func(metadata uintptr, index uint64, outFieldID *int32) int32
