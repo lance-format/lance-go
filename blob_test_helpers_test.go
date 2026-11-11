@@ -171,16 +171,3 @@ func blobRefs(t *testing.T, dataset *lance.Dataset) []blobTestRefs {
 	}
 	return refs
 }
-
-func collectUint64(t *testing.T, batch arrow.RecordBatch, field string) []uint64 {
-	t.Helper()
-	column, ok := findColumn(t, batch, field).(*array.Uint64)
-	if !ok {
-		t.Fatalf("column %q has type %T, want *array.Uint64", field, findColumn(t, batch, field))
-	}
-	values := make([]uint64, column.Len())
-	for i := range values {
-		values[i] = column.Value(i)
-	}
-	return values
-}
