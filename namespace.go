@@ -111,6 +111,9 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 			return nil, invalidError("write namespace", "", "%v", err)
 		}
 	}
+	if config.schema != nil {
+		return nil, invalidError("write namespace", "", "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	if config.hasTransactionProperties {
 		return nil, invalidError("write namespace", "", "WithWriteTransactionProperties is not supported")
 	}

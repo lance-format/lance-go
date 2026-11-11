@@ -158,6 +158,20 @@ Unknown operation can be inspected but not serialized or committed. Public
 writes reassign field IDs; `NativeSchema.Project` preserves the selected
 schema's IDs, which can therefore be nonconsecutive.
 
+`CreateFragment` writes one detached fragment with an explicit ID;
+`WriteFragments` splits a stream using the file-layout write options. Neither
+publishes a version. Combine returned fragments in `NewAppendOperation`, then
+use `NewTransaction` and `CommitTransaction` to publish them. Closing metadata
+does not delete uncommitted files. `WithFragmentSchema` preserves native field
+IDs. Cleanup, stable row ID generation and transaction properties belong to
+publication; fragment creation rejects those settings. The fragment ABI accepts only static
+storage options, so `WithWriteStorageOptionsAccessor` and `WithWriteBranch` are
+also rejected before writing files. Use commit options for
+stable row IDs and cleanup policy. A failed write releases its retained reader
+reference but may have prefetched input; the caller still releases its reader.
+`Dataset.CreateFragmentFromFile` accepts an optional physical-row hint: legacy
+files use it, while V2 files use their stored row count.
+
 `Dataset.FragmentIDs` and `Dataset.OpenFragment` expose fragment snapshots.
 A bound fragment supports `Scan`, `Take`, `CountRows` and `Delete` without the
 source dataset. Fragment scans accept projection, limit, offset, batch sizing,

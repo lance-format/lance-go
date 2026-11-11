@@ -114,7 +114,7 @@ const (
 //
 // The native-only fields below are routed through the owned native write
 // options handle. Entry points that still pass the older static write options
-// structure, including namespace writes and fragment creation, must reject
+// structure, including namespace writes and fragment creation, reject
 // EnableV2ManifestPaths, InitialBases, TargetBases, TargetBaseNamesOrPaths,
 // TargetAllBases, BaseStoreParams, AllowExternalBlobOutsideBases,
 // ExternalBlobMode, BlobPackFileSizeThreshold, FileWriterOptions and Progress
@@ -198,6 +198,7 @@ type AutoCleanupParams struct {
 type writeConfig struct {
 	mode                     WriteMode
 	params                   WriteParams
+	schema                   *NativeSchema
 	autoCleanup              *AutoCleanupParams
 	skipAutoCleanup          bool
 	storageOptions           map[string]string
@@ -390,7 +391,7 @@ func WithSkipAutoCleanup(skip bool) WriteOption {
 }
 
 // WithWriteSession pins the write to a session. It is valid for ordinary
-// writes and WriteUncommitted.
+// writes, WriteUncommitted, WriteToNamespace, CreateFragment and WriteFragments.
 func WithWriteSession(session *Session) WriteOption {
 	return func(config *writeConfig) error {
 		if session == nil {
@@ -430,6 +431,20 @@ func WithWriteTransactionProperties(properties map[string]string) WriteOption {
 		}
 		config.transactionProperties = copied
 		config.hasTransactionProperties = true
+		return nil
+	}
+}
+
+// WithFragmentSchema sets the schema used by CreateFragment and WriteFragments.
+// The native schema preserves field IDs that are not represented in an Arrow
+// schema. It is invalid for Write, Create, Append, Overwrite and
+// WriteUncommitted or WriteToNamespace.
+func WithFragmentSchema(schema *NativeSchema) WriteOption {
+	return func(config *writeConfig) error {
+		if schema == nil {
+			return fmt.Errorf("schema must not be nil")
+		}
+		config.schema = schema
 		return nil
 	}
 }
