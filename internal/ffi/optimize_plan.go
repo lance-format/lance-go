@@ -316,7 +316,9 @@ func (t *OptimizeIndexTask) Reference() (*SegmentMetadata, error) {
 		}
 		return nil, fmt.Errorf("ffi: lance_optimize_index_task_reference returned NULL without setting an error")
 	}
-	return &SegmentMetadata{b: b, handle: metadata}, nil
+	result := &SegmentMetadata{b: b}
+	result.handle.Store(metadata)
+	return result, nil
 }
 
 // OldSegmentCount returns the number of old index segments the task may fold
@@ -354,7 +356,9 @@ func (t *OptimizeIndexTask) OldSegmentAt(index uint64) (*SegmentMetadata, error)
 		}
 		return nil, fmt.Errorf("ffi: lance_optimize_index_task_old_segment_at returned NULL without setting an error")
 	}
-	return &SegmentMetadata{b: b, handle: metadata}, nil
+	result := &SegmentMetadata{b: b}
+	result.handle.Store(metadata)
+	return result, nil
 }
 
 // NumIndicesToMerge returns the task's optional merge limit.
@@ -609,7 +613,9 @@ func (m *OptimizeIndexMerge) OldSegmentAt(index uint64) (*SegmentMetadata, error
 		}
 		return nil, fmt.Errorf("ffi: lance_optimize_index_merge_old_segment_at returned NULL without setting an error")
 	}
-	return &SegmentMetadata{b: b, handle: metadata}, nil
+	result := &SegmentMetadata{b: b}
+	result.handle.Store(metadata)
+	return result, nil
 }
 
 // ReplaceCount returns the number of index segments replaced by the merge.
@@ -831,7 +837,9 @@ func (r *IndexSegmentResult) Segment() (*SegmentMetadata, error) {
 		}
 		return nil, fmt.Errorf("ffi: lance_index_segment_result_segment returned NULL without setting an error")
 	}
-	return &SegmentMetadata{b: b, handle: metadata}, nil
+	result := &SegmentMetadata{b: b}
+	result.handle.Store(metadata)
+	return result, nil
 }
 
 // ReplaceCount returns the number of index segments replaced by the result.
