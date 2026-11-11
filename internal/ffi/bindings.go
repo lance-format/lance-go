@@ -18,6 +18,7 @@ type bindings struct {
 	lastErrorCode    func() int32
 	lastErrorMessage func() *byte
 	freeString       func(*byte)
+	freeBytes        func(*byte)
 
 	datasetOpen              func(uri string, storageOpts []uintptr, version uint64) uintptr
 	datasetOpenWithSession   func(uri string, storageOpts []uintptr, version uint64, session uintptr) uintptr
@@ -35,6 +36,36 @@ type bindings struct {
 	dataStatsClose           func(stats uintptr)
 	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	datasetTakeBlobs         func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, column string, out *uintptr) int32
+	datasetTakeBlobsIndices  func(dataset uintptr, indices []uint64, numIndices uint64, column string, out *uintptr) int32
+	datasetTakeBlobsAddrs    func(dataset uintptr, rowAddresses []uint64, numAddresses uint64, column string, out *uintptr) int32
+	datasetReadBlobs         func(dataset uintptr, column string, selector int32, rows []uint64, numRows uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+	datasetReadBlobRanges    func(dataset uintptr, column string, selector int32, requests []blobRangeRequest, numRequests uint64, options *blobReadOptions, out *cdata.ArrowArrayStream) int32
+
+	blobFileSize          func(blob uintptr) uint64
+	blobFileRead          func(blob uintptr, dst *byte, dstLen uint64) int32
+	blobFileReadUpTo      func(blob uintptr, dst *byte, dstLen uint64, bytesRead *uint64) int32
+	blobFileReadRange     func(blob uintptr, offset uint64, dst *byte, dstLen uint64) int32
+	blobFileReadRanges    func(blob uintptr, ranges []blobRange, numRanges uint64, destinations []unsafe.Pointer, destinationLens []uintptr) int32
+	blobFileSeek          func(blob uintptr, pos uint64) int32
+	blobFileTell          func(blob uintptr, pos *uint64) int32
+	blobFileSetBufferSize func(blob uintptr, size uint64) int32
+	blobFileClose         func(blob uintptr)
+
+	blobField               func(name string, nullable bool, out *cdata.ArrowSchema) int32
+	blobFieldWithOptions    func(name string, nullable bool, options *blobFieldOptions, out *cdata.ArrowSchema) int32
+	blobDescriptorNew       func(column string) uintptr
+	blobDescriptorField     func(builder uintptr, out *cdata.ArrowSchema) int32
+	blobDescriptorInline    func(builder uintptr, data *byte, length uint64) int32
+	blobDescriptorNull      func(builder uintptr) int32
+	blobDescriptorPacked    func(builder uintptr, blobID uint32, offset uint64, length uint64) int32
+	blobDescriptorExtend    func(builder uintptr, blobID uint32, ranges []blobRange, numRanges uint64) int32
+	blobDescriptorDedicated func(builder uintptr, blobID uint32, length uint64) int32
+	blobDescriptorManaged   func(builder uintptr, uri string, offset uint64, length uint64, hasBaseID bool, baseID uint32) int32
+	blobDescriptorExtern    func(builder uintptr, baseID uint32, uri string, offset uint64, length uint64) int32
+	blobDescriptorPush      func(builder uintptr, uri string, hasRange bool, offset uint64, length uint64) int32
+	blobDescriptorFinish    func(builder uintptr, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	blobDescriptorClose     func(builder uintptr)
 
 	datasetMetadataJSON             func(dataset uintptr) *byte
 	datasetUpdateMetadataJSON       func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
@@ -132,6 +163,47 @@ type bindings struct {
 	datasetPrewarmIndex                 func(dataset uintptr, name string) int32
 	datasetPrewarmIndexWithOptions      func(dataset uintptr, name string, options *indexPrewarmOptions) int32
 
+	segmentBuilderNewScalar            func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, options *segmentBuildOptions) uintptr
+	segmentBuilderNewScalarWithOptions func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, scalarOptions *scalarIndexOptions, options *segmentBuildOptions) uintptr
+	segmentBuilderNewVectorWithOptions func(dataset uintptr, column string, indexName uintptr, options *vectorIndexOptions, scope *segmentScope) uintptr
+	segmentBuilderExecuteUncommitted   func(builder uintptr, outBytes **byte, outLen *uint64) int32
+	segmentBuilderSetProgressCallback  func(builder uintptr, callback uintptr, ctx uintptr) int32
+	segmentBuilderFree                 func(builder uintptr)
+
+	indexTrainIVFModel            func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainIVFModelWithOptions func(dataset uintptr, column string, numPartitions uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModel             func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexTrainPQModelWithOptions  func(dataset uintptr, column string, numSubVectors uint32, numBits uint32, metric int32, fragmentIDs *uint32, fragmentCount uint64, ivfCentroids *cdata.ArrowArray, ivfCentroidsSchema *cdata.ArrowSchema, options *trainerOptions, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	indexBuildRQModel             func(dimension uint32, numBits uint32) *byte
+
+	datasetCommitIndexSegments func(dataset uintptr, indexName, column string, segmentBytes []*byte, segmentLens []uint64, segmentCount uint64) int32
+	datasetMergeIndexSegments  func(dataset uintptr, segmentBytes []*byte, segmentLens []uint64, segmentCount uint64, outBytes **byte, outLen *uint64) int32
+	datasetMergeIndexMetadata  func(dataset uintptr, indexUUID *byte, indexType string, hasBatchReadhead bool, batchReadhead uint64, callback uintptr, ctx uintptr) int32
+
+	metadataParse                func(bytes *byte, length uint64, outMetadata *uintptr) int32
+	metadataUUID                 func(metadata uintptr, outUUID *byte) int32
+	metadataName                 func(metadata uintptr) *byte
+	metadataDatasetVersion       func(metadata uintptr) uint64
+	metadataIndexVersion         func(metadata uintptr) int32
+	metadataIndexType            func(metadata uintptr) int32
+	metadataDetailsTypeURL       func(metadata uintptr) *byte
+	metadataFieldCount           func(metadata uintptr) uint64
+	metadataFieldIDs             func(metadata uintptr, outFieldIDs []int32, capacity uint64, outCount *uint64) int32
+	metadataFragmentCount        func(metadata uintptr) uint64
+	metadataFragmentIDs          func(metadata uintptr, outFragmentIDs []uint32, capacity uint64, outCount *uint64) int32
+	metadataClone                func(metadata uintptr) uintptr
+	metadataCloneWithFragmentIDs func(metadata uintptr, hasFragmentIDs bool, fragmentIDs *uint32, fragmentCount uint64) uintptr
+	metadataEncode               func(metadata uintptr, outBytes **byte, outLen *uint64) int32
+	metadataCoveringFieldCount   func(metadata uintptr) uint64
+	metadataCoveringFieldIDAt    func(metadata uintptr, index uint64, outFieldID *int32) int32
+	metadataDetailsValue         func(metadata uintptr, outLen *uint64) *byte
+	metadataFileCount            func(metadata uintptr) uint64
+	metadataFilePathAt           func(metadata uintptr, index uint64) *byte
+	metadataFileSizeAt           func(metadata uintptr, index uint64, outSize *uint64) int32
+	metadataCreatedAt            func(metadata uintptr, outTimestamp *optionalTimestamp) int32
+	metadataBaseID               func(metadata uintptr, outIsSet *bool, outBaseID *uint32) int32
+	metadataFree                 func(metadata uintptr)
+
 	ftsMatchOptionsInit          func(options *ftsMatchOptions)
 	ftsPhraseOptionsInit         func(options *ftsPhraseOptions)
 	ftsMultiMatchOptionsInit     func(options *ftsMultiMatchOptions)
@@ -195,6 +267,75 @@ type bindings struct {
 	scannerSetFTSIndexSegments   func(scanner uintptr, uuids []byte, count uint64) int32
 	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
+
+	storageAccessorNew   func(initial *storageOptionsInput, provider uintptr) uintptr
+	storageAccessorClose func(accessor uintptr)
+
+	fileSessionNew                     func(baseURI string, storageOptions uintptr, session uintptr, scheduler *fileSchedulerConfig) uintptr
+	fileSessionClose                   func(session uintptr)
+	fileSessionBasePath                func(session uintptr) *byte
+	fileSessionOpenReader              func(session uintptr, relativePath string, options *fileReaderOptions) uintptr
+	fileSessionOpenWriter              func(session uintptr, relativePath string, schema *cdata.ArrowSchema, options *fileWriterOptions) uintptr
+	fileSessionOpenPackedBlobWriter    func(session uintptr, dataFilePath string, blobID uint32) uintptr
+	fileSessionOpenDedicatedBlobWriter func(session uintptr, dataFilePath string, blobID uint32) uintptr
+	fileSessionContains                func(session uintptr, relativePath string, outExists *int32) int32
+	fileSessionList                    func(session uintptr, relativePath *byte) uintptr
+	fileSessionListWithDelimiter       func(session uintptr, relativePath *byte) uintptr
+	fileSessionReadRange               func(session uintptr, relativePath string, offset, length uint64) uintptr
+	fileSessionDeleteFile              func(session uintptr, relativePath string) int32
+	fileSessionUploadFile              func(session uintptr, localPath, relativeRemotePath string) int32
+	fileSessionDownloadFile            func(session uintptr, relativeRemotePath, localPath string) int32
+	fileSessionGetSchedulerStats       func(session uintptr, out *fileScanStats) int32
+	fileSessionGetRegistryStats        func(session uintptr, out *fileRegistryStats) int32
+	fileSessionGetStoreInfo            func(session uintptr, out *fileStoreInfo) int32
+	fileSessionGetStoreIOStats         func(session uintptr, out *fileStoreIOStats) int32
+	pathListCount                      func(list uintptr) uint64
+	pathListAt                         func(list uintptr, index uint64) *byte
+	pathListClose                      func(list uintptr)
+	delimitedListCommonPrefixCount     func(list uintptr) uint64
+	delimitedListCommonPrefixAt        func(list uintptr, index uint64) *byte
+	delimitedListObjectCount           func(list uintptr) uint64
+	delimitedListObjectAt              func(list uintptr, index uint64) *byte
+	delimitedListClose                 func(list uintptr)
+	byteBufferData                     func(buffer uintptr) *byte
+	byteBufferLen                      func(buffer uintptr) uint64
+	byteBufferClose                    func(buffer uintptr)
+	fileReaderOpen                     func(uri string, storageOptions uintptr, options *fileReaderOptions, session uintptr, scheduler *fileSchedulerConfig) uintptr
+	fileReaderNumRows                  func(reader uintptr, outRows *uint64) int32
+	fileReaderGetMetadata              func(reader uintptr, outMetadata *uintptr) int32
+	fileReaderGetStatistics            func(reader uintptr, outStatistics *uintptr) int32
+	fileReaderReadGlobalBuffer         func(reader uintptr, index uint32, outBytes *uintptr) int32
+	fileReaderReadAll                  func(reader uintptr, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderReadRange                func(reader uintptr, offset, numRows uint64, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderReadIndices              func(reader uintptr, indices *uint32, count uint64, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderGetIOStats               func(reader uintptr, out *fileScanStats) int32
+	fileReaderClose                    func(reader uintptr)
+	fileMetadataGetInfo                func(metadata uintptr, out *fileMetadataInfo) int32
+	fileMetadataGetSchema              func(metadata uintptr, out *cdata.ArrowSchema) int32
+	fileMetadataGetGlobalBuffers       func(metadata uintptr, outBuffers **fileBufferDescriptor, outCount *uint64) int32
+	fileMetadataGetColumns             func(metadata uintptr, outColumns **fileColumnMetadata, outCount *uint64) int32
+	fileMetadataClose                  func(metadata uintptr)
+	fileStatisticsGetColumns           func(statistics uintptr, outColumns **fileColumnStatistics, outCount *uint64) int32
+	fileStatisticsClose                func(statistics uintptr)
+	fileWriterOpen                     func(uri string, schema *cdata.ArrowSchema, options *fileWriterOptions, storageOptions uintptr, session uintptr) uintptr
+	fileWriterWriteBatch               func(writer uintptr, batch uintptr) int32
+	fileWriterAddSchemaMetadata        func(writer uintptr, key, value string) int32
+	fileWriterAddGlobalBuffer          func(writer uintptr, data *byte, length uint64, outIndex *uint32) int32
+	fileWriterFinish                   func(writer uintptr, outSummary *fileWriteSummary) int32
+	fileWriterAbort                    func(writer uintptr) int32
+	fileWriterClose                    func(writer uintptr)
+	packedBlobWriterBlobID             func(writer uintptr) uint32
+	packedBlobWriterPath               func(writer uintptr) *byte
+	packedBlobWriterWriteBlob          func(writer uintptr, data *byte, length uint64) int32
+	packedBlobWriterFinishArray        func(writer uintptr, fieldName string, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	packedBlobWriterClose              func(writer uintptr)
+	dedicatedBlobWriterBlobID          func(writer uintptr) uint32
+	dedicatedBlobWriterPath            func(writer uintptr) *byte
+	dedicatedBlobWriterWrite           func(writer uintptr, data *byte, length uint64) int32
+	dedicatedBlobWriterFinishArray     func(writer uintptr, fieldName string, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	dedicatedBlobWriterClose           func(writer uintptr)
+
+	batchFromArrow func(array *cdata.ArrowArray, schema *cdata.ArrowSchema, out *uintptr) int32
 
 	batchToArrow func(batch uintptr, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
 	batchFree    func(batch uintptr)
@@ -286,7 +427,6 @@ type bindings struct {
 	datasetReadTransactionByVersion              func(dataset uintptr, version uint64, out *uintptr) int32
 	transactionCommit                            func(uri string, transaction uintptr, options *commitOptions, storageOpts []uintptr, session uintptr, out *uintptr) int32
 	transactionCommitBatch                       func(uri string, transactions []uintptr, count uint64, options *commitOptions, storageOpts []uintptr, session uintptr, outDataset *uintptr, outTransaction *uintptr) int32
-	freeBytes                                    func(bytes *byte)
 
 	compactionOptionsNew                              func() uintptr
 	compactionOptionsFree                             func(uintptr)
@@ -340,6 +480,63 @@ type bindings struct {
 
 	datasetCommitCompaction func(uintptr, []uintptr, uint64, uintptr, *compactionMetrics) int32
 
+	optimizeIndicesOptionsNew                           func() uintptr
+	optimizeIndicesOptionsFree                          func(uintptr)
+	optimizeIndicesOptionsSetNumIndicesToMerge          func(uintptr, bool, uint64) int32
+	optimizeIndicesOptionsSetEnablePartitionRebalancing func(uintptr, bool) int32
+	optimizeIndicesOptionsSetIndexNames                 func(uintptr, bool, *uintptr, uint64) int32
+	optimizeIndicesOptionsSetRetrain                    func(uintptr, bool) int32
+	optimizeIndicesOptionsSetTransactionProperties      func(uintptr, *transactionProperties) int32
+	optimizeIndicesOptionsSetMaxRowsPerTask             func(uintptr, bool, uint64) int32
+	optimizeIndicesOptionsSetMaxRowsPerSegment          func(uintptr, bool, uint64) int32
+	datasetOptimizeIndices                              func(uintptr, uintptr) int32
+	datasetPlanOptimizeIndices                          func(uintptr, uintptr) uintptr
+	datasetCommitOptimizeIndices                        func(uintptr, []uintptr, uint64, uintptr) int32
+	optimizeIndicesPlanPlanID                           func(uintptr, *byte) int32
+	optimizeIndicesPlanReadVersion                      func(uintptr) uint64
+	optimizeIndicesPlanTaskCount                        func(uintptr) uint64
+	optimizeIndicesPlanMergeCount                       func(uintptr) uint64
+	optimizeIndicesPlanTaskAt                           func(uintptr, uint64) uintptr
+	optimizeIndicesPlanMergeAt                          func(uintptr, uint64) uintptr
+	optimizeIndicesPlanJSON                             func(uintptr) *byte
+	optimizeIndicesPlanFromJSON                         func(string) uintptr
+	optimizeIndicesPlanClose                            func(uintptr)
+	optimizeIndexTaskPlanID                             func(uintptr, *byte) int32
+	optimizeIndexTaskReadVersion                        func(uintptr) uint64
+	optimizeIndexTaskGroup                              func(uintptr) uint32
+	optimizeIndexTaskFragmentCount                      func(uintptr) uint64
+	optimizeIndexTaskFragmentIDAt                       func(uintptr, uint64, *uint32) int32
+	optimizeIndexTaskReference                          func(uintptr) uintptr
+	optimizeIndexTaskOldSegmentCount                    func(uintptr) uint64
+	optimizeIndexTaskOldSegmentAt                       func(uintptr, uint64) uintptr
+	optimizeIndexTaskNumIndicesToMerge                  func(uintptr, *bool, *uint64) int32
+	optimizeIndexTaskEnablePartitionRebalancing         func(uintptr, *bool) int32
+	optimizeIndexTaskRetrain                            func(uintptr, *bool) int32
+	optimizeIndexTaskExecute                            func(uintptr, uintptr, *uintptr) int32
+	optimizeIndexTaskJSON                               func(uintptr) *byte
+	optimizeIndexTaskFromJSON                           func(string) uintptr
+	optimizeIndexTaskClose                              func(uintptr)
+	optimizeIndexMergePlanID                            func(uintptr, *byte) int32
+	optimizeIndexMergeReadVersion                       func(uintptr) uint64
+	optimizeIndexMergeGroup                             func(uintptr) uint32
+	optimizeIndexMergeOldSegmentCount                   func(uintptr) uint64
+	optimizeIndexMergeOldSegmentAt                      func(uintptr, uint64) uintptr
+	optimizeIndexMergeReplaceCount                      func(uintptr) uint64
+	optimizeIndexMergeReplaceUUIDAt                     func(uintptr, uint64, *byte) int32
+	optimizeIndexMergeExecute                           func(uintptr, uintptr, []uintptr, uint64, *uintptr) int32
+	optimizeIndexMergeJSON                              func(uintptr) *byte
+	optimizeIndexMergeFromJSON                          func(string) uintptr
+	optimizeIndexMergeClose                             func(uintptr)
+	indexSegmentResultPlanID                            func(uintptr, *byte) int32
+	indexSegmentResultReadVersion                       func(uintptr) uint64
+	indexSegmentResultGroup                             func(uintptr) uint32
+	indexSegmentResultSegment                           func(uintptr) uintptr
+	indexSegmentResultReplaceCount                      func(uintptr) uint64
+	indexSegmentResultReplaceUUIDAt                     func(uintptr, uint64, *byte) int32
+	indexSegmentResultJSON                              func(uintptr) *byte
+	indexSegmentResultFromJSON                          func(string) uintptr
+	indexSegmentResultClose                             func(uintptr)
+
 	datasetCleanupOldVersions func(uintptr, *cleanupOldVersionsOptions, *removalStats) int32
 	datasetCleanup            func(uintptr, *cleanupPolicy, *cleanupOperationOptions, *removalStats) int32
 	datasetCleanupExplain     func(uintptr, *cleanupPolicy, *cleanupOperationOptions) uintptr
@@ -376,6 +573,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_last_error_code", &b.lastErrorCode},
 		{"lance_last_error_message", &b.lastErrorMessage},
 		{"lance_free_string", &b.freeString},
+		{"lance_free_bytes", &b.freeBytes},
 		{"lance_dataset_open", &b.datasetOpen},
 		{"lance_dataset_open_with_session", &b.datasetOpenWithSession},
 		{"lance_dataset_close", &b.datasetClose},
@@ -392,6 +590,34 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_statistics_close", &b.dataStatsClose},
 		{"lance_dataset_take", &b.datasetTake},
 		{"lance_dataset_take_rows", &b.datasetTakeRows},
+		{"lance_dataset_take_blobs", &b.datasetTakeBlobs},
+		{"lance_dataset_take_blobs_by_indices", &b.datasetTakeBlobsIndices},
+		{"lance_dataset_take_blobs_by_addresses", &b.datasetTakeBlobsAddrs},
+		{"lance_dataset_read_blobs", &b.datasetReadBlobs},
+		{"lance_dataset_read_blob_ranges", &b.datasetReadBlobRanges},
+		{"lance_blob_file_size", &b.blobFileSize},
+		{"lance_blob_file_read", &b.blobFileRead},
+		{"lance_blob_file_read_up_to", &b.blobFileReadUpTo},
+		{"lance_blob_file_read_range", &b.blobFileReadRange},
+		{"lance_blob_file_read_ranges", &b.blobFileReadRanges},
+		{"lance_blob_file_seek", &b.blobFileSeek},
+		{"lance_blob_file_tell", &b.blobFileTell},
+		{"lance_blob_file_set_buffer_size", &b.blobFileSetBufferSize},
+		{"lance_blob_file_close", &b.blobFileClose},
+		{"lance_blob_field", &b.blobField},
+		{"lance_blob_field_with_options", &b.blobFieldWithOptions},
+		{"lance_blob_descriptor_array_builder_new", &b.blobDescriptorNew},
+		{"lance_blob_descriptor_array_builder_field", &b.blobDescriptorField},
+		{"lance_blob_descriptor_array_builder_append_inline", &b.blobDescriptorInline},
+		{"lance_blob_descriptor_array_builder_append_null", &b.blobDescriptorNull},
+		{"lance_blob_descriptor_array_builder_append_packed", &b.blobDescriptorPacked},
+		{"lance_blob_descriptor_array_builder_extend_packed", &b.blobDescriptorExtend},
+		{"lance_blob_descriptor_array_builder_append_dedicated", &b.blobDescriptorDedicated},
+		{"lance_blob_descriptor_array_builder_append_managed", &b.blobDescriptorManaged},
+		{"lance_blob_descriptor_array_builder_append_external", &b.blobDescriptorExtern},
+		{"lance_blob_descriptor_array_builder_push_external", &b.blobDescriptorPush},
+		{"lance_blob_descriptor_array_builder_finish", &b.blobDescriptorFinish},
+		{"lance_blob_descriptor_array_builder_close", &b.blobDescriptorClose},
 
 		{"lance_dataset_metadata_json", &b.datasetMetadataJSON},
 		{"lance_dataset_update_metadata_json", &b.datasetUpdateMetadataJSON},
@@ -487,6 +713,43 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_index_segments", &b.datasetIndexSegments},
 		{"lance_dataset_prewarm_index", &b.datasetPrewarmIndex},
 		{"lance_dataset_prewarm_index_with_options", &b.datasetPrewarmIndexWithOptions},
+		{"lance_index_segment_builder_new_scalar", &b.segmentBuilderNewScalar},
+		{"lance_index_segment_builder_new_scalar_with_options", &b.segmentBuilderNewScalarWithOptions},
+		{"lance_index_segment_builder_new_vector_with_options", &b.segmentBuilderNewVectorWithOptions},
+		{"lance_index_segment_builder_execute_uncommitted", &b.segmentBuilderExecuteUncommitted},
+		{"lance_index_segment_builder_set_progress_callback", &b.segmentBuilderSetProgressCallback},
+		{"lance_index_segment_builder_free", &b.segmentBuilderFree},
+		{"lance_index_train_ivf_model", &b.indexTrainIVFModel},
+		{"lance_index_train_ivf_model_with_options", &b.indexTrainIVFModelWithOptions},
+		{"lance_index_train_pq_model", &b.indexTrainPQModel},
+		{"lance_index_train_pq_model_with_options", &b.indexTrainPQModelWithOptions},
+		{"lance_index_build_rq_model", &b.indexBuildRQModel},
+		{"lance_dataset_commit_index_segments", &b.datasetCommitIndexSegments},
+		{"lance_dataset_merge_index_segments", &b.datasetMergeIndexSegments},
+		{"lance_dataset_merge_index_metadata", &b.datasetMergeIndexMetadata},
+		{"lance_index_segment_metadata_parse", &b.metadataParse},
+		{"lance_index_segment_metadata_uuid", &b.metadataUUID},
+		{"lance_index_segment_metadata_name", &b.metadataName},
+		{"lance_index_segment_metadata_dataset_version", &b.metadataDatasetVersion},
+		{"lance_index_segment_metadata_index_version", &b.metadataIndexVersion},
+		{"lance_index_segment_metadata_index_type", &b.metadataIndexType},
+		{"lance_index_segment_metadata_index_details_type_url", &b.metadataDetailsTypeURL},
+		{"lance_index_segment_metadata_field_count", &b.metadataFieldCount},
+		{"lance_index_segment_metadata_field_ids", &b.metadataFieldIDs},
+		{"lance_index_segment_metadata_fragment_count", &b.metadataFragmentCount},
+		{"lance_index_segment_metadata_fragment_ids", &b.metadataFragmentIDs},
+		{"lance_index_segment_metadata_clone", &b.metadataClone},
+		{"lance_index_segment_metadata_clone_with_fragment_ids", &b.metadataCloneWithFragmentIDs},
+		{"lance_index_segment_metadata_encode", &b.metadataEncode},
+		{"lance_index_segment_metadata_covering_field_count", &b.metadataCoveringFieldCount},
+		{"lance_index_segment_metadata_covering_field_id_at", &b.metadataCoveringFieldIDAt},
+		{"lance_index_segment_metadata_index_details_value", &b.metadataDetailsValue},
+		{"lance_index_segment_metadata_file_count", &b.metadataFileCount},
+		{"lance_index_segment_metadata_file_path_at", &b.metadataFilePathAt},
+		{"lance_index_segment_metadata_file_size_at", &b.metadataFileSizeAt},
+		{"lance_index_segment_metadata_created_at", &b.metadataCreatedAt},
+		{"lance_index_segment_metadata_base_id", &b.metadataBaseID},
+		{"lance_index_segment_metadata_free", &b.metadataFree},
 		{"lance_fts_query_match_options_init", &b.ftsMatchOptionsInit},
 		{"lance_fts_query_phrase_options_init", &b.ftsPhraseOptionsInit},
 		{"lance_fts_query_multi_match_options_init", &b.ftsMultiMatchOptionsInit},
@@ -599,7 +862,6 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_read_transaction_by_version", &b.datasetReadTransactionByVersion},
 		{"lance_transaction_commit", &b.transactionCommit},
 		{"lance_transaction_commit_batch", &b.transactionCommitBatch},
-		{"lance_free_bytes", &b.freeBytes},
 
 		{"lance_scanner_new", &b.scannerNew},
 		{"lance_scanner_close", &b.scannerClose},
@@ -639,6 +901,75 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_fts_index_segments", &b.scannerSetFTSIndexSegments},
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
+
+		{"lance_storage_options_accessor_new", &b.storageAccessorNew},
+		{"lance_storage_options_accessor_close", &b.storageAccessorClose},
+
+		{"lance_file_session_new", &b.fileSessionNew},
+		{"lance_file_session_close", &b.fileSessionClose},
+		{"lance_file_session_base_path", &b.fileSessionBasePath},
+		{"lance_file_session_open_reader", &b.fileSessionOpenReader},
+		{"lance_file_session_open_writer", &b.fileSessionOpenWriter},
+		{"lance_file_session_open_packed_blob_writer", &b.fileSessionOpenPackedBlobWriter},
+		{"lance_file_session_open_dedicated_blob_writer", &b.fileSessionOpenDedicatedBlobWriter},
+		{"lance_file_session_contains", &b.fileSessionContains},
+		{"lance_file_session_list", &b.fileSessionList},
+		{"lance_file_session_list_with_delimiter", &b.fileSessionListWithDelimiter},
+		{"lance_file_session_read_range", &b.fileSessionReadRange},
+		{"lance_file_session_delete_file", &b.fileSessionDeleteFile},
+		{"lance_file_session_upload_file", &b.fileSessionUploadFile},
+		{"lance_file_session_download_file", &b.fileSessionDownloadFile},
+		{"lance_file_session_get_scheduler_stats", &b.fileSessionGetSchedulerStats},
+		{"lance_file_session_get_registry_stats", &b.fileSessionGetRegistryStats},
+		{"lance_file_session_get_store_info", &b.fileSessionGetStoreInfo},
+		{"lance_file_session_get_store_io_stats", &b.fileSessionGetStoreIOStats},
+		{"lance_path_list_count", &b.pathListCount},
+		{"lance_path_list_at", &b.pathListAt},
+		{"lance_path_list_close", &b.pathListClose},
+		{"lance_delimited_list_common_prefix_count", &b.delimitedListCommonPrefixCount},
+		{"lance_delimited_list_common_prefix_at", &b.delimitedListCommonPrefixAt},
+		{"lance_delimited_list_object_count", &b.delimitedListObjectCount},
+		{"lance_delimited_list_object_at", &b.delimitedListObjectAt},
+		{"lance_delimited_list_close", &b.delimitedListClose},
+		{"lance_byte_buffer_data", &b.byteBufferData},
+		{"lance_byte_buffer_len", &b.byteBufferLen},
+		{"lance_byte_buffer_close", &b.byteBufferClose},
+		{"lance_file_reader_open", &b.fileReaderOpen},
+		{"lance_file_reader_num_rows", &b.fileReaderNumRows},
+		{"lance_file_reader_get_metadata", &b.fileReaderGetMetadata},
+		{"lance_file_reader_get_statistics", &b.fileReaderGetStatistics},
+		{"lance_file_reader_read_global_buffer", &b.fileReaderReadGlobalBuffer},
+		{"lance_file_reader_read_all", &b.fileReaderReadAll},
+		{"lance_file_reader_read_range", &b.fileReaderReadRange},
+		{"lance_file_reader_read_indices", &b.fileReaderReadIndices},
+		{"lance_file_reader_get_io_stats", &b.fileReaderGetIOStats},
+		{"lance_file_reader_close", &b.fileReaderClose},
+		{"lance_file_metadata_get_info", &b.fileMetadataGetInfo},
+		{"lance_file_metadata_get_schema", &b.fileMetadataGetSchema},
+		{"lance_file_metadata_get_global_buffers", &b.fileMetadataGetGlobalBuffers},
+		{"lance_file_metadata_get_columns", &b.fileMetadataGetColumns},
+		{"lance_file_metadata_close", &b.fileMetadataClose},
+		{"lance_file_statistics_get_columns", &b.fileStatisticsGetColumns},
+		{"lance_file_statistics_close", &b.fileStatisticsClose},
+		{"lance_file_writer_open", &b.fileWriterOpen},
+		{"lance_file_writer_write_batch", &b.fileWriterWriteBatch},
+		{"lance_file_writer_add_schema_metadata", &b.fileWriterAddSchemaMetadata},
+		{"lance_file_writer_add_global_buffer", &b.fileWriterAddGlobalBuffer},
+		{"lance_file_writer_finish", &b.fileWriterFinish},
+		{"lance_file_writer_abort", &b.fileWriterAbort},
+		{"lance_file_writer_close", &b.fileWriterClose},
+		{"lance_packed_blob_writer_blob_id", &b.packedBlobWriterBlobID},
+		{"lance_packed_blob_writer_path", &b.packedBlobWriterPath},
+		{"lance_packed_blob_writer_write_blob", &b.packedBlobWriterWriteBlob},
+		{"lance_packed_blob_writer_finish_array", &b.packedBlobWriterFinishArray},
+		{"lance_packed_blob_writer_close", &b.packedBlobWriterClose},
+		{"lance_dedicated_blob_writer_blob_id", &b.dedicatedBlobWriterBlobID},
+		{"lance_dedicated_blob_writer_path", &b.dedicatedBlobWriterPath},
+		{"lance_dedicated_blob_writer_write", &b.dedicatedBlobWriterWrite},
+		{"lance_dedicated_blob_writer_finish_array", &b.dedicatedBlobWriterFinishArray},
+		{"lance_dedicated_blob_writer_close", &b.dedicatedBlobWriterClose},
+
+		{"lance_batch_from_arrow", &b.batchFromArrow},
 
 		{"lance_compaction_options_v2_new", &b.compactionOptionsNew},
 		{"lance_compaction_options_v2_free", &b.compactionOptionsFree},
@@ -691,6 +1022,62 @@ func (b *bindings) symbols() []symbol {
 		{"lance_rewrite_result_close", &b.rewriteResultClose},
 
 		{"lance_dataset_commit_compaction", &b.datasetCommitCompaction},
+		{"lance_optimize_indices_options_new", &b.optimizeIndicesOptionsNew},
+		{"lance_optimize_indices_options_free", &b.optimizeIndicesOptionsFree},
+		{"lance_optimize_indices_options_set_num_indices_to_merge", &b.optimizeIndicesOptionsSetNumIndicesToMerge},
+		{"lance_optimize_indices_options_set_enable_partition_rebalancing", &b.optimizeIndicesOptionsSetEnablePartitionRebalancing},
+		{"lance_optimize_indices_options_set_index_names", &b.optimizeIndicesOptionsSetIndexNames},
+		{"lance_optimize_indices_options_set_retrain", &b.optimizeIndicesOptionsSetRetrain},
+		{"lance_optimize_indices_options_set_transaction_properties", &b.optimizeIndicesOptionsSetTransactionProperties},
+		{"lance_optimize_indices_options_set_max_rows_per_task", &b.optimizeIndicesOptionsSetMaxRowsPerTask},
+		{"lance_optimize_indices_options_set_max_rows_per_segment", &b.optimizeIndicesOptionsSetMaxRowsPerSegment},
+		{"lance_dataset_optimize_indices", &b.datasetOptimizeIndices},
+		{"lance_dataset_plan_optimize_indices", &b.datasetPlanOptimizeIndices},
+		{"lance_dataset_commit_optimize_indices", &b.datasetCommitOptimizeIndices},
+		{"lance_optimize_indices_plan_id", &b.optimizeIndicesPlanPlanID},
+		{"lance_optimize_indices_plan_read_version", &b.optimizeIndicesPlanReadVersion},
+		{"lance_optimize_indices_plan_task_count", &b.optimizeIndicesPlanTaskCount},
+		{"lance_optimize_indices_plan_merge_count", &b.optimizeIndicesPlanMergeCount},
+		{"lance_optimize_indices_plan_task_at", &b.optimizeIndicesPlanTaskAt},
+		{"lance_optimize_indices_plan_merge_at", &b.optimizeIndicesPlanMergeAt},
+		{"lance_optimize_indices_plan_json", &b.optimizeIndicesPlanJSON},
+		{"lance_optimize_indices_plan_from_json", &b.optimizeIndicesPlanFromJSON},
+		{"lance_optimize_indices_plan_close", &b.optimizeIndicesPlanClose},
+		{"lance_optimize_index_task_plan_id", &b.optimizeIndexTaskPlanID},
+		{"lance_optimize_index_task_read_version", &b.optimizeIndexTaskReadVersion},
+		{"lance_optimize_index_task_group", &b.optimizeIndexTaskGroup},
+		{"lance_optimize_index_task_fragment_count", &b.optimizeIndexTaskFragmentCount},
+		{"lance_optimize_index_task_fragment_id_at", &b.optimizeIndexTaskFragmentIDAt},
+		{"lance_optimize_index_task_reference", &b.optimizeIndexTaskReference},
+		{"lance_optimize_index_task_old_segment_count", &b.optimizeIndexTaskOldSegmentCount},
+		{"lance_optimize_index_task_old_segment_at", &b.optimizeIndexTaskOldSegmentAt},
+		{"lance_optimize_index_task_num_indices_to_merge", &b.optimizeIndexTaskNumIndicesToMerge},
+		{"lance_optimize_index_task_enable_partition_rebalancing", &b.optimizeIndexTaskEnablePartitionRebalancing},
+		{"lance_optimize_index_task_retrain", &b.optimizeIndexTaskRetrain},
+		{"lance_optimize_index_task_execute", &b.optimizeIndexTaskExecute},
+		{"lance_optimize_index_task_json", &b.optimizeIndexTaskJSON},
+		{"lance_optimize_index_task_from_json", &b.optimizeIndexTaskFromJSON},
+		{"lance_optimize_index_task_close", &b.optimizeIndexTaskClose},
+		{"lance_optimize_index_merge_plan_id", &b.optimizeIndexMergePlanID},
+		{"lance_optimize_index_merge_read_version", &b.optimizeIndexMergeReadVersion},
+		{"lance_optimize_index_merge_group", &b.optimizeIndexMergeGroup},
+		{"lance_optimize_index_merge_old_segment_count", &b.optimizeIndexMergeOldSegmentCount},
+		{"lance_optimize_index_merge_old_segment_at", &b.optimizeIndexMergeOldSegmentAt},
+		{"lance_optimize_index_merge_replace_count", &b.optimizeIndexMergeReplaceCount},
+		{"lance_optimize_index_merge_replace_uuid_at", &b.optimizeIndexMergeReplaceUUIDAt},
+		{"lance_optimize_index_merge_execute", &b.optimizeIndexMergeExecute},
+		{"lance_optimize_index_merge_json", &b.optimizeIndexMergeJSON},
+		{"lance_optimize_index_merge_from_json", &b.optimizeIndexMergeFromJSON},
+		{"lance_optimize_index_merge_close", &b.optimizeIndexMergeClose},
+		{"lance_index_segment_result_plan_id", &b.indexSegmentResultPlanID},
+		{"lance_index_segment_result_read_version", &b.indexSegmentResultReadVersion},
+		{"lance_index_segment_result_group", &b.indexSegmentResultGroup},
+		{"lance_index_segment_result_segment", &b.indexSegmentResultSegment},
+		{"lance_index_segment_result_replace_count", &b.indexSegmentResultReplaceCount},
+		{"lance_index_segment_result_replace_uuid_at", &b.indexSegmentResultReplaceUUIDAt},
+		{"lance_index_segment_result_json", &b.indexSegmentResultJSON},
+		{"lance_index_segment_result_from_json", &b.indexSegmentResultFromJSON},
+		{"lance_index_segment_result_close", &b.indexSegmentResultClose},
 
 		{"lance_dataset_cleanup_old_versions", &b.datasetCleanupOldVersions},
 		{"lance_dataset_cleanup", &b.datasetCleanup},
