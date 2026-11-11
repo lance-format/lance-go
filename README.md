@@ -532,9 +532,11 @@ interrupted.
 descriptor mode keeps other binary columns inline; `BlobHandlingAllBinary`
 materializes every blob column as binary payloads, while
 `BlobHandlingAllDescriptions` returns descriptors for every column carrying
-blob metadata. Raw packed/dedicated file writers are not exposed yet. The
-lance-c#167 raw v2.2 projection gap is not worked around here; blob reads use
-native descriptors.
+blob metadata. `file.Session.OpenPackedBlobWriter` and
+`file.Session.OpenDedicatedBlobWriter` write blob payload files and return
+prepared descriptors through `FinishArray`. The
+[raw v2.2 projection gap](https://github.com/lance-format/lance-c/issues/167)
+remains an upstream reader limitation; blob reads use native descriptors.
 
 ## Vector search
 
