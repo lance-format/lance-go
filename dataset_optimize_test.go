@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -88,7 +89,7 @@ func versionOf(t *testing.T, dataset *lance.Dataset) uint64 {
 
 func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	ctx := context.Background()
-	dataset, _ := createOptimizeFixture(t, 8, 8)
+	dataset, uri := createOptimizeFixture(t, 8, 8)
 	sourceVersion := versionOf(t, dataset)
 
 	taskRows := uint64(4)
@@ -150,9 +151,12 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("OptimizeIndexTaskFromJSON(%d): %v", i, err)
 		}
+		gotLimit, gotLimitPresent := roundTrip.NumIndicesToMerge().Get()
+		wantLimit, wantLimitPresent := task.NumIndicesToMerge().Get()
 		if roundTrip.PlanID() != task.PlanID() || roundTrip.Group() != task.Group() ||
 			roundTrip.FragmentCount() != task.FragmentCount() ||
-			roundTrip.NumIndicesToMerge() != task.NumIndicesToMerge() ||
+			roundTrip.NumIndicesToMerge().IsSet() != task.NumIndicesToMerge().IsSet() ||
+			gotLimit != wantLimit || gotLimitPresent != wantLimitPresent ||
 			roundTrip.EnablePartitionRebalancing() != task.EnablePartitionRebalancing() ||
 			roundTrip.Retrain() != task.Retrain() || roundTrip.JSON() != task.JSON() {
 			t.Fatalf("task %d changed across JSON transport", i)
@@ -246,7 +250,7 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 		if err := restoredSegment.Close(); err != nil {
 			t.Fatalf("close restored task %d result segment: %v", i, err)
 		}
-		taskResults = append(taskResults, result)
+		taskResults = append(taskResults, restoredResult)
 	}
 
 	results := taskResults
@@ -311,7 +315,11 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 				t.Fatalf("merge %d result identity = %s/%d, want %s/%d",
 					i, result.PlanID(), result.Group(), plan.PlanID(), merge.Group())
 			}
-			merged = append(merged, result)
+			restoredResult, err := lance.IndexSegmentResultFromJSON(result.JSON())
+			if err != nil {
+				t.Fatalf("restore merge %d result: %v", i, err)
+			}
+			merged = append(merged, restoredResult)
 		}
 		results = merged
 	}
@@ -323,6 +331,7 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CommitOptimizeIndices: %v", err)
 	}
+	t.Cleanup(func() { _ = optimized.Close() })
 	if got := versionOf(t, dataset); got != sourceVersion {
 		t.Fatalf("source version after commit = %d, want %d", got, sourceVersion)
 	}
@@ -341,6 +350,39 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	}
 	if len(indices) != 1 || indices[0].Name != "id_bitmap" {
 		t.Fatalf("optimized indices = %v, want one id_bitmap index", indices)
+	}
+	if err := optimized.Close(); err != nil {
+		t.Fatalf("close optimized dataset: %v", err)
+	}
+	reopened, err := lance.Open(ctx, uri)
+	if err != nil {
+		t.Fatalf("reopen optimized dataset: %v", err)
+	}
+	defer reopened.Close()
+	filtered, err := reopened.Scan(lance.WithColumns("id"), lance.WithSQLFilter("id IN (3, 8, 13, 16)"))
+	if err != nil {
+		t.Fatalf("indexed filter after reopen: %v", err)
+	}
+	defer filtered.Close()
+	var indexedIDs []int64
+	for batch, err := range filtered.Records(ctx) {
+		if err != nil {
+			t.Fatalf("indexed filter Records: %v", err)
+		}
+		indexedIDs = append(indexedIDs, collectInt64(t, batch, "id")...)
+	}
+	slices.Sort(indexedIDs)
+	// The unfiltered scan and Go predicate provide an oracle independent of
+	// the native scalar-index filter. Values cover original and appended rows.
+	var flatIDs []int64
+	for _, id := range readCompactionIDs(t, reopened) {
+		if id == 3 || id == 8 || id == 13 || id == 16 {
+			flatIDs = append(flatIDs, id)
+		}
+	}
+	want := []int64{3, 8, 13, 16}
+	if !slices.Equal(indexedIDs, want) || !slices.Equal(flatIDs, want) {
+		t.Fatalf("reopened indexed=%v flat=%v, want %v", indexedIDs, flatIDs, want)
 	}
 }
 
@@ -361,6 +403,7 @@ func TestOptimizeIndicesPreservesSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OptimizeIndices: %v", err)
 	}
+	t.Cleanup(func() { _ = optimized.Close() })
 	if got := versionOf(t, dataset); got != sourceVersion {
 		t.Fatalf("source version = %d, want %d", got, sourceVersion)
 	}
@@ -441,9 +484,11 @@ func TestOptimizeIndicesOptionSemantics(t *testing.T) {
 	}
 
 	version := versionOf(t, dataset)
-	if _, err := dataset.CommitOptimizeIndices(ctx, nil, nil); err != nil {
+	emptyCommit, err := dataset.CommitOptimizeIndices(ctx, nil, nil)
+	if err != nil {
 		t.Fatalf("CommitOptimizeIndices with no results: %v", err)
 	}
+	t.Cleanup(func() { _ = emptyCommit.Close() })
 	if got := versionOf(t, dataset); got != version {
 		t.Fatalf("source version after empty commit = %d, want %d", got, version)
 	}
@@ -469,6 +514,7 @@ func TestOptimizeIndicesCleanDatasetNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OptimizeIndices: %v", err)
 	}
+	t.Cleanup(func() { _ = optimized.Close() })
 	if got := versionOf(t, optimized); got != version {
 		t.Fatalf("clean dataset version = %d, want unchanged %d", got, version)
 	}

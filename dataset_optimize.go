@@ -55,8 +55,8 @@ type OptimizeIndicesPlan struct {
 }
 
 // PlanOptimizeIndices creates an index-optimization plan from the current
-// dataset snapshot. It writes no files and publishes no version. options
-// follows the same rules as OptimizeIndices.
+// dataset snapshot. Planning may write model files but publishes no version.
+// options follows the same rules as OptimizeIndices.
 func (d *Dataset) PlanOptimizeIndices(ctx context.Context, options *compaction.OptimizeOptions) (*OptimizeIndicesPlan, error) {
 	const op = "plan optimize indices"
 	if err := checkContext(ctx); err != nil {
@@ -316,8 +316,9 @@ func (t *OptimizeIndexTask) Execute(ctx context.Context, dataset *Dataset) (*Ind
 }
 
 // OptimizeIndexMerge is an immutable snapshot of one merge group. Native merge
-// execution validates the dataset version, plan ID and group against the
-// supplied task results.
+// execution validates the dataset version and plan ID, and selects supplied
+// task results belonging to this merge group. Results from other groups in
+// the same plan are ignored.
 type OptimizeIndexMerge struct {
 	uri         string
 	planID      index.UUID
@@ -407,9 +408,9 @@ func (m *OptimizeIndexMerge) JSON() string {
 // writes index files but publishes no dataset version. A nil result with a nil
 // error means native optimization found no work for this group.
 //
-// Native validation remains authoritative: results from another plan, wrong
-// groups and a dataset that cannot be read at the merge's read version are
-// rejected.
+// Native validation remains authoritative: results from another plan and a
+// dataset that cannot be read at the merge's read version are rejected. Results
+// from other groups in the same plan are ignored.
 func (m *OptimizeIndexMerge) Execute(ctx context.Context, dataset *Dataset, results []*IndexSegmentResult) (*IndexSegmentResult, error) {
 	const op = "execute optimize index merge"
 	if err := checkContext(ctx); err != nil {
