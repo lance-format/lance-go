@@ -203,7 +203,8 @@ func (r *FileReader) ReadRange(offset, numRows uint64, batchSize, batchReadahead
 	return NewStreamReader(&raw)
 }
 
-// ReadIndices streams rows in the given order. An empty slice reads no rows.
+// ReadIndices streams rows at strictly increasing, unique row indices.
+// An empty slice reads no rows.
 func (r *FileReader) ReadIndices(indices []uint32, batchSize, batchReadahead uint32) (*StreamReader, error) {
 	handle := r.handle
 	if handle == 0 {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -248,8 +249,11 @@ func TestRoundTrip(t *testing.T) {
 	if got := collectIDs(t, mustReadRange(t, reader, 1, 2)); !reflect.DeepEqual(got, []int64{-1, 3}) {
 		t.Fatalf("range ids = %v, want [-1 3]", got)
 	}
-	if got := collectIDs(t, mustReadIndices(t, reader, []uint32{3, 0})); !reflect.DeepEqual(got, []int64{4, 1}) {
-		t.Fatalf("index ids = %v, want [4 1]", got)
+	if got := collectIDs(t, mustReadIndices(t, reader, []uint32{0, 3})); !reflect.DeepEqual(got, []int64{1, 4}) {
+		t.Fatalf("index ids = %v, want [1 4]", got)
+	}
+	if got := collectIDs(t, mustReadIndices(t, reader, nil)); len(got) != 0 {
+		t.Fatalf("empty index selection = %v, want no rows", got)
 	}
 
 	stats, err := reader.IOStats()
@@ -471,6 +475,18 @@ func TestMalformedIndicesAndClosedReader(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatal("reading an out-of-range index succeeded")
+	}
+	for _, indices := range [][]uint32{{3, 0}, {0, 0}} {
+		rr, err := reader.ReadIndices(ctx, indices, file.ReadOptions{})
+		if err == nil {
+			for rr.Next() {
+			}
+			err = rr.Err()
+			rr.Release()
+		}
+		if err == nil || !strings.Contains(err.Error(), "not strictly increasing") {
+			t.Fatalf("ReadIndices(%v) error = %v, want ordering rejection", indices, err)
+		}
 	}
 
 	if err := reader.Close(); err != nil {

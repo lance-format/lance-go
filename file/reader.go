@@ -256,7 +256,9 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 	return newRecordReader(ctx, stream), nil
 }
 
-// ReadIndices streams rows in the given order.
+// ReadIndices streams rows at strictly increasing, unique row indices.
+// An empty slice reads no rows. Invalid ordering is rejected by the native
+// reader, either here or while advancing the returned stream.
 func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOptions) (array.RecordReader, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
