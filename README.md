@@ -614,6 +614,19 @@ branch fails while a child branch or tag still references it;
 interrupted creation. `CurrentBranchIdentifier` reports the version-to-manifest
 lineage of the receiver's branch.
 
+Base paths record alternate storage locations in a dataset's manifest.
+`BasePaths` lists the registry keyed by native base ID. `AddBases` commits
+bases as a new version and returns an independent dataset; an ID of zero asks
+Lance to allocate one, conflicting paths or names fail with
+`ErrInvalidArgument`, and the receiver keeps its own registry and version. A
+nil `Name` means no name, while a pointer to an empty string records an empty
+name. Transaction properties belong to the commit: a nil map passes native
+None, and a non-nil map, including an empty one, passes a present map.
+Native protobuf persistence normalizes empty property maps to absent on readback.
+
+Registering bases does not route new writes to them. The pinned C API does not
+expose write placement, so `AddBases` only records and lists the registry.
+
 ## How loading works
 
 `internal/loader` resolves the native library once per process:

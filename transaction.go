@@ -452,14 +452,6 @@ func (o *Operation) uriOrEmpty() string {
 	return o.uri
 }
 
-// BasePath is one native base-path registration.
-type BasePath struct {
-	ID            uint32
-	Path          string
-	Name          *string
-	IsDatasetRoot bool
-}
-
 // NewAppendOperation clones fragments into an Append operation.
 func NewAppendOperation(fragments ...*Fragment) (*Operation, error) {
 	if err := acquireFragments(fragments); err != nil {

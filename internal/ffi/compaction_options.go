@@ -3,8 +3,6 @@ package ffi
 import (
 	"fmt"
 	"runtime"
-	"sort"
-	"unsafe"
 
 	"github.com/lance-format/lance-go/compaction"
 )
@@ -24,13 +22,6 @@ func (m compactionMetrics) metrics() compaction.Metrics {
 		FilesRemoved:     m.FilesRemoved,
 		FilesAdded:       m.FilesAdded,
 	}
-}
-
-// transactionProperties mirrors LanceTransactionProperties.
-type transactionProperties struct {
-	Keys   **byte
-	Values **byte
-	Count  uint64
 }
 
 // compactionOptions owns a native LanceCompactionOptionsV2 handle.
@@ -79,27 +70,9 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 		}
 	}
 
-	var propertyKeys, propertyValues []string
-	var propertyKeysList, propertyValuesList *cStringList
-	if options.TransactionProperties != nil {
-		propertyKeys = make([]string, 0, len(options.TransactionProperties))
-		for key := range options.TransactionProperties {
-			propertyKeys = append(propertyKeys, key)
-		}
-		sort.Strings(propertyKeys)
-		propertyValues = make([]string, len(propertyKeys))
-		for i, key := range propertyKeys {
-			propertyValues[i] = options.TransactionProperties[key]
-		}
-		var err error
-		propertyKeysList, err = newCStringList(propertyKeys)
-		if err != nil {
-			return nil, err
-		}
-		propertyValuesList, err = newCStringList(propertyValues)
-		if err != nil {
-			return nil, err
-		}
+	properties, keepProperties, err := newTransactionProperties(options.TransactionProperties)
+	if err != nil {
+		return nil, err
 	}
 
 	runtime.LockOSThread()
@@ -231,15 +204,8 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 		}
 	}
 	if options.TransactionProperties != nil {
-		properties := transactionProperties{Count: uint64(len(propertyKeys))}
-		if len(propertyKeys) > 0 {
-			properties.Keys = (**byte)(unsafe.Pointer(&propertyKeysList.ptrs[0]))
-			properties.Values = (**byte)(unsafe.Pointer(&propertyValuesList.ptrs[0]))
-		}
-		rc := b.compactionOptionsSetTransactionProperties(handle, &properties)
-		propertyKeysList.keepAlive()
-		propertyValuesList.keepAlive()
-		runtime.KeepAlive(&properties)
+		rc := b.compactionOptionsSetTransactionProperties(handle, properties)
+		keepProperties()
 		if rc != 0 {
 			return fail("lance_compaction_options_v2_set_transaction_properties")
 		}
