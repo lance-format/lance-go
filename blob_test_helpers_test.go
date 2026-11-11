@@ -125,8 +125,7 @@ func makeBlobRecord(t *testing.T, schema *arrow.Schema, firstID int, values []bl
 		ids.Append(int64(firstID + i))
 		blobs.Append(!value.Null)
 		if value.Null {
-			data.AppendNull()
-			uri.AppendNull()
+			// StructBuilder.Append(false) already appends nulls to each child.
 			continue
 		}
 		data.Append(value.Data)
