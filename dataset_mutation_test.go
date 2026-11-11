@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -490,6 +491,73 @@ func TestMutationKeepsScannerSnapshot(t *testing.T) {
 		t.Fatalf("scanner ids = %v, want [1 2 3 4]", scanned)
 	}
 	requireMutationRows(t, next, []int64{1, 2}, []string{"a", "b"})
+}
+
+// blockingSchemaReader parks the mutation after the receiver snapshot has
+// been cloned but before the native merge starts. This makes Close ordering
+// deterministic without timers.
+type blockingSchemaReader struct {
+	array.RecordReader
+	entered chan struct{}
+	unblock chan struct{}
+	once    sync.Once
+}
+
+func (r *blockingSchemaReader) Schema() *arrow.Schema {
+	r.once.Do(func() {
+		close(r.entered)
+		<-r.unblock
+	})
+	return r.RecordReader.Schema()
+}
+
+func TestMutationCloseWaitsForInFlightOperation(t *testing.T) {
+	dataset, _, schema := newMutationDataset(t)
+	source := &blockingSchemaReader{
+		RecordReader: makeReader(t, schema,
+			makeRecord(t, schema, []int64{5}, []string{"e"}, []bool{true}),
+		),
+		entered: make(chan struct{}),
+		unblock: make(chan struct{}),
+	}
+	type mutationResult struct {
+		dataset *lance.Dataset
+		stats   lance.MergeInsertResult
+		err     error
+	}
+	mutationDone := make(chan mutationResult, 1)
+	go func() {
+		next, stats, err := dataset.MergeInsert(context.Background(), []string{"id"}, source, lance.MergeInsertParams{})
+		mutationDone <- mutationResult{dataset: next, stats: stats, err: err}
+	}()
+	<-source.entered
+
+	closeStarted := make(chan struct{})
+	closeDone := make(chan error, 1)
+	go func() {
+		close(closeStarted)
+		closeDone <- dataset.Close()
+	}()
+	<-closeStarted
+	select {
+	case err := <-closeDone:
+		t.Fatalf("Close returned while mutation was in flight: %v", err)
+	default:
+	}
+
+	close(source.unblock)
+	result := <-mutationDone
+	if result.err != nil {
+		t.Fatalf("MergeInsert: %v", result.err)
+	}
+	defer result.dataset.Close()
+	if err := <-closeDone; err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if result.stats != (lance.MergeInsertResult{InsertedRows: 1}) {
+		t.Fatalf("stats = %+v, want inserted 1", result.stats)
+	}
+	requireMutationRows(t, result.dataset, []int64{1, 2, 3, 4, 5}, []string{"a", "b", "c", "d", "e"})
 }
 
 func TestMutationCloseIndependence(t *testing.T) {
