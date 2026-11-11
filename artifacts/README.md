@@ -73,7 +73,7 @@ archive. External builds use only `LANCE_LIB_PATH` and system discovery.
   module/
     go.mod
     artifact.go        # embeds the payload and declares metadata
-    liblance_c.so.zst  # or liblance_c.dylib.zst
+    liblance_c.so.zst  # or liblance_c.dylib.zst / lance_c.dll.zst
   selector/
     lance_bundle_<goos>_<goarch>.go
 ```
@@ -105,9 +105,11 @@ scripts/sync-lance-c.sh \
 
 The script reads `upstreamRepo`, `upstreamCommit`, and
 `upstreamHeaderSHA256` from `internal/ffi/upstream.go`. It verifies the header
-hash, target architecture, 64-bit ELF/dylib kind, and library basename, then
-refuses to overwrite an existing output directory. Supported targets are
-Linux and macOS on amd64 and arm64.
+hash, target architecture, library format and basename, then refuses to
+overwrite an existing output directory. Supported targets are Linux, macOS
+and Windows on amd64 and arm64. Linux requires a 64-bit ELF shared object,
+macOS a thin 64-bit dylib, and Windows a 64-bit PE DLL with the matching
+machine type.
 
 The commit and header hash written into the generated module are
 packaging-time provenance claims. lance-c exposes no runtime version symbol,
@@ -125,20 +127,31 @@ compressed payload and materializes the library under:
 <os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>
 ```
 
-The cache directory and entry directory are private (`0700`); the library is
-read-only (`0500`). A `.lock` file coordinates extraction across processes.
-Existing bytes are checked for exact size and SHA-256 before `dlopen`. A
-corrupt regular entry is removed and replaced under the lock. Extraction
-writes a temporary file in the same directory, verifies the decompressed size
-and hash, syncs it, and publishes it with an atomic rename. Failed extraction
+The cache directory and entry directory are private (`0700`) on Unix, where
+the library is also read-only (`0500`). On Windows the cache lives under the
+per-user `LocalAppData` directory; Go cannot express Unix permission bits
+there, so the cached DLL remains writable and access is inherited from that
+per-user directory. A `.lock` file coordinates extraction across processes:
+`flock` on Unix and `LockFileEx` on Windows. Existing bytes are checked for
+exact size and SHA-256 before the platform loader opens them. A corrupt
+regular entry is removed and replaced under the lock. Extraction writes a
+temporary file in the same directory, verifies the decompressed size and
+hash, syncs it, and publishes it with an atomic rename. Failed extraction
 never publishes a loadable file.
+
+`LANCE_LIB_PATH` takes precedence over a registered bundle. Once a bundle is
+selected, cache, extraction, and platform-loader errors are returned with the
+module and target; the loader does not silently fall back to a system copy.
 
 ## Dependencies for root integration
 
-The loader's default build adds one direct compression dependency:
+The loader's default build adds two direct dependencies:
 
 ```text
-require github.com/klauspost/compress v1.18.0
+require (
+    github.com/klauspost/compress v1.18.0
+    golang.org/x/sys v0.35.0
+)
 ```
 
 Matching `go.sum` entries:
@@ -146,12 +159,15 @@ Matching `go.sum` entries:
 ```text
 github.com/klauspost/compress v1.18.0 h1:c/Cqfb0r+Yi+JtIEq73FWXVkRonBlf0CRNYc8Zttxdo=
 github.com/klauspost/compress v1.18.0/go.mod h1:2Pp+KzxcywXVXMr50+X0Q/Lsb43OQHYWRCY2AiWywWQ=
+golang.org/x/sys v0.35.0 h1:vz1N37gP5bs89s7He8XuIYXpyY0+QlsKmzipCbUtyxI=
+golang.org/x/sys v0.35.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
 ```
 
-`v1.18.0` is the newest non-retracted release compatible with the module's Go
-1.23.0 requirement. `v1.18.1` is retracted; `v1.19.x` requires Go 1.24. The
-generated artifact module itself has no requirements, and the generator uses
-only that same compression package plus the standard library.
+`klauspost/compress` `v1.18.0` is the newest non-retracted release compatible
+with the module's Go 1.23.0 requirement. `v1.18.1` is retracted; `v1.19.x`
+requires Go 1.24. `golang.org/x/sys` supplies the Windows loader and file-lock
+bindings. The generated artifact module itself has no requirements, and the
+generator uses only that same compression package plus the standard library.
 
 The root requirement for the artifact module adds these `go.sum` entries:
 
@@ -161,8 +177,9 @@ github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111113901-866
 ```
 
 `lance_external_lib` builds compile out `bundle.go`, `cache.go`,
-`lock_unix.go`, and the zstd dependency path. They still use the platform
-loader and `LANCE_LIB_PATH` support in `loader.go`.
+`lock_unix.go`, `lock_windows.go`, and the zstd dependency path. They still use
+the platform loader, `golang.org/x/sys/windows`, and `LANCE_LIB_PATH` support
+where the platform needs them.
 
 ## Verification status and remaining gates
 
@@ -184,12 +201,16 @@ cache entry's SHA-256. Loader and generator unit tests cover cache reuse and
 corruption, cross-process locking, environment precedence, descriptor
 validation, and synthetic target headers.
 
-Still required before this can be described as accepted zero-configuration
-distribution:
+Independent public consumers on NieR used fresh module, build and runtime
+caches, with no workspace or local module replacement. On Ubuntu 24.04.5,
+the default consumer created, reopened and scanned a dataset with no
+`LANCE_LIB_PATH`; the extracted library matched the published size and hash.
+A warm run reused the cache. An explicit library path bypassed extraction.
+The external consumer excluded the artifact package and embedded payload,
+used the explicit library successfully, and created no runtime cache entry.
 
-- an independent public cold-cache consumer on NieR that measures module and
-  archive download behavior;
-- review, CI completion, and merge of the activation change.
-
-Until those gates pass, do not promise zero downloads or claim that only the
-target artifact archive is downloaded.
+In both scenarios, `go get` downloaded the artifact archive before the target
+build. External mode is not a zero-download contract. Only one artifact target
+is published, so these checks do not establish archive selection across a
+multi-platform release. Broader glibc/musl coverage, macOS runtime support,
+and real Windows DLL build, packaging and cold-cache loading remain pending.

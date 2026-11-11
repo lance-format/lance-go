@@ -17,11 +17,12 @@ targets still need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
 
 The bundled `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39
 and requires libc, libm, libgcc_s and the dynamic loader. Older glibc, musl,
-Windows, and other targets have no bundle and are not claimed to work. Linux
-amd64 has native test coverage, including the bundled default path. Linux/macOS
-amd64 and arm64 are cross-compiled in CI; macOS runtime behavior and Windows
-support remain pending. Immutable mutation, index, blob, maintenance and
-namespace APIs are tracked in [issue #1](https://github.com/lance-format/lance-go/issues/1).
+and other targets have no compatible bundle. Linux amd64 has native test
+coverage, including the bundled default path. Linux and macOS on amd64 and
+arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
+cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
+and real Windows DLL acceptance remain pending. Immutable mutation, index,
+blob, maintenance and namespace APIs are tracked in [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:
@@ -104,10 +105,12 @@ committed dataset, avoiding an error that could encourage duplicate writes.
    registered for the running target, cache, extraction, or `dlopen` errors
    fail with the bundle module in the error; the loader does not fall back to
    a system copy.
-3. Otherwise the platform soname (`liblance_c.so` on Linux,
-   `liblance_c.dylib` on macOS) is opened through the system dynamic loader,
-   honoring `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`, ldconfig and the usual
-   system directories.
+3. Otherwise the platform library name (`liblance_c.so` on Linux,
+   `liblance_c.dylib` on macOS, `lance_c.dll` on Windows) is opened through
+   the platform loader. Unix honors `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
+   ldconfig and the usual system directories. Windows applies the process's
+   DLL search policy, which can include the application, system and current
+   directories and `PATH`.
 
 The bundle cache is
 `<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`; setting
@@ -133,8 +136,10 @@ Build tags:
   that load all modules, such as `go mod tidy`, may still download its archive.
   External builds use only `LANCE_LIB_PATH` and system discovery.
 
-All Go code is `CGO_ENABLED=0` compatible. `purego` is used only for
-`dlopen`/`dlsym` and call trampolines.
+All Go code is `CGO_ENABLED=0` compatible. `purego` provides the Unix
+`dlopen`/`dlsym` calls and the callback trampolines on every platform. Windows
+uses `golang.org/x/sys/windows` for `LoadLibrary`, `GetProcAddress` and
+`LockFileEx`, because purego v0.10 does not export those loading entry points.
 
 ## Building liblance_c
 
@@ -212,16 +217,23 @@ registers the published bundle, so the public tests run without
 
 ```console
 gofmt -l .
+go mod tidy -diff
 go vet ./...
 CGO_ENABLED=0 go build ./...
 CGO_ENABLED=0 go build -tags lance_external_lib ./...
 go test ./...
+go test -tags lance_external_lib ./...
 
 export LANCE_LIB_PATH="$PWD/dist/lance-c/lib/liblance_c.so"   # or .dylib
 CGO_ENABLED=0 go test -count=1 -v ./...
 CGO_ENABLED=0 go test -count=1 -tags lance_external_lib ./...
 CGO_ENABLED=1 go test -count=1 -race ./...
 ```
+
+On Windows, the same package tests run with `CGO_ENABLED=0`; set
+`LANCE_LIB_PATH` to a real `lance_c.dll` to run native loader tests. The
+Windows CI job currently proves compilation and the loader/cache/callback
+unit tests, not a packaged DLL.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -238,7 +250,8 @@ bundle, so the check cannot pass by silently loading a system library. A
 separate job builds the pinned native library, and a race job uses that library
 with Go's race detector. The cross-build matrix checks Linux and macOS on amd64
 and arm64; it does not establish native runtime support on those other
-platforms.
+platforms. A separate Windows workflow tests Windows amd64 and cross-builds
+Windows arm64; neither establishes native Windows DLL support.
 
 ## Layout
 
@@ -248,7 +261,7 @@ lance_bundle_linux_amd64.go  generated selector that registers the bundle
 artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
-internal/loader/  discovery, dlopen, symbol lookup, process-wide singleton
+internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
 scripts/          build-lance-c.sh, check-abi-symbols.go
 ```

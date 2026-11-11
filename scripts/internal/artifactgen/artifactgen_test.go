@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"debug/elf"
 	"debug/macho"
+	"debug/pe"
 	"encoding/binary"
 	"encoding/hex"
 	"go/build"
@@ -188,6 +189,97 @@ func TestGenerateMachOSelector(t *testing.T) {
 	}
 }
 
+func TestGeneratePESelector(t *testing.T) {
+	tests := []struct {
+		arch    string
+		machine uint16
+		commit  string
+	}{
+		{arch: "amd64", machine: pe.IMAGE_FILE_MACHINE_AMD64, commit: strings.Repeat("c", 40)},
+		{arch: "arm64", machine: pe.IMAGE_FILE_MACHINE_ARM64, commit: strings.Repeat("d", 40)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.arch, func(t *testing.T) {
+			dir := t.TempDir()
+			lib := syntheticPE(tt.machine, true)
+			libPath := writeFixture(t, dir, "lance_c.dll", lib)
+			header := []byte("#define LANCE_TEST 1\n")
+			headerPath := writeFixture(t, dir, "lance.h", header)
+			outDir := filepath.Join(dir, "out")
+
+			result, err := Generate(Options{
+				LibraryPath:     libPath,
+				HeaderPath:      headerPath,
+				Target:          "windows/" + tt.arch,
+				ModulePath:      "example.com/artifact",
+				OutDir:          outDir,
+				SelectorPackage: "lance",
+				UpstreamRepo:    "https://example.com/lance-c",
+				UpstreamCommit:  tt.commit,
+				HeaderSHA256:    sha256Hex(header),
+			})
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+
+			selectorName := "lance_bundle_windows_" + tt.arch + ".go"
+			if filepath.Base(result.SelectorPath) != selectorName {
+				t.Fatalf("SelectorPath = %q, want basename %q", result.SelectorPath, selectorName)
+			}
+			payload, err := os.ReadFile(filepath.Join(result.ModuleDir, "lance_c.dll.zst"))
+			if err != nil {
+				t.Fatalf("read generated payload: %v", err)
+			}
+			dec, err := zstd.NewReader(bytes.NewReader(payload))
+			if err != nil {
+				t.Fatalf("open generated payload: %v", err)
+			}
+			decompressed, err := io.ReadAll(dec)
+			dec.Close()
+			if err != nil {
+				t.Fatalf("decompress generated payload: %v", err)
+			}
+			if !bytes.Equal(decompressed, lib) {
+				t.Fatal("generated payload does not round-trip the input DLL")
+			}
+
+			ctx := build.Default
+			ctx.BuildTags = nil
+			ctx.GOOS = "windows"
+			ctx.GOARCH = tt.arch
+			match, err := ctx.MatchFile(filepath.Dir(result.SelectorPath), selectorName)
+			if err != nil {
+				t.Fatalf("match windows/%s selector: %v", tt.arch, err)
+			}
+			if !match {
+				t.Fatalf("selector does not match windows/%s", tt.arch)
+			}
+			otherArch := "arm64"
+			if tt.arch == "arm64" {
+				otherArch = "amd64"
+			}
+			ctx.GOARCH = otherArch
+			match, err = ctx.MatchFile(filepath.Dir(result.SelectorPath), selectorName)
+			if err != nil {
+				t.Fatalf("match windows/%s selector: %v", otherArch, err)
+			}
+			if match {
+				t.Fatalf("selector matches windows/%s but was generated for windows/%s", otherArch, tt.arch)
+			}
+			ctx.GOARCH = tt.arch
+			ctx.BuildTags = []string{"lance_external_lib"}
+			match, err = ctx.MatchFile(filepath.Dir(result.SelectorPath), selectorName)
+			if err != nil {
+				t.Fatalf("match external selector: %v", err)
+			}
+			if match {
+				t.Fatal("selector matches the lance_external_lib build tag")
+			}
+		})
+	}
+}
+
 func TestGenerateRejectsBadInputs(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -198,7 +290,7 @@ func TestGenerateRejectsBadInputs(t *testing.T) {
 			name: "unsupported target",
 			setup: func(t *testing.T, dir string) Options {
 				opts := validOptions(t, dir, syntheticELF(elf.EM_X86_64), "liblance_c.so")
-				opts.Target = "windows/amd64"
+				opts.Target = "windows/386"
 				return opts
 			},
 			want: "unsupported target",
@@ -236,6 +328,42 @@ func TestGenerateRejectsBadInputs(t *testing.T) {
 				return opts
 			},
 			want: "CPU",
+		},
+		{
+			name: "PE not a DLL",
+			setup: func(t *testing.T, dir string) Options {
+				opts := validOptions(t, dir, syntheticPE(pe.IMAGE_FILE_MACHINE_AMD64, false), "lance_c.dll")
+				opts.Target = "windows/amd64"
+				return opts
+			},
+			want: "not a DLL",
+		},
+		{
+			name: "PE 32-bit optional header",
+			setup: func(t *testing.T, dir string) Options {
+				opts := validOptions(t, dir, syntheticPEWithOptionalHeader(pe.IMAGE_FILE_MACHINE_AMD64, true, 0x10b), "lance_c.dll")
+				opts.Target = "windows/amd64"
+				return opts
+			},
+			want: "64-bit",
+		},
+		{
+			name: "PE architecture",
+			setup: func(t *testing.T, dir string) Options {
+				opts := validOptions(t, dir, syntheticPE(pe.IMAGE_FILE_MACHINE_ARM64, true), "lance_c.dll")
+				opts.Target = "windows/amd64"
+				return opts
+			},
+			want: "machine",
+		},
+		{
+			name: "PE corrupt",
+			setup: func(t *testing.T, dir string) Options {
+				opts := validOptions(t, dir, []byte("not a PE image"), "lance_c.dll")
+				opts.Target = "windows/amd64"
+				return opts
+			},
+			want: "parse PE library",
 		},
 		{
 			name: "header hash",
@@ -307,6 +435,41 @@ func syntheticELFType(machine elf.Machine, typ elf.Type) []byte {
 	binary.LittleEndian.PutUint32(hdr[20:], uint32(elf.EV_CURRENT))
 	binary.LittleEndian.PutUint16(hdr[52:], 64)
 	return hdr
+}
+
+func syntheticPE(machine uint16, dll bool) []byte {
+	return syntheticPEWithOptionalHeader(machine, dll, 0x20b)
+}
+
+func syntheticPEWithOptionalHeader(machine uint16, dll bool, magic uint16) []byte {
+	const peOffset = 0x40
+	optionalSize := 240
+	if magic == 0x10b {
+		optionalSize = 224
+	}
+	buf := make([]byte, peOffset+4+20+optionalSize)
+
+	copy(buf, "MZ")
+	binary.LittleEndian.PutUint32(buf[0x3c:], peOffset)
+	copy(buf[peOffset:], "PE\x00\x00")
+
+	fileHeader := peOffset + 4
+	binary.LittleEndian.PutUint16(buf[fileHeader:], machine)
+	binary.LittleEndian.PutUint16(buf[fileHeader+16:], uint16(optionalSize))
+	characteristics := uint16(pe.IMAGE_FILE_EXECUTABLE_IMAGE)
+	if dll {
+		characteristics |= pe.IMAGE_FILE_DLL
+	}
+	binary.LittleEndian.PutUint16(buf[fileHeader+18:], characteristics)
+
+	optionalHeader := fileHeader + 20
+	binary.LittleEndian.PutUint16(buf[optionalHeader:], magic)
+	if magic == 0x20b {
+		binary.LittleEndian.PutUint32(buf[optionalHeader+108:], 16)
+	} else {
+		binary.LittleEndian.PutUint32(buf[optionalHeader+92:], 16)
+	}
+	return buf
 }
 
 func syntheticMachO(cpu macho.Cpu) []byte {

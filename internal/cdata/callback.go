@@ -84,6 +84,10 @@ type streamReleaser interface {
 // The callbacks below are installed once at package initialization. purego
 // callbacks are never freed and have a process-wide limit, so no export path
 // is allowed to create callbacks dynamically.
+//
+// The C release hooks return void. The Go trampolines return a uintptr because
+// syscall.NewCallback, which purego uses on Windows, requires callbacks to have
+// exactly one uintptr-sized result. The value is ignored by C.
 var (
 	callbackSchemaRelease = purego.NewCallback(schemaReleaseCallback)
 	callbackArrayRelease  = purego.NewCallback(arrayReleaseCallback)
@@ -94,7 +98,7 @@ var (
 	callbackStreamGetLastError = purego.NewCallback(streamGetLastErrorCallback)
 )
 
-func schemaReleaseCallback(s *ArrowSchema) {
+func schemaReleaseCallback(s *ArrowSchema) (ret uintptr) {
 	if s == nil {
 		return
 	}
@@ -114,9 +118,10 @@ func schemaReleaseCallback(s *ArrowSchema) {
 	if r, ok := v.(schemaReleaser); ok {
 		r.releaseSchema(s)
 	}
+	return
 }
 
-func arrayReleaseCallback(a *ArrowArray) {
+func arrayReleaseCallback(a *ArrowArray) (ret uintptr) {
 	if a == nil {
 		return
 	}
@@ -136,9 +141,10 @@ func arrayReleaseCallback(a *ArrowArray) {
 	if r, ok := v.(arrayReleaser); ok {
 		r.releaseArray(a)
 	}
+	return
 }
 
-func streamReleaseCallback(s *ArrowArrayStream) {
+func streamReleaseCallback(s *ArrowArrayStream) (ret uintptr) {
 	if s == nil {
 		return
 	}
@@ -158,4 +164,5 @@ func streamReleaseCallback(s *ArrowArrayStream) {
 	if r, ok := v.(streamReleaser); ok {
 		r.releaseStream(s)
 	}
+	return
 }
