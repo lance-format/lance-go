@@ -182,10 +182,7 @@ public final class Main {
           validateSchema(root.getSchema());
           int rows = root.getRowCount();
           for (int row = 0; row < rows; row++) {
-            String key = canonicalRow(root, row, values);
-            if (values.containsKey(key)) {
-              throw new IllegalStateException("duplicate row_key " + key);
-            }
+            canonicalRow(root, row, values);
           }
         }
       }
@@ -788,13 +785,12 @@ public final class Main {
               .append("|");
       List<String> keys = new ArrayList<>(metadata.keySet());
       Collections.sort(keys);
+      List<String> parts = new ArrayList<>();
       for (String key : keys) {
-        line.append(key)
-            .append("|")
-            .append(hex(metadata.get(key).getBytes(StandardCharsets.UTF_8)))
-            .append("|");
+        parts.add(key);
+        parts.add(hex(metadata.get(key).getBytes(StandardCharsets.UTF_8)));
       }
-      return line.toString();
+      return line.append(String.join("|", parts)).toString();
     }
   }
 }

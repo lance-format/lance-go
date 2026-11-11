@@ -272,8 +272,8 @@ func buildRows(mem memory.Allocator, keys []string, ids []int64, idValid []bool,
 	defer profile.Release()
 	profileName := profile.FieldBuilder(0).(*array.StringBuilder)
 	profileScore := profile.FieldBuilder(1).(*array.Int64Builder)
-	profileAttrs := profile.FieldBuilder(2).(*array.ListBuilder)
-	profileAttrsValues := profileAttrs.ValueBuilder().(*array.Int32Builder)
+	profileAttrsBuilder := profile.FieldBuilder(2).(*array.ListBuilder)
+	profileAttrsValues := profileAttrsBuilder.ValueBuilder().(*array.Int32Builder)
 	for i := range keys {
 		// StructBuilder.Append(false) already appends nulls to every child.
 		profile.Append(profileValid[i])
@@ -286,7 +286,7 @@ func buildRows(mem memory.Allocator, keys []string, ids []int64, idValid []bool,
 		} else {
 			profileScore.Append(*profileScores[i])
 		}
-		profileAttrs.Append(profileAttrsValid[i])
+		profileAttrsBuilder.Append(profileAttrsValid[i])
 		if profileAttrsValid[i] {
 			for _, value := range profileAttrs[i] {
 				profileAttrsValues.Append(value)
@@ -602,6 +602,7 @@ func schemaReportLines() []string {
 		lines = append(lines, fieldReportLine(spec))
 	}
 	for _, spec := range nestedSpecs {
+		spec.name = "profile." + spec.name
 		lines = append(lines, fieldReportLine(spec))
 	}
 	return lines

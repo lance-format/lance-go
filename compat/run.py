@@ -18,6 +18,7 @@ import difflib
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -56,14 +57,31 @@ class Cell:
 
 
 def run_process(argv: list[str], cwd: Path, timeout: int) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        argv,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
+    # Wrappers such as go run and cargo run spawn the actual SDK process.
+    # Kill their entire session group before moving on to another cell.
+    with subprocess.Popen(
+        argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, start_new_session=True,
+    ) as proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = proc.communicate()
+            return subprocess.CompletedProcess(
+                argv, 124, stdout, stderr + f"\ntimed out after {timeout}s\n",
+            )
+        except BaseException:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.communicate()
+            raise
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 
 def write_log(path: Path, header: str, proc: subprocess.CompletedProcess[str] | None, detail: str = "") -> None:
@@ -212,11 +230,6 @@ def cell(
         return Cell(name, language.name, "not-run", reason, log_path)
     try:
         proc = run_process(language.argv + args, ROOT, timeout)
-    except subprocess.TimeoutExpired as exc:
-        detail = f"timed out after {timeout}s"
-        write_log(log_path, header, None, f"{detail}\n{exc}")
-        print(f"[FAIL] {name}: {detail}")
-        return Cell(name, language.name, "failed", detail, log_path)
     except OSError as exc:
         detail = f"could not start command: {exc}"
         write_log(log_path, header, None, detail)
@@ -427,6 +440,10 @@ def main() -> int:
     parser.add_argument("--java-cmd", default=DEFAULT_COMMANDS["java"])
     parser.add_argument("--rust-cmd", default=DEFAULT_COMMANDS["rust"])
     args = parser.parse_args()
+    if os.name != "posix":
+        parser.error("the compatibility runner requires POSIX process groups")
+    if args.timeout <= 0:
+        parser.error("--timeout must be positive")
 
     STORAGE_VERSION = args.storage_version
     commands = {

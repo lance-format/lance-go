@@ -68,7 +68,8 @@ toolchain. Do not set a custom `CARGO_TARGET_DIR` for this suite.
 
 ## Run
 
-The runner is serial. It creates a new run directory, writes one log per cell,
+The runner requires POSIX process groups and runs serially. It creates a new
+run directory, writes one log per cell,
 and compares each cell's stdout with the committed reports in `expected/`.
 Use a directory outside the repository, for example:
 
@@ -144,3 +145,16 @@ run in place; use a new run directory for a retry.
 - The fixture is deliberately tiny and literal. The expected reports are
   committed, so a change to a value or schema must update the golden files and
   is visible in review.
+
+Runner-only regression checks (no SDK compilation or native loading):
+
+```sh
+python3 -B -m unittest discover -s compat -p test_run.py -v
+```
+
+A timed-out command terminates its process group, including SDK subprocesses
+started by wrappers such as `go run` and `cargo run`. Its partial stdout and
+stderr remain in the cell log with exit status 124. Preflight and version
+probes use the same timeout behavior. The Go fixture/golden report regression
+runs with the existing `go test ./...` entry point; it does not certify any
+cross-language dataset compatibility.

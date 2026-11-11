@@ -664,9 +664,11 @@ fn report_lines(
         let mut line = format!("field|{index}|{name}|{data_type}|{nullable}|");
         let mut metadata = metadata;
         metadata.sort();
-        for (key, value) in metadata {
-            line.push_str(&format!("{key}|{}|", hex(value.as_bytes())));
-        }
+        let parts: Vec<String> = metadata
+            .into_iter()
+            .map(|(key, value)| format!("{key}|{}", hex(value.as_bytes())))
+            .collect();
+        line.push_str(&parts.join("|"));
         lines.push(line);
     }
     let columns = [
