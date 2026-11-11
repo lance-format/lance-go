@@ -7,7 +7,9 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 
+	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
+	sharesession "github.com/lance-format/lance-go/internal/session"
 )
 
 // SessionOptions configures a raw file session.
@@ -16,6 +18,9 @@ type SessionOptions struct {
 	StorageOptions *StorageOptions
 	// Scheduler is nil for native defaults.
 	Scheduler *SchedulerConfig
+	// Session shares an existing Lance session's store registry and caches.
+	// Nil creates a session with no shared cache.
+	Session *lance.Session
 }
 
 func (o *SessionOptions) ffiConfig() (*ffi.FileSchedulerConfig, error) {
@@ -33,6 +38,26 @@ func sessionStorageOptions(opts *SessionOptions) *StorageOptions {
 		return nil
 	}
 	return opts.StorageOptions
+}
+
+func sharedSession(opts *SessionOptions) *lance.Session {
+	if opts == nil {
+		return nil
+	}
+	return opts.Session
+}
+
+// acquireLanceSession pins a root session for one native call. The caller must
+// call release after the native call, including when the call fails.
+func acquireLanceSession(op, uri string, session *lance.Session) (*ffi.Session, func(), error) {
+	if session == nil {
+		return nil, func() {}, nil
+	}
+	native, release, ok := sharesession.Acquire(session)
+	if !ok {
+		return nil, nil, closedError(op, uri)
+	}
+	return native, release, nil
 }
 
 // Session groups raw file operations under one resolved base path and object
@@ -68,7 +93,12 @@ func OpenSession(ctx context.Context, baseURI string, opts *SessionOptions) (*Se
 	}
 	defer unlockStorage()
 
-	native, err := ffi.OpenFileSession(baseURI, accessor, scheduler)
+	session, releaseSession, err := acquireLanceSession("open file session", baseURI, sharedSession(opts))
+	if err != nil {
+		return nil, err
+	}
+	defer releaseSession()
+	native, err := ffi.OpenFileSession(baseURI, accessor, session, scheduler)
 	if err != nil {
 		return nil, wrapError("open file session", baseURI, err)
 	}
@@ -122,8 +152,8 @@ func (s *Session) OpenReader(ctx context.Context, relativePath string, opts *Rea
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
-	if opts != nil && (opts.Scheduler != nil || opts.StorageOptions != nil) {
-		return nil, invalidError("session open reader", relativePath, "scheduler and storage options belong to the session")
+	if opts != nil && (opts.Session != nil || opts.Scheduler != nil || opts.StorageOptions != nil) {
+		return nil, invalidError("session open reader", relativePath, "session, scheduler and storage options belong to the file session")
 	}
 	rawOptions, _, err := opts.ffiOptions()
 	if err != nil {
@@ -151,8 +181,8 @@ func (s *Session) OpenWriter(ctx context.Context, relativePath string, schema *a
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
-	if opts != nil && opts.StorageOptions != nil {
-		return nil, invalidError("session open writer", relativePath, "storage options belong to the session")
+	if opts != nil && (opts.Session != nil || opts.StorageOptions != nil) {
+		return nil, invalidError("session open writer", relativePath, "session and storage options belong to the file session")
 	}
 	rawOptions, err := opts.ffiOptions()
 	if err != nil {

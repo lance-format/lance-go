@@ -43,17 +43,12 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		}
 	}
 
-	if config.session != nil {
-		if !config.session.acquire() {
-			return nil, closedError("open", uri)
-		}
-		defer config.session.release()
+	session, releaseSession, err := acquireSession("open", uri, config.session)
+	if err != nil {
+		return nil, err
 	}
+	defer releaseSession()
 
-	var session *ffi.Session
-	if config.session != nil {
-		session = config.session.native
-	}
 	native, err := ffi.OpenDatasetWithOptions(uri, ffi.OpenOptions{
 		StorageOptions: config.storageOptions,
 		Version:        config.version,

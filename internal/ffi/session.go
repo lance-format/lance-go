@@ -274,6 +274,15 @@ func (s *Session) nativeHandle() uintptr {
 	return s.handle.Load()
 }
 
+// SessionHandle returns the native handle for a native call that borrows a
+// session. The caller must keep s alive until the call returns.
+func SessionHandle(s *Session) uintptr {
+	if s == nil {
+		return 0
+	}
+	return s.nativeHandle()
+}
+
 // Close releases the native session handle. Datasets opened with the session
 // keep their shared cache state and remain valid.
 func (s *Session) Close() {

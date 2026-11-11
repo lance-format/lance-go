@@ -6,6 +6,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 
+	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
 )
 
@@ -20,6 +21,10 @@ type WriterOptions struct {
 	// StorageOptions is nil for native defaults. Session.OpenWriter rejects a
 	// non-nil value because session writers use the session store.
 	StorageOptions *StorageOptions
+	// Session shares an existing Lance session's caches with a standalone
+	// writer. Nil uses no shared cache. Session.OpenWriter rejects a non-nil
+	// value because session writers use the file session's store.
+	Session *lance.Session
 }
 
 func (o *WriterOptions) ffiOptions() (*ffi.FileWriterOptions, error) {
@@ -39,6 +44,13 @@ func writerStorageOptions(opts *WriterOptions) *StorageOptions {
 		return nil
 	}
 	return opts.StorageOptions
+}
+
+func writerSession(opts *WriterOptions) *lance.Session {
+	if opts == nil {
+		return nil
+	}
+	return opts.Session
 }
 
 // WriteSummary is the native result of a successful Finish.
@@ -80,7 +92,12 @@ func Create(ctx context.Context, uri string, schema *arrow.Schema, opts *WriterO
 	}
 	defer unlockStorage()
 
-	native, err := ffi.OpenFileWriter(uri, schema, rawOptions, accessor)
+	session, releaseSession, err := acquireLanceSession("create file", uri, writerSession(opts))
+	if err != nil {
+		return nil, err
+	}
+	defer releaseSession()
+	native, err := ffi.OpenFileWriter(uri, schema, rawOptions, accessor, session)
 	if err != nil {
 		return nil, wrapError("create file", uri, err)
 	}

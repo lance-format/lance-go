@@ -8,8 +8,9 @@ type CacheMode int32
 const (
 	// CacheNone disables the reader cache.
 	CacheNone CacheMode = 0
-	// CacheSession uses the cache owned by the session the reader was opened
-	// from. It is invalid for standalone readers.
+	// CacheSession uses the cache owned by the file session the reader was
+	// opened from, or by ReaderOptions.Session for a standalone reader. It is
+	// invalid when neither session is set.
 	CacheSession CacheMode = 1
 )
 
