@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
@@ -117,6 +118,24 @@ type bindings struct {
 	scannerSetSubstraitFilter    func(scanner uintptr, data []byte, length uint64) int32
 	scannerSetSubstraitAggregate func(scanner uintptr, data []byte, length uint64) int32
 	scannerAdditionalSQLFilter   func(scanner uintptr, filter string) int32
+	scannerNearest               func(scanner uintptr, column string, queryData unsafe.Pointer, queryLen uint64, elementType int32, k uint32) int32
+	scannerNearestBatch          func(scanner uintptr, column string, queries unsafe.Pointer, dimension uint64, numQueries uint64, elementType int32, k uint32) int32
+	scannerNearestMultiVector    func(scanner uintptr, column string, subvectors unsafe.Pointer, dimension uint64, numVectors uint64, elementType int32, k uint32) int32
+	scannerSetDistanceRange      func(scanner uintptr, lowerDistance *float32, upperDistance *float32) int32
+	scannerSetMetric             func(scanner uintptr, metric int32) int32
+	scannerSetNProbes            func(scanner uintptr, nprobes uint32) int32
+	scannerSetMinimumNProbes     func(scanner uintptr, nprobes uint32) int32
+	scannerSetMaximumNProbes     func(scanner uintptr, nprobes uint32) int32
+	scannerSetSearchEffort       func(scanner uintptr, effort float64) int32
+	scannerSetApproxMode         func(scanner uintptr, mode int32) int32
+	scannerSetQueryParallelism   func(scanner uintptr, parallelism int32) int32
+	scannerSetRefineFactor       func(scanner uintptr, factor uint32) int32
+	scannerSetEF                 func(scanner uintptr, ef uint32) int32
+	scannerSetUseIndex           func(scanner uintptr, useIndex bool) int32
+	scannerSetFastSearch         func(scanner uintptr, fastSearch bool) int32
+	scannerSetPrefilter          func(scanner uintptr, prefilter bool) int32
+	scannerSetRowAddrAllowlist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
+	scannerSetRowAddrBlocklist   func(scanner uintptr, rowIDs []uint64, count uint64) int32
 	scannerSetStatisticsCallback func(scanner uintptr, callback uintptr, ctx uintptr) int32
 	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
@@ -238,6 +257,24 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_substrait_filter", &b.scannerSetSubstraitFilter},
 		{"lance_scanner_set_substrait_aggregate", &b.scannerSetSubstraitAggregate},
 		{"lance_scanner_additional_sql_filter", &b.scannerAdditionalSQLFilter},
+		{"lance_scanner_nearest", &b.scannerNearest},
+		{"lance_scanner_nearest_batch", &b.scannerNearestBatch},
+		{"lance_scanner_nearest_multivector", &b.scannerNearestMultiVector},
+		{"lance_scanner_set_distance_range", &b.scannerSetDistanceRange},
+		{"lance_scanner_set_metric", &b.scannerSetMetric},
+		{"lance_scanner_set_nprobes", &b.scannerSetNProbes},
+		{"lance_scanner_set_minimum_nprobes", &b.scannerSetMinimumNProbes},
+		{"lance_scanner_set_maximum_nprobes", &b.scannerSetMaximumNProbes},
+		{"lance_scanner_set_search_effort", &b.scannerSetSearchEffort},
+		{"lance_scanner_set_approx_mode", &b.scannerSetApproxMode},
+		{"lance_scanner_set_query_parallelism", &b.scannerSetQueryParallelism},
+		{"lance_scanner_set_refine_factor", &b.scannerSetRefineFactor},
+		{"lance_scanner_set_ef", &b.scannerSetEF},
+		{"lance_scanner_set_use_index", &b.scannerSetUseIndex},
+		{"lance_scanner_set_fast_search", &b.scannerSetFastSearch},
+		{"lance_scanner_set_prefilter", &b.scannerSetPrefilter},
+		{"lance_scanner_set_row_addr_allowlist", &b.scannerSetRowAddrAllowlist},
+		{"lance_scanner_set_row_addr_blocklist", &b.scannerSetRowAddrBlocklist},
 		{"lance_scanner_set_statistics_callback", &b.scannerSetStatisticsCallback},
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
