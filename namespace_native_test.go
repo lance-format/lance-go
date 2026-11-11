@@ -50,7 +50,7 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 	ctx := context.Background()
 	ns, root := newManagedDirectory(t)
 	defer ns.Close()
-	session, err := lance.NewSession()
+	session, err := lance.NewSession(1<<20, 1<<20)
 	if err != nil {
 		t.Fatal(err)
 	}
