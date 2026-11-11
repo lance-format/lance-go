@@ -110,11 +110,11 @@ func typeName(dt arrow.DataType) string {
 	case *arrow.BinaryType:
 		return "binary"
 	case *arrow.ListType:
-		return "list<" + typeName(t.Elem().Type) + ">"
+		return "list<" + typeName(t.Elem()) + ">"
 	case *arrow.StructType:
 		return "struct"
 	case *arrow.FixedSizeListType:
-		return fmt.Sprintf("fixed_size_list<%s,%d>", typeName(t.Elem().Type), t.Len())
+		return fmt.Sprintf("fixed_size_list<%s,%d>", typeName(t.Elem()), t.Len())
 	case *arrow.Decimal128Type:
 		return fmt.Sprintf("decimal128(%d,%d)", t.Precision, t.Scale)
 	case *arrow.TimestampType:
@@ -157,8 +157,8 @@ func validateSchema(schema *arrow.Schema) error {
 	if schema == nil {
 		return errors.New("nil schema")
 	}
-	if !metadataEqual(schema.Metadata, map[string]string{"fixture": "phase5-v1", "owner": "interop"}) {
-		return fmt.Errorf("schema metadata %v", schema.Metadata.ToMap())
+	if !metadataEqual(schema.Metadata(), map[string]string{"fixture": "phase5-v1", "owner": "interop"}) {
+		return fmt.Errorf("schema metadata %v", schema.Metadata().ToMap())
 	}
 	fields := schema.Fields()
 	if len(fields) != len(topLevelSpecs) {
@@ -183,11 +183,11 @@ func validateSchema(schema *arrow.Schema) error {
 		}
 	}
 	tags := fields[4].Type.(*arrow.ListType)
-	if tags.Elem().Name != "item" || !tags.Elem().Nullable {
+	if tags.ElemField().Name != "item" || !tags.ElemField().Nullable {
 		return errors.New("tags element field is not nullable item")
 	}
 	embedding := fields[6].Type.(*arrow.FixedSizeListType)
-	if embedding.Len() != 4 || embedding.Elem().Name != "item" || !embedding.Elem().Nullable {
+	if embedding.Len() != 4 || embedding.ElemField().Name != "item" || !embedding.ElemField().Nullable {
 		return errors.New("embedding element field is not nullable item with length 4")
 	}
 	return nil
@@ -343,8 +343,7 @@ func buildRows(mem memory.Allocator, keys []string, ids []int64, idValid []bool,
 		rowKey.NewArray(), id.NewArray(), label.NewArray(), payload.NewArray(), tagsArray,
 		profileArray, embeddingArray, amountArray, tsUSArray, tsNSArray,
 	}
-	// The builders above own the returned arrays until they are released; the
-	// record batch retains each array before the builders are released below.
+	// The record batch retains each array; release our construction references.
 	record := array.NewRecordBatch(schema, arrays, int64(len(keys)))
 	for _, a := range arrays {
 		a.Release()
@@ -501,7 +500,8 @@ func canonicalRow(record arrow.RecordBatch, row int) (string, map[string]string,
 	if rowKey.IsNull(row) {
 		return "", nil, fmt.Errorf("row %d has null row_key", row)
 	}
-	key := rowKey.Value(row)
+	// Report keys outlive the borrowed scanner batch.
+	key := strings.Clone(rowKey.Value(row))
 	values["row_key"] = hexString(key)
 
 	id := record.Column(1).(*array.Int64)
