@@ -131,7 +131,47 @@ jobs:
             pkg-config \
             protobuf-compiler
 
+      - name: Record run provenance
+        run: |
+          set -euo pipefail
+          facts="$RUNNER_TEMP/lance-c-build-provenance.txt"
+          {
+            echo "repository_commit: $GITHUB_SHA"
+            echo "workflow_run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "runner: $(uname -srm)"
+            echo "rustc: $(rustc --version)"
+            echo "cargo: $(cargo --version)"
+            echo "cmake: $(cmake --version | head -n 1)"
+            echo "cc: $(cc --version | head -n 1)"
+          } | tee "$facts"
+          {
+            echo "# current run"
+            cat "$facts"
+          } | tee "$RUNNER_TEMP/lance-c-provenance.txt"
+
+      - name: Compute installed lance-c cache key
+        id: lance-c-cache-key
+        run: |
+          set -euo pipefail
+          # The prefix pins the cache schema and runner image family.
+          rust_cachekey='${{ steps.rust.outputs.cachekey }}'
+          if [[ -z $rust_cachekey ]]; then
+            echo "Rust toolchain cache key is empty" >&2
+            exit 1
+          fi
+          inputs_hash="$(sha256sum internal/ffi/upstream.go scripts/build-lance-c.sh scripts/lance-c-cache.sh | sha256sum | awk '{print $1}')"
+          echo "key=lance-c-install-v1-ubuntu-24.04-$RUNNER_OS-$RUNNER_ARCH-rust-$rust_cachekey-$inputs_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore installed lance-c
+        id: lance-c-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Exact key only: a different pin or toolchain build is never reused.
+          path: ${{ runner.temp }}/lance-c-install-cache
+          key: ${{ steps.lance-c-cache-key.outputs.key }}
+
       - name: Cache native source and Cargo downloads
+        if: steps.lance-c-cache.outputs.cache-hit != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -165,45 +205,72 @@ jobs:
           test -f /usr/include/google/protobuf/descriptor.proto
           test -f /usr/include/google/protobuf/timestamp.proto
 
-      - name: Record build provenance
-        run: |
-          set -euo pipefail
-          {
-            echo "repository_commit: $GITHUB_SHA"
-            echo "workflow_run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo "runner: $(uname -srm)"
-            echo "rustc: $(rustc --version)"
-            echo "cargo: $(cargo --version)"
-            echo "cmake: $(cmake --version | head -n 1)"
-            echo "cc: $(cc --version | head -n 1)"
-          } | tee "$RUNNER_TEMP/lance-c-provenance.txt"
-
       - name: Build pinned lance-c
+        if: steps.lance-c-cache.outputs.cache-hit != 'true'
         env:
           LANCE_C_WORK_DIR: ${{ runner.temp }}/lance-c-build
         run: |
           set -euo pipefail
           ./scripts/build-lance-c.sh --out "$RUNNER_TEMP/lance-c-install"
+          printf 'source_commit: %s\n' "$(git -C "$RUNNER_TEMP/lance-c-build/src" rev-parse HEAD)" |
+            tee -a "$RUNNER_TEMP/lance-c-build-provenance.txt"
 
-      - name: Locate installed library
+      - name: Validate installed library
         id: locate
+        env:
+          LANCE_C_CACHE_KEY: ${{ steps.lance-c-cache-key.outputs.key }}
         run: |
           set -euo pipefail
-          install="$RUNNER_TEMP/lance-c-install"
-          library="$(find "$install/lib" -maxdepth 1 -type f -name 'liblance_c.so' -print -quit)"
-          header="$install/include/lance/lance.h"
-          if [[ -z "$library" || ! -f "$header" ]]; then
-            echo "installed library or header missing under $install" >&2
+          cache="$RUNNER_TEMP/lance-c-install-cache"
+          cache_hit='${{ steps.lance-c-cache.outputs.cache-hit }}'
+          paths="$RUNNER_TEMP/lance-c-cache-paths.txt"
+          if [[ $cache_hit == true ]]; then
+            cache_state=hit
+            built_in_this_run=false
+            ./scripts/lance-c-cache.sh verify \
+              --cache "$cache" \
+              --cache-key "$LANCE_C_CACHE_KEY" > "$paths"
+          else
+            cache_state=miss
+            built_in_this_run=true
+            ./scripts/lance-c-cache.sh write \
+              --install "$RUNNER_TEMP/lance-c-install" \
+              --cache "$cache" \
+              --provenance "$RUNNER_TEMP/lance-c-build-provenance.txt" \
+              --cache-key "$LANCE_C_CACHE_KEY" > "$paths"
+          fi
+          library="$(sed -n 's/^library=//p' "$paths")"
+          header="$(sed -n 's/^header=//p' "$paths")"
+          native_commit="$(sed -n 's/^commit=//p' "$paths")"
+          if [[ -z $library || -z $header || -z $native_commit ]]; then
+            echo "cache validation did not report the library, header, and commit" >&2
             exit 1
           fi
           echo "path=$library" >> "$GITHUB_OUTPUT"
           echo "header=$header" >> "$GITHUB_OUTPUT"
           {
-            echo "lance_c_commit: $(git -C "$RUNNER_TEMP/lance-c-build/src" rev-parse HEAD)"
+            echo "# artifact resolution"
+            echo "cache: $cache_state"
+            echo "built_in_this_run: $built_in_this_run"
+            echo "cache_key: $LANCE_C_CACHE_KEY"
+            echo "lance_c_commit: $native_commit"
             echo "lance_c_library: $library"
             echo "lance_c_library_sha256: $(sha256sum "$library" | awk '{print $1}')"
             echo "lance_c_header_sha256: $(sha256sum "$header" | awk '{print $1}')"
-          } | tee -a "$RUNNER_TEMP/lance-c-provenance.txt"
+            echo "manifest:"
+            sed 's/^/  /' "$cache/manifest.txt"
+            if [[ $built_in_this_run == true ]]; then
+              echo "build_provenance:"
+            else
+              echo "original_build_provenance:"
+            fi
+            sed 's/^/  /' "$cache/build-provenance.txt"
+          } >> "$RUNNER_TEMP/lance-c-provenance.txt"
+          if [[ $built_in_this_run == true ]]; then
+            echo "built lance-c in this run and validated the reusable cache entry"
+          else
+            echo "restored lance-c from the exact cache key; original build provenance follows"
+          fi
 
       - name: Check ABI against installed header
         env:
@@ -250,6 +317,8 @@ jobs:
           path: |
             ${{ runner.temp }}/lance-c-provenance.txt
             ${{ runner.temp }}/native-tests.log
+            ${{ runner.temp }}/lance-c-install-cache/manifest.txt
+            ${{ runner.temp }}/lance-c-install-cache/build-provenance.txt
           if-no-files-found: ignore
           retention-days: 7
           overwrite: true
