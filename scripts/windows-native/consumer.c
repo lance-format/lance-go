@@ -26,18 +26,22 @@ static int stream_release_calls;
 static int schema_release_calls;
 static int input_schema_release_calls;
 
-struct stream_state;
+typedef struct {
+	struct ArrowSchema child;
+	struct ArrowSchema* children[1];
+} schema_state;
 
 typedef struct {
-	struct stream_state* owner;
 	int64_t values[3];
 	const void* buffers[2];
+	const void* root_buffers[1];
+	struct ArrowArray child;
+	struct ArrowArray* children[1];
 	struct ArrowArray array;
 } batch_state;
 
 typedef struct stream_state {
 	struct ArrowArrayStream stream;
-	batch_state* batch;
 	int emitted;
 	const char* last_error;
 } stream_state;
@@ -55,33 +59,56 @@ static int require(int condition, const char* what) {
 	return 1;
 }
 
+static void release_leaf_schema(struct ArrowSchema* schema) {
+	memset(schema, 0, sizeof(*schema));
+}
+
+static void dispose_schema(struct ArrowSchema* schema) {
+	schema_state* state = (schema_state*)schema->private_data;
+	if (state != NULL && state->child.release != NULL) {
+		state->child.release(&state->child);
+	}
+	free(state);
+	memset(schema, 0, sizeof(*schema));
+}
+
 static void release_schema(struct ArrowSchema* schema) {
 	schema_release_calls++;
-	memset(schema, 0, sizeof(*schema));
+	dispose_schema(schema);
 }
 
 static void release_input_schema(struct ArrowSchema* schema) {
 	input_schema_release_calls++;
-	memset(schema, 0, sizeof(*schema));
+	dispose_schema(schema);
 }
 
-static void fill_schema(struct ArrowSchema* out) {
+static int fill_schema(struct ArrowSchema* out) {
+	schema_state* state = (schema_state*)calloc(1, sizeof(*state));
 	memset(out, 0, sizeof(*out));
-	out->format = "l";
-	out->name = "id";
-	out->flags = 0;
-	out->n_children = 0;
-	out->children = NULL;
-	out->dictionary = NULL;
+	if (state == NULL) {
+		return ENOMEM;
+	}
+	state->child.format = "l";
+	state->child.name = "id";
+	state->child.release = release_leaf_schema;
+	state->children[0] = &state->child;
+	out->format = "+s";
+	out->n_children = 1;
+	out->children = state->children;
 	out->release = release_schema;
+	out->private_data = state;
+	return 0;
+}
+
+static void release_leaf_array(struct ArrowArray* array) {
+	memset(array, 0, sizeof(*array));
 }
 
 static void release_batch(struct ArrowArray* array) {
 	batch_state* batch = (batch_state*)array->private_data;
-
 	batch_release_calls++;
-	if (batch != NULL && batch->owner != NULL) {
-		batch->owner->batch = NULL;
+	if (batch != NULL && batch->child.release != NULL) {
+		batch->child.release(&batch->child);
 	}
 	memset(array, 0, sizeof(*array));
 	free(batch);
@@ -89,26 +116,19 @@ static void release_batch(struct ArrowArray* array) {
 
 static void release_stream(struct ArrowArrayStream* stream) {
 	stream_state* state = (stream_state*)stream->private_data;
-
 	stream_release_calls++;
-	if (state != NULL && state->batch != NULL) {
-		/*
-		 * The consumer may still own an ArrowArray returned by get_next.
-		 * Its release callback owns the allocation; detach it instead of
-		 * freeing it here so a later release cannot double-free. The batch
-		 * release callback frees the allocation.
-		 */
-		state->batch->owner = NULL;
-		state->batch = NULL;
-	}
+	/* Returned batches own their buffers independently of the stream. */
 	memset(stream, 0, sizeof(*stream));
 	free(state);
 }
 
 static int stream_get_schema(struct ArrowArrayStream* stream, struct ArrowSchema* out) {
-	(void)stream;
-	fill_schema(out);
-	return 0;
+	stream_state* state = (stream_state*)stream->private_data;
+	int rc = fill_schema(out);
+	if (rc != 0) {
+		state->last_error = "out of memory allocating Arrow schema";
+	}
+	return rc;
 }
 
 static int stream_get_next(struct ArrowArrayStream* stream, struct ArrowArray* out) {
@@ -127,25 +147,25 @@ static int stream_get_next(struct ArrowArrayStream* stream, struct ArrowArray* o
 		return ENOMEM;
 	}
 
-	batch->owner = state;
 	batch->values[0] = 1;
 	batch->values[1] = 2;
 	batch->values[2] = 3;
 	batch->buffers[0] = NULL;
 	batch->buffers[1] = batch->values;
 
+	batch->child.length = 3;
+	batch->child.n_buffers = 2;
+	batch->child.buffers = batch->buffers;
+	batch->child.release = release_leaf_array;
+	batch->children[0] = &batch->child;
 	batch->array.length = 3;
-	batch->array.null_count = 0;
-	batch->array.offset = 0;
-	batch->array.n_buffers = 2;
-	batch->array.n_children = 0;
-	batch->array.buffers = batch->buffers;
-	batch->array.children = NULL;
-	batch->array.dictionary = NULL;
+	batch->array.n_buffers = 1;
+	batch->array.buffers = batch->root_buffers;
+	batch->array.n_children = 1;
+	batch->array.children = batch->children;
 	batch->array.release = release_batch;
 	batch->array.private_data = batch;
 
-	state->batch = batch;
 	state->emitted = 1;
 	*out = batch->array;
 	return 0;
@@ -282,12 +302,7 @@ static int scan_dataset(LanceDataset* dataset, const char* what) {
 	int64_t next_value = 1;
 	int batches = 0;
 	int failures_before = failures;
-	int schema_before;
-	int stream_before;
 	int32_t rc;
-
-	schema_before = schema_release_calls;
-	stream_before = stream_release_calls;
 
 	scanner = lance_scanner_new(dataset, NULL, NULL);
 	if (!require(scanner != NULL, "lance_scanner_new returned NULL")) {
@@ -313,14 +328,19 @@ static int scan_dataset(LanceDataset* dataset, const char* what) {
 		lance_scanner_close(scanner);
 		return 0;
 	}
-	if (schema.release != NULL) {
+	require(schema.format != NULL && strcmp(schema.format, "+s") == 0 &&
+		schema.n_children == 1 && schema.children != NULL &&
+		schema.children[0] != NULL && schema.children[0]->format != NULL &&
+		strcmp(schema.children[0]->format, "l") == 0,
+		"scan schema is not a struct containing one int64 column");
+	if (require(schema.release != NULL, "scan schema has no release callback")) {
 		schema.release(&schema);
+		require(schema.release == NULL, "scan schema release did not clear callback");
 	}
-	require(schema_release_calls == schema_before + 1,
-		"scan stream schema release callback was not called exactly once");
 
 	for (;;) {
 		struct ArrowArray array;
+		struct ArrowArray* column;
 		memset(&array, 0, sizeof(array));
 		rc = stream.get_next(&stream, &array);
 		if (rc != 0) {
@@ -341,21 +361,28 @@ static int scan_dataset(LanceDataset* dataset, const char* what) {
 			array.release(&array);
 			break;
 		}
-		if (!require(array.n_buffers >= 2 && array.buffers != NULL && array.buffers[1] != NULL,
-			"scan batch has no int64 data buffer")) {
+		if (!require(array.n_children == 1 && array.children != NULL && array.children[0] != NULL,
+			"scan batch does not contain one column")) {
 			array.release(&array);
 			break;
 		}
-		if (!require(array.null_count == 0, "scan batch unexpectedly contains nulls")) {
+		column = array.children[0];
+		if (!require(column->offset >= 0 && column->length >= array.offset + array.length &&
+			column->n_buffers >= 2 && column->buffers != NULL && column->buffers[1] != NULL,
+			"scan column has no valid int64 data buffer")) {
+			array.release(&array);
+			break;
+		}
+		if (!require(array.null_count == 0 && column->null_count == 0, "scan batch unexpectedly contains nulls")) {
 			array.release(&array);
 			break;
 		}
 
 		{
-			const int64_t* values = (const int64_t*)array.buffers[1];
+			const int64_t* values = (const int64_t*)column->buffers[1];
 			int64_t row;
 			for (row = 0; row < array.length; row++) {
-				int64_t value = values[array.offset + row];
+				int64_t value = values[column->offset + array.offset + row];
 				if (value != next_value) {
 					fprintf(stderr,
 						"FAIL: %s row %lld value=%lld want=%lld\n",
@@ -371,13 +398,13 @@ static int scan_dataset(LanceDataset* dataset, const char* what) {
 		scanned += array.length;
 		batches++;
 		array.release(&array);
+		require(array.release == NULL, "scan batch release did not clear callback");
 	}
 
-	if (stream.release != NULL) {
+	if (require(stream.release != NULL, "scan stream has no release callback")) {
 		stream.release(&stream);
+		require(stream.release == NULL, "scan stream release did not clear callback");
 	}
-	require(stream_release_calls == stream_before + 1,
-		"scan stream release callback was not called exactly once");
 	lance_scanner_close(scanner);
 
 	if (!require(scanned == 3, what)) {
@@ -421,7 +448,9 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	fill_schema(&schema);
+	if (!require(fill_schema(&schema) == 0, "cannot allocate input schema")) {
+		return 1;
+	}
 	schema.release = release_input_schema;
 	stream = make_stream();
 	rc = lance_dataset_write(uri, &schema, &stream, LANCE_WRITE_CREATE, NULL, &created);
@@ -442,6 +471,9 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	if (!require(batch_release_calls == 1, "write stream batch release callback was not called exactly once")) {
+		return 1;
+	}
+	if (!require(schema_release_calls == 1, "write stream schema release count is not 1")) {
 		return 1;
 	}
 	printf("PASS: create\n");
