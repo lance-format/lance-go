@@ -1,4 +1,4 @@
-//go:build !lance_external_lib && (linux || darwin)
+//go:build !lance_external_lib && (linux || darwin || windows)
 
 package loader
 
@@ -51,15 +51,17 @@ func TestBundleReusesVerifiedCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat cached library: %v", err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o500 {
-		t.Fatalf("cached library mode = %o, want 500", mode)
-	}
 	dirInfo, err := os.Stat(filepath.Dir(first))
 	if err != nil {
 		t.Fatalf("stat cache directory: %v", err)
 	}
-	if mode := dirInfo.Mode().Perm(); mode != 0o700 {
-		t.Fatalf("cache directory mode = %o, want 700", mode)
+	if runtime.GOOS != "windows" {
+		if mode := info.Mode().Perm(); mode != 0o500 {
+			t.Fatalf("cached library mode = %o, want 500", mode)
+		}
+		if mode := dirInfo.Mode().Perm(); mode != 0o700 {
+			t.Fatalf("cache directory mode = %o, want 700", mode)
+		}
 	}
 
 	second, err := b.cachedLibrary()
@@ -284,7 +286,7 @@ func TestLoadPrefersEnvOverRegisteredBundle(t *testing.T) {
 
 func TestLoadUsesRegisteredBundleBeforeSystemLoader(t *testing.T) {
 	testCacheBase(t)
-	raw := []byte("payload that dlopen must reject")
+	raw := []byte("payload that the platform loader must reject")
 	b := testBundle(t, raw)
 	installTestBundle(t, b)
 	t.Setenv(EnvLibPath, "")
@@ -299,7 +301,7 @@ func TestLoadUsesRegisteredBundleBeforeSystemLoader(t *testing.T) {
 
 	path, err := b.cachedLibrary()
 	if err != nil {
-		t.Fatalf("bundle cache was not usable after Load failed at dlopen: %v", err)
+		t.Fatalf("bundle cache was not usable after Load failed to open the library: %v", err)
 	}
 	got, err := os.ReadFile(path)
 	if err != nil {
@@ -507,6 +509,8 @@ func testCacheBase(t *testing.T) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "xdg-cache"))
+	// os.UserCacheDir uses LocalAppData on Windows, not HOME/XDG_CACHE_HOME.
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "local-app-data"))
 
 	root, err := os.UserCacheDir()
 	if err != nil {

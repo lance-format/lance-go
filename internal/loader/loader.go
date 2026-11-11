@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 // Package loader discovers and loads the official lance-c shared library
 // without cgo.
@@ -11,12 +11,13 @@
 //  2. In the default (untagged) build, a compiled-in artifact bundle
 //     registered by a generated platform selector. The bundle is verified and
 //     unpacked into a private user cache before it is loaded. Once a bundle is
-//     registered for the running target, cache, extraction, or dlopen errors
+//     registered for the running target, cache, extraction, or loading errors
 //     fail loudly; the loader does not fall back to the system copy.
-//  3. The platform soname (liblance_c.so on Linux, liblance_c.dylib on
-//     macOS), resolved by the operating system dynamic loader. This honors
-//     LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, ldconfig caches and the usual
-//     system directories.
+//  3. The platform library name (liblance_c.so on Linux, liblance_c.dylib on
+//     macOS, lance_c.dll on Windows), resolved by the platform loader. Unix
+//     honors LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, ldconfig caches and the usual
+//     system directories. Windows applies the process's DLL search policy,
+//     which can include the application, system and current directories and PATH.
 //
 // Builds tagged lance_external_lib omit bundle, cache, and decompression code
 // entirely and use only the environment and system-loader steps.
@@ -27,12 +28,14 @@
 //
 // The library is loaded at most once per process and is never unloaded.
 // lance-c owns a Tokio runtime, thread-local error state and handles that may
-// outlive a dataset, so calling Dlclose while native threads or callbacks may
-// still run is not safe. Callers that need a different library must start a
+// outlive a dataset, so unloading the library while native threads or
+// callbacks may still run is not safe. Callers that need a different library must start a
 // new process; changing LANCE_LIB_PATH after a successful Load has no effect.
 //
-// This package supports Linux and macOS only. Windows needs a LoadLibrary
-// implementation because purego v0.10 does not provide Dlopen there.
+// Platform loading uses purego's dlopen/dlsym bindings on Linux and macOS and
+// LoadLibrary/GetProcAddress on Windows. purego v0.10 does not expose the
+// Windows loading entry points, so the Windows implementation uses
+// golang.org/x/sys/windows directly.
 package loader
 
 import (
@@ -40,8 +43,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-
-	"github.com/ebitengine/purego"
 )
 
 // EnvLibPath names the environment variable that points at the liblance_c
@@ -49,11 +50,9 @@ import (
 const EnvLibPath = "LANCE_LIB_PATH"
 
 // ErrNotFound reports that no lance-c library was configured or found by the
-// system dynamic loader. Errors caused by an explicitly configured but
-// unusable LANCE_LIB_PATH do not wrap ErrNotFound.
+// platform loader. Errors caused by an explicitly configured but unusable
+// LANCE_LIB_PATH do not wrap ErrNotFound.
 var ErrNotFound = errors.New("lance-c shared library not found")
-
-const dlopenFlags = purego.RTLD_NOW | purego.RTLD_LOCAL
 
 var (
 	mu     sync.Mutex
@@ -85,15 +84,15 @@ func Load() (*Library, error) {
 }
 
 // Path returns the configured path when LANCE_LIB_PATH was used, the cache
-// path when a compiled-in bundle was used, or the platform soname when the
-// system dynamic loader resolved the library.
+// path when a compiled-in bundle was used, or the platform library name when
+// the system loader resolved the library.
 func (l *Library) Path() string {
 	return l.path
 }
 
 // Lookup resolves an exported C symbol.
 func (l *Library) Lookup(name string) (uintptr, error) {
-	addr, err := purego.Dlsym(l.handle, name)
+	addr, err := lookupSymbol(l.handle, name)
 	if err != nil {
 		return 0, fmt.Errorf("loader: resolve %q in %s: %w", name, l.path, err)
 	}
@@ -112,17 +111,17 @@ func openFromEnv(path string) (*Library, error) {
 		return nil, fmt.Errorf("loader: %s=%q is not a regular file (mode %s)", EnvLibPath, path, info.Mode())
 	}
 
-	handle, err := purego.Dlopen(path, dlopenFlags)
+	handle, err := openLibrary(path)
 	if err != nil {
-		return nil, fmt.Errorf("loader: dlopen %s=%q: %w", EnvLibPath, path, err)
+		return nil, fmt.Errorf("loader: load %s=%q: %w", EnvLibPath, path, err)
 	}
 	return &Library{path: path, handle: handle}, nil
 }
 
 func openFromSystemPath() (*Library, error) {
-	handle, err := purego.Dlopen(libraryName, dlopenFlags)
+	handle, err := openLibrary(libraryName)
 	if err != nil {
-		return nil, fmt.Errorf("loader: %w: the system dynamic loader could not open %q: %v%s",
+		return nil, fmt.Errorf("loader: %w: the platform loader could not open %q: %v%s",
 			ErrNotFound, libraryName, err, strategyNote())
 	}
 	return &Library{path: libraryName, handle: handle}, nil

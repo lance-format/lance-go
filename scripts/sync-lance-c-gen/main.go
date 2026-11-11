@@ -13,7 +13,7 @@ func main() {
 	var opts artifactgen.Options
 	flag.StringVar(&opts.LibraryPath, "library", "", "path to the already-built liblance_c shared library")
 	flag.StringVar(&opts.HeaderPath, "header", "", "path to the matching lance.h")
-	flag.StringVar(&opts.Target, "target", "", "target as GOOS/GOARCH (linux/amd64, linux/arm64, darwin/amd64, darwin/arm64)")
+	flag.StringVar(&opts.Target, "target", "", "target as GOOS/GOARCH (linux, darwin, or windows on amd64 or arm64)")
 	flag.StringVar(&opts.OutDir, "out", "", "new output directory to publish (must not exist)")
 	flag.StringVar(&opts.ModulePath, "module-path", "", "generated artifact module path (default: github.com/lance-format/lance-go/artifacts/<goos>-<goarch>)")
 	flag.StringVar(&opts.SelectorPackage, "selector-package", "lance", "package name for the generated root selector")

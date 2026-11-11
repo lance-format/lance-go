@@ -21,7 +21,7 @@ import (
 var (
 	fixtureReleaseCalls atomic.Int64
 	fixtureReleasePtr   atomic.Uintptr
-	fixtureRelease      = purego.NewCallback(func(src *ArrowArray) {
+	fixtureRelease      = purego.NewCallback(func(src *ArrowArray) (ret uintptr) {
 		// The producer owns the live-to-released transition. A consumer must
 		// not mark the structure released before entering this callback.
 		if src.Release == 0 {
@@ -30,20 +30,23 @@ var (
 		fixtureReleaseCalls.Add(1)
 		fixtureReleasePtr.Store(uintptr(unsafe.Pointer(src)))
 		src.Release = 0
+		return
 	})
 	fixtureSchemaCalls   atomic.Int64
-	fixtureSchemaRelease = purego.NewCallback(func(src *ArrowSchema) {
+	fixtureSchemaRelease = purego.NewCallback(func(src *ArrowSchema) (ret uintptr) {
 		if src.Release != 0 {
 			fixtureSchemaCalls.Add(1)
 			src.Release = 0
 		}
+		return
 	})
 	fixtureStreamCalls   atomic.Int64
-	fixtureStreamRelease = purego.NewCallback(func(src *ArrowArrayStream) {
+	fixtureStreamRelease = purego.NewCallback(func(src *ArrowArrayStream) (ret uintptr) {
 		if src.Release != 0 {
 			fixtureStreamCalls.Add(1)
 			src.Release = 0
 		}
+		return
 	})
 )
 

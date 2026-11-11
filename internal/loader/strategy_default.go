@@ -7,5 +7,5 @@ package loader
 // target. This build does not include one unless the packaging process added
 // it, so the system-loader fallback remains available.
 func strategyNote() string {
-	return "; this default build has no compiled-in artifact bundle for this target, so install liblance_c in the system search path or set LANCE_LIB_PATH"
+	return "; this default build has no compiled-in artifact bundle for this target, so install liblance_c in the platform loader search path or set LANCE_LIB_PATH"
 }

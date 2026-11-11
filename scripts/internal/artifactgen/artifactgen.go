@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"debug/elf"
 	"debug/macho"
+	"debug/pe"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,6 +34,8 @@ var supportedTargets = []targetSpec{
 	{goos: "linux", goarch: "arm64", libraryName: "liblance_c.so"},
 	{goos: "darwin", goarch: "amd64", libraryName: "liblance_c.dylib"},
 	{goos: "darwin", goarch: "arm64", libraryName: "liblance_c.dylib"},
+	{goos: "windows", goarch: "amd64", libraryName: "lance_c.dll"},
+	{goos: "windows", goarch: "arm64", libraryName: "lance_c.dll"},
 }
 
 type targetSpec struct {
@@ -240,12 +243,15 @@ func existingRegularFile(path, kind string) (string, error) {
 }
 
 func parseTarget(value string) (targetSpec, error) {
+	targets := make([]string, 0, len(supportedTargets))
 	for _, spec := range supportedTargets {
-		if value == spec.goos+"/"+spec.goarch {
+		target := spec.goos + "/" + spec.goarch
+		if value == target {
 			return spec, nil
 		}
+		targets = append(targets, target)
 	}
-	return targetSpec{}, fmt.Errorf("unsupported target %q; supported targets are linux/amd64, linux/arm64, darwin/amd64, and darwin/arm64", value)
+	return targetSpec{}, fmt.Errorf("unsupported target %q; supported targets are %s", value, strings.Join(targets, ", "))
 }
 
 func rejectExistingOutput(path string) error {
@@ -265,6 +271,8 @@ func inspectLibrary(path string, spec targetSpec) error {
 		return inspectELF(path, spec)
 	case "darwin":
 		return inspectMachO(path, spec)
+	case "windows":
+		return inspectPE(path, spec)
 	default:
 		return fmt.Errorf("unsupported target %q", spec.goos+"/"+spec.goarch)
 	}
@@ -313,6 +321,29 @@ func inspectMachO(path string, spec targetSpec) error {
 	}
 	if f.Cpu != want {
 		return fmt.Errorf("Mach-O library %s has CPU %s, want %s", path, f.Cpu, want)
+	}
+	return nil
+}
+
+func inspectPE(path string, spec targetSpec) error {
+	f, err := pe.Open(path)
+	if err != nil {
+		return fmt.Errorf("parse PE library %s: %w", path, err)
+	}
+	defer f.Close()
+
+	if f.Characteristics&pe.IMAGE_FILE_DLL == 0 {
+		return fmt.Errorf("PE library %s is not a DLL (characteristics %#x)", path, f.Characteristics)
+	}
+	if _, ok := f.OptionalHeader.(*pe.OptionalHeader64); !ok {
+		return fmt.Errorf("PE library %s is not a 64-bit PE image", path)
+	}
+	want := uint16(pe.IMAGE_FILE_MACHINE_AMD64)
+	if spec.goarch == "arm64" {
+		want = pe.IMAGE_FILE_MACHINE_ARM64
+	}
+	if f.Machine != want {
+		return fmt.Errorf("PE library %s has machine %#x, want %#x", path, f.Machine, want)
 	}
 	return nil
 }
