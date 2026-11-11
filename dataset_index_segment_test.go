@@ -736,7 +736,7 @@ func TestIndexSegmentModels(t *testing.T) {
 		t.Fatalf("IVF centroid rows = %d, want one per partition", centroids.Len())
 	}
 	listType, ok := centroids.DataType().(*arrow.FixedSizeListType)
-	if !ok || listType.Len() != 4 || !arrow.TypeEqual(listType.ElemType(), arrow.PrimitiveTypes.Float32) {
+	if !ok || listType.Len() != 4 || !arrow.TypeEqual(listType.Elem(), arrow.PrimitiveTypes.Float32) {
 		t.Fatalf("IVF centroid type = %s, want fixed-size list of 4 float32", centroids.DataType())
 	}
 
@@ -749,7 +749,7 @@ func TestIndexSegmentModels(t *testing.T) {
 		t.Fatalf("PQ codebook rows = %d, want %d", codebook.Len(), want)
 	}
 	codebookType, ok := codebook.DataType().(*arrow.FixedSizeListType)
-	if !ok || codebookType.Len() != 2 || !arrow.TypeEqual(codebookType.ElemType(), arrow.PrimitiveTypes.Float32) {
+	if !ok || codebookType.Len() != 2 || !arrow.TypeEqual(codebookType.Elem(), arrow.PrimitiveTypes.Float32) {
 		t.Fatalf("PQ codebook type = %s, want fixed-size list of 2 float32", codebook.DataType())
 	}
 
