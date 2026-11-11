@@ -313,14 +313,14 @@ func TestMergeAddsColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("result Schema: %v", err)
 	}
-	if resultSchema.FieldIndex("score") < 0 {
+	if !resultSchema.HasField("score") {
 		t.Fatalf("result schema has no score column: %v", resultSchema)
 	}
 	originalSchema, err := dataset.Schema()
 	if err != nil {
 		t.Fatalf("original Schema: %v", err)
 	}
-	if originalSchema.FieldIndex("score") >= 0 {
+	if originalSchema.HasField("score") {
 		t.Fatalf("receiver schema gained score column: %v", originalSchema)
 	}
 
