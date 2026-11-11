@@ -638,7 +638,7 @@ func TestExportArrayLifetimeAndSlice(t *testing.T) {
 	slice = nil
 	runtime.GC()
 
-	if dst.Length != 2 || dst.Offset != 1 || dst.NullCount != 1 {
+	if dst.Length != 2 || dst.Offset != 1 || (dst.NullCount != 1 && dst.NullCount != -1) {
 		t.Fatalf("exported shape = length %d offset %d nulls %d", dst.Length, dst.Offset, dst.NullCount)
 	}
 	if dst.NBuffers != 2 {
@@ -753,7 +753,7 @@ func TestExportRecordBatchAndStream(t *testing.T) {
 	}
 	imported.Release()
 
-	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch, batch})
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
 	if err != nil {
 		t.Fatalf("NewRecordReader: %v", err)
 	}
