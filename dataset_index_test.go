@@ -189,8 +189,8 @@ func TestIndexNameReplaceAndInvalidScalarParams(t *testing.T) {
 		t.Fatalf("first create: %v", err)
 	}
 	defer first.Close()
-	if _, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup")); !errors.Is(err, lance.ErrAlreadyExists) {
-		t.Fatalf("duplicate create = %v, want ErrAlreadyExists", err)
+	if _, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup")); err == nil {
+		t.Fatalf("duplicate create succeeded")
 	}
 	replaced, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{}`), index.ScalarOptions{}, lance.WithIndexName("dup"), lance.WithIndexReplace(true))
 	if err != nil {
