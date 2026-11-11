@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/lance-format/lance-go/internal/loader"
 	"github.com/lance-format/lance-go/namespace"
@@ -86,10 +86,10 @@ func TestNativeDirectoryNamespaceLifecycle(t *testing.T) {
 	}
 }
 
-type failingContextProvider struct{}
+type contextProviderFunc func(string, string) (map[string]string, error)
 
-func (failingContextProvider) ProvideContext(string, string) (map[string]string, error) {
-	return nil, errors.New("provider failed")
+func (f contextProviderFunc) ProvideContext(operation, objectID string) (map[string]string, error) {
+	return f(operation, objectID)
 }
 
 type contextRecorder struct {
@@ -157,33 +157,45 @@ func TestNativeRestNamespaceDynamicContext(t *testing.T) {
 }
 
 func TestNativeRestNamespaceDynamicContextErrorContinues(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-Namespace-Test"); got != "" {
-			t.Errorf("X-Namespace-Test = %q, want no header after provider error", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"namespaces":[]}`)
-	}))
-	defer server.Close()
-
-	ns, err := namespace.NewRest(
-		map[string]string{"uri": server.URL},
-		namespace.WithDynamicContextProvider(failingContextProvider{}),
-	)
-	if errors.Is(err, loader.ErrNotFound) {
-		t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built liblance_c")
-	}
-	if err != nil {
-		t.Fatalf("new REST namespace: %v", err)
-	}
-	defer ns.Close()
-
-	response, err := ns.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{})
-	if err != nil {
-		t.Fatalf("ListNamespaces after provider error: %v", err)
-	}
-	if len(response.Namespaces) != 0 {
-		t.Fatalf("namespaces = %v, want empty", response.Namespaces)
+	for _, mode := range []string{"error", "panic"} {
+		t.Run(mode, func(t *testing.T) {
+			var calls atomic.Int32
+			provider := contextProviderFunc(func(string, string) (map[string]string, error) {
+				calls.Add(1)
+				runtime.GC()
+				if mode == "panic" {
+					panic("provider panic")
+				}
+				return nil, errors.New("provider failed")
+			})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("X-Namespace-Test"); got != "" {
+					t.Errorf("X-Namespace-Test = %q, want no header after provider failure", got)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"namespaces":[]}`)
+			}))
+			defer server.Close()
+			ns, err := namespace.NewRest(map[string]string{"uri": server.URL}, namespace.WithDynamicContextProvider(provider))
+			if errors.Is(err, loader.ErrNotFound) {
+				t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built liblance_c")
+			}
+			if err != nil {
+				t.Fatalf("new REST namespace: %v", err)
+			}
+			defer ns.Close()
+			runtime.GC()
+			response, err := ns.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{})
+			if err != nil {
+				t.Fatalf("ListNamespaces after provider failure: %v", err)
+			}
+			if len(response.Namespaces) != 0 {
+				t.Fatalf("namespaces = %v, want empty", response.Namespaces)
+			}
+			if calls.Load() == 0 {
+				t.Fatal("native request did not invoke the provider")
+			}
+		})
 	}
 }
 
@@ -206,12 +218,18 @@ func TestNativeRESTAdapterOutlivesNamespace(t *testing.T) {
 		t.Fatalf("close namespace: %v", err)
 	}
 
-	address := fmt.Sprintf("127.0.0.1:%d", port)
-	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
+	client, err := namespace.NewRest(map[string]string{"uri": fmt.Sprintf("http://127.0.0.1:%d", port)})
 	if err != nil {
-		t.Fatalf("adapter stopped when the namespace closed: %v", err)
+		t.Fatalf("new adapter client: %v", err)
 	}
-	_ = conn.Close()
+	defer client.Close()
+	response, err := client.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{})
+	if err != nil {
+		t.Fatalf("request after namespace Close: %v", err)
+	}
+	if len(response.Namespaces) != 0 {
+		t.Fatalf("namespaces after owner Close = %v, want empty", response.Namespaces)
+	}
 
 	adapter.Shutdown()
 	adapter.Shutdown()
