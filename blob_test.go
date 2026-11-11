@@ -111,7 +111,6 @@ func TestBlobTakeAndRead(t *testing.T) {
 
 func TestBlobFileCursorAndRanges(t *testing.T) {
 	dataset, _ := newBlobDataset(t, blobTestValues())
-	refs := blobRefs(t, dataset)
 	files, err := dataset.TakeBlobsByIndices(context.Background(), []uint64{0}, "blob")
 	if err != nil {
 		t.Fatalf("TakeBlobsByIndices: %v", err)
