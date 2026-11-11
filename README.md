@@ -214,10 +214,12 @@ matched physical offsets. `WriteColumns` returns a `DataReplacementGroup`;
 Publish staged results explicitly. Use `NewMergeOperation` with the complete
 final fragment list and complete schema for add-columns and merge results, and
 `NewUpdateOperation` with the updated fragment, modified field IDs and optional
-`UpdatedFragmentOffsets` for update results. Update operations select native
-RewriteColumns mode because `UpdateColumns` stages a horizontal column rewrite.
-Pass `nil` offsets to represent native None; pass
-`NewUpdatedFragmentOffsets(nil)` for native Some(empty).
+`UpdatedFragmentOffsets` for update results. Matched offsets and
+`UpdatedFragmentOffsets.OffsetsAt` results are independent copies in ascending
+native bitmap order. Update operations select native RewriteColumns mode
+because `UpdateColumns` stages a horizontal column rewrite. Pass `nil` offsets
+to represent native None; pass `NewUpdatedFragmentOffsets(nil)` for native
+Some(empty).
 `NewDataReplacementOperation` publishes replacement files, and
 `NewDeleteOperation` publishes partial or full physical deletion. The
 corresponding native Update options for removed or new fragments, compacted
