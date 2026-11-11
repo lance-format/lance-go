@@ -18,11 +18,11 @@ var Payload []byte
 const (
 	Target                   = "linux/amd64"
 	LibraryName              = "liblance_c.so"
-	CompressedSize     int64 = 75905672
-	CompressedSHA256         = "1433054ae182661830de11d5faa6c1e6027c0746d5b59d87ccd894b35a24b7c0"
-	UncompressedSize   int64 = 286968288
-	UncompressedSHA256       = "1de1e4bdb6a71a5bd7b14ddb3d18b5d79776abe30efebabc6f40e67b2ace7ba8"
+	CompressedSize     int64 = 81695913
+	CompressedSHA256         = "33c4ee3249ee73ddf6a07855153abeb42801134f993309718e40bfacdabcd6af"
+	UncompressedSize   int64 = 308280480
+	UncompressedSHA256       = "dfe3b1135725daeb876998befce18b58117074ffef302850a53f21e8376b7363"
 	UpstreamRepo             = "https://github.com/lance-format/lance-c"
-	UpstreamCommit           = "ab5c2d39c8b912fff19a05486732dde4b49c3f33"
-	HeaderSHA256             = "7060ee5d8cdf941990154ae6d735d203a17105f441215fc398c00ef06c650190"
+	UpstreamCommit           = "07cd7d0cd06d65c5c643972267cc7981decef067"
+	HeaderSHA256             = "12981740fff3c240c7a5f3d46d8b6cd85e64a848d2bf421b1846286b774fbc4b"
 )
