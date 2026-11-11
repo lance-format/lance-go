@@ -83,7 +83,9 @@ func newNamespaceCustomDispatchSpec(client CustomNamespaceDispatcher, namespaceI
 	}, nil
 }
 
-func namespaceCustomDispatchCallback(ctx uintptr, operation, request *byte, outResponse *ownedString, outError *callbackError) (ret int32) {
+// The uintptr result satisfies Windows syscall.NewCallback; C reads its low
+// int32 status, which is always zero or one.
+func namespaceCustomDispatchCallback(ctx uintptr, operation, request *byte, outResponse *ownedString, outError *callbackError) (ret uintptr) {
 	if outResponse != nil {
 		*outResponse = ownedString{}
 	}

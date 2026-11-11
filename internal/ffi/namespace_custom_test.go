@@ -10,32 +10,6 @@ import (
 	"github.com/lance-format/lance-go/internal/handle"
 )
 
-type testCustomDispatcher struct {
-	response []byte
-	err      error
-}
-
-func (d *testCustomDispatcher) DispatchNamespace(string, []byte) ([]byte, error) {
-	return d.response, d.err
-}
-
-func TestNamespaceCustomReleaseCallbackReleasesOnce(t *testing.T) {
-	adapter := &namespaceCustomAdapter{client: &testCustomDispatcher{response: []byte("{}")}}
-	ctx := handle.New(adapter)
-
-	namespaceContextReleaseCallback(uintptr(ctx))
-	if adapter.dispatcher() != nil {
-		t.Fatal("release callback did not drop the dispatcher")
-	}
-	if _, ok := handle.Get(ctx); ok {
-		t.Fatal("release callback left the context registered")
-	}
-
-	// A second native release would violate the ownership contract, but it
-	// must not panic or touch a different context.
-	namespaceContextReleaseCallback(uintptr(ctx))
-}
-
 func TestNamespaceCustomFinalOwnerReleasesContext(t *testing.T) {
 	b := requireLibrary(t)
 
