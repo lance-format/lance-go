@@ -1,6 +1,9 @@
 package lance
 
-import "github.com/lance-format/lance-go/internal/ffi"
+import (
+	"github.com/lance-format/lance-go/internal/ffi"
+	sharesession "github.com/lance-format/lance-go/internal/session"
+)
 
 // CacheSpecKind selects the configuration used by one session cache.
 type CacheSpecKind int32
@@ -23,23 +26,12 @@ type CacheSpec struct {
 }
 
 // CacheStats is a snapshot of both session caches.
-type CacheStats struct {
-	IndexCacheHits         uint64
-	IndexCacheMisses       uint64
-	IndexCacheEntries      uint64
-	IndexCacheSizeBytes    uint64
-	MetadataCacheHits      uint64
-	MetadataCacheMisses    uint64
-	MetadataCacheEntries   uint64
-	MetadataCacheSizeBytes uint64
-}
+type CacheStats = sharesession.CacheStats
 
-// Session owns shared index and metadata caches. Datasets opened with a
-// session keep their cache state after the session is closed.
-type Session struct {
-	native *ffi.Session
-	res    *resource
-}
+// Session owns shared index and metadata caches. Datasets and raw file
+// objects opened with a session keep their cache state after the session is
+// closed.
+type Session = sharesession.Session
 
 // NewSession creates a session with fixed-size caches.
 func NewSession(indexCacheSize, metadataCacheSize uint64) (*Session, error) {
@@ -68,9 +60,7 @@ func NewSessionWithCacheSpecs(indexCache, metadataCache CacheSpec) (*Session, er
 }
 
 func newSession(native *ffi.Session) *Session {
-	s := &Session{native: native}
-	s.res = newResource(func() { native.Close() })
-	return s
+	return sharesession.New(native, wrapError, closedError)
 }
 
 func toFFICacheSpec(spec CacheSpec) (ffi.CacheSpec, error) {
@@ -104,67 +94,15 @@ func toFFICacheSpec(spec CacheSpec) (ffi.CacheSpec, error) {
 	return native, nil
 }
 
-// CacheStats returns a snapshot of the session caches.
-func (s *Session) CacheStats() (CacheStats, error) {
-	if !s.res.acquire() {
-		return CacheStats{}, closedError("session cache stats", "")
-	}
-	defer s.res.release()
-	stats, err := s.native.CacheStats()
-	if err != nil {
-		return CacheStats{}, wrapError("session cache stats", "", err)
-	}
-	return CacheStats{
-		IndexCacheHits:         stats.IndexCacheHits,
-		IndexCacheMisses:       stats.IndexCacheMisses,
-		IndexCacheEntries:      stats.IndexCacheEntries,
-		IndexCacheSizeBytes:    stats.IndexCacheSizeBytes,
-		MetadataCacheHits:      stats.MetadataCacheHits,
-		MetadataCacheMisses:    stats.MetadataCacheMisses,
-		MetadataCacheEntries:   stats.MetadataCacheEntries,
-		MetadataCacheSizeBytes: stats.MetadataCacheSizeBytes,
-	}, nil
-}
-
-// SizeBytes returns the approximate cache memory size.
-func (s *Session) SizeBytes() (uint64, error) {
-	if !s.res.acquire() {
-		return 0, closedError("session size", "")
-	}
-	defer s.res.release()
-	value, err := s.native.SizeBytes()
-	if err != nil {
-		return 0, wrapError("session size", "", err)
-	}
-	return value, nil
-}
-
-// ApproxNumItems returns the approximate number of cached items.
-func (s *Session) ApproxNumItems() (uint64, error) {
-	if !s.res.acquire() {
-		return 0, closedError("session items", "")
-	}
-	defer s.res.release()
-	value, err := s.native.ApproxNumItems()
-	if err != nil {
-		return 0, wrapError("session items", "", err)
-	}
-	return value, nil
-}
-
-// Close releases the native session. It is idempotent.
-func (s *Session) Close() error {
-	s.res.close()
-	return nil
-}
-
-func (s *Session) acquire() bool {
+// acquireSession pins s for one native call. The caller must call release
+// after the native call, including when the call fails.
+func acquireSession(op, uri string, s *Session) (*ffi.Session, func(), error) {
 	if s == nil {
-		return false
+		return nil, func() {}, nil
 	}
-	return s.res.acquire()
-}
-
-func (s *Session) release() {
-	s.res.release()
+	native, release, ok := sharesession.Acquire(s)
+	if !ok {
+		return nil, nil, closedError(op, uri)
+	}
+	return native, release, nil
 }

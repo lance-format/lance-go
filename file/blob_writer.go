@@ -93,6 +93,29 @@ func (w *PackedBlobWriter) Write(ctx context.Context, data []byte) error {
 	return nil
 }
 
+// WriteBlobs appends one Arrow array of Binary, LargeBinary, or
+// FixedSizeBinary payloads. Bytes from payloads are copied before it returns,
+// so the array remains owned and usable by the caller. Nulls and non-null
+// empty payloads keep their distinct meanings in the finished descriptors.
+func (w *PackedBlobWriter) WriteBlobs(ctx context.Context, payloads arrow.Array) error {
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
+	native, err := w.lock("packed blob writer write blobs")
+	if err != nil {
+		return err
+	}
+	defer w.mu.Unlock()
+	if err := checkContext(ctx); err != nil {
+		return err
+	}
+
+	if err := native.WriteBlobs(payloads); err != nil {
+		return wrapError("packed blob writer write blobs", w.path, err)
+	}
+	return nil
+}
+
 // FinishArray consumes the native writer and returns its prepared descriptor.
 // The returned array owns its buffers. Call Close to release the allocation.
 func (w *PackedBlobWriter) FinishArray(ctx context.Context, fieldName string) (arrow.Field, arrow.Array, error) {

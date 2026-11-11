@@ -18,7 +18,7 @@ type FileWriter struct {
 // OpenFileWriter opens a standalone raw Lance-file writer. A nil schema
 // creates a lazy writer that adopts the first batch schema. A nil storage
 // accessor selects native None.
-func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions, storage *StorageOptionsAccessor) (*FileWriter, error) {
+func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions, storage *StorageOptionsAccessor, session *Session) (*FileWriter, error) {
 	b, err := load()
 	if err != nil {
 		return nil, err
@@ -37,7 +37,7 @@ func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions
 	defer releaseSchema()
 
 	runtime.LockOSThread()
-	handle := b.fileWriterOpen(uri, rawSchema, rawOptions, storage.Handle(), 0)
+	handle := b.fileWriterOpen(uri, rawSchema, rawOptions, storage.Handle(), SessionHandle(session))
 	keep.keepAlive()
 	if handle == 0 {
 		nativeErr := b.takeError()
@@ -287,6 +287,43 @@ func (w *PackedBlobWriter) Write(data []byte) error {
 			return nativeErr
 		}
 		return fmt.Errorf("ffi: lance_packed_blob_writer_write_blob failed without setting an error")
+	}
+	runtime.UnlockOSThread()
+	return nil
+}
+
+// WriteBlobs appends one borrowed Arrow array of Binary, LargeBinary, or
+// FixedSizeBinary payloads. The Arrow bridge rejects BinaryView. Native code
+// consumes the exported array on every return, while payloads itself remains
+// owned by the caller.
+func (w *PackedBlobWriter) WriteBlobs(payloads arrow.Array) error {
+	if w == nil || w.handle == 0 {
+		return ErrClosed
+	}
+	if payloads == nil {
+		return fmt.Errorf("ffi: nil blob payload array")
+	}
+
+	var rawPayloads cdata.ArrowArray
+	if err := cdata.ExportArray(payloads, &rawPayloads); err != nil {
+		return fmt.Errorf("ffi: export blob payload array: %w", err)
+	}
+	var rawSchema cdata.ArrowSchema
+	if err := cdata.ExportField(arrow.Field{Name: "payloads", Type: payloads.DataType(), Nullable: true}, &rawSchema); err != nil {
+		cdata.ReleaseArray(&rawPayloads)
+		return fmt.Errorf("ffi: export blob payload field: %w", err)
+	}
+	defer cdata.ReleaseSchema(&rawSchema)
+
+	runtime.LockOSThread()
+	rc := w.b.packedBlobWriterWriteBlobs(w.handle, &rawPayloads, &rawSchema)
+	if rc != 0 {
+		nativeErr := w.b.takeError()
+		runtime.UnlockOSThread()
+		if nativeErr != nil {
+			return nativeErr
+		}
+		return fmt.Errorf("ffi: lance_packed_blob_writer_write_blobs failed without setting an error")
 	}
 	runtime.UnlockOSThread()
 	return nil

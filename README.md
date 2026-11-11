@@ -308,17 +308,41 @@ Contracts and limits:
   blocking call once it starts. No method claims that cancellation stopped I/O.
 - Storage options are static only. Pass `file.NewStorageOptions` to a
   standalone reader or writer, and close it after those open calls return.
-  Dynamic Go providers, shared `lance.Session` registry reuse, and remote
-  cloud acceptance are not part of this slice.
-- Blob support here is byte-level: write a blob payload and obtain its
-  descriptor array. The descriptor-list `write_blobs` helper is pending.
+  Dynamic Go providers and remote cloud acceptance remain outside the verified
+  local-file scope.
+- `PackedBlobWriter.WriteBlobs` borrows a Binary, LargeBinary, or
+  FixedSizeBinary Arrow array and appends its payloads in order. Null and empty
+  values remain distinct. Sliced arrays and repeated calls are supported; the
+  caller retains ownership of the array. `FinishArray` returns the prepared
+  blob descriptors. BinaryView is not supported by the Arrow bridge.
 - Raw v2.2 projection follows native lance-c behavior. The upstream projection
   issue (issue 167) is tracked there; this package does not work around it.
 
-Pending gate: real-library worker tests for file roundtrip, range/index reads,
-metadata, global buffers, local session I/O and packed/dedicated blob writers.
-Dynamic providers, shared root sessions, `write_blobs`, and remote object-store
-acceptance remain open.
+Pass an existing `*lance.Session` through `file.ReaderOptions.Session`,
+`file.WriterOptions.Session`, or `file.SessionOptions.Session` to share its
+registry and caches with datasets and raw files. `file.CacheSession` selects
+that cache for a standalone reader. Opened objects retain the native session;
+closing the root session prevents new opens but does not invalidate them.
+Methods on a `file.Session` use its existing session and reject per-call
+Session, StorageOptions, or Scheduler overrides.
+
+```go
+shared, err := lance.NewSession(64<<20, 64<<20)
+if err != nil {
+    log.Fatal(err)
+}
+defer shared.Close()
+r, err := file.Open(ctx, "data.lance", &file.ReaderOptions{
+    Session: shared,
+    CacheMode: file.CacheSession,
+})
+if err != nil {
+    log.Fatal(err)
+}
+defer r.Close()
+```
+
+Remote object-store acceptance and dynamic Go storage providers remain open.
 
 ## Blob columns
 
