@@ -522,18 +522,10 @@ func (a *RESTAdapter) Port() (uint16, error) {
 	if a == nil || a.handle == 0 {
 		return 0, ErrClosed
 	}
-	runtime.LockOSThread()
+	// This accessor does not set or clear the native thread-local error slot.
 	port := a.b.restAdapterPort(a.handle)
-	nativeErr := a.b.takeError()
-	runtime.UnlockOSThread()
 	if port == 0 {
-		if nativeErr != nil {
-			return 0, nativeErr
-		}
 		return 0, fmt.Errorf("ffi: lance_rest_adapter_port is zero because the adapter is not running")
-	}
-	if nativeErr != nil {
-		return 0, nativeErr
 	}
 	return port, nil
 }

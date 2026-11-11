@@ -759,6 +759,323 @@ func TestBlobWriters(t *testing.T) {
 	}
 }
 
+func TestStandaloneSessionSharing(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "shared.lance")
+	schema := testSchema()
+
+	session, err := lance.NewSession(64<<20, 16<<20)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+
+	writer, err := file.Create(ctx, path, schema, &file.WriterOptions{Session: session})
+	if err != nil {
+		t.Fatalf("create with session: %v", err)
+	}
+	batch := testBatch(t, schema)
+	defer batch.Release()
+	if err := writer.Write(ctx, batch); err != nil {
+		t.Fatalf("write with session: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		t.Fatalf("finish with session: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	reader, err := file.Open(ctx, path, &file.ReaderOptions{
+		Session:   session,
+		CacheMode: file.CacheSession,
+	})
+	if err != nil {
+		t.Fatalf("open with session cache: %v", err)
+	}
+	if got := collectIDs(t, mustReadAll(t, reader)); !reflect.DeepEqual(got, []int64{1, -1, 3, 4}) {
+		t.Fatalf("session reader ids = %v, want [1 -1 3 4]", got)
+	}
+
+	retained, err := file.Open(ctx, path, &file.ReaderOptions{
+		Session:   session,
+		CacheMode: file.CacheSession,
+	})
+	if err != nil {
+		t.Fatalf("open retained reader: %v", err)
+	}
+	retainedWriter, err := file.Create(ctx, filepath.Join(dir, "retained.lance"), schema, &file.WriterOptions{Session: session})
+	if err != nil {
+		t.Fatalf("create retained writer: %v", err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("close root session: %v", err)
+	}
+	if err := retainedWriter.Write(ctx, batch); err != nil {
+		t.Fatalf("write retained writer: %v", err)
+	}
+	summary, err := retainedWriter.Finish(ctx)
+	if err != nil {
+		t.Fatalf("finish retained writer: %v", err)
+	}
+	if summary.NumRows != 4 {
+		t.Fatalf("retained writer rows = %d, want 4", summary.NumRows)
+	}
+	if err := retainedWriter.Close(); err != nil {
+		t.Fatalf("close retained writer: %v", err)
+	}
+	if got := collectIDs(t, mustReadAll(t, retained)); !reflect.DeepEqual(got, []int64{1, -1, 3, 4}) {
+		t.Fatalf("retained reader ids = %v, want [1 -1 3 4]", got)
+	}
+	if err := retained.Close(); err != nil {
+		t.Fatalf("close retained reader: %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close reader: %v", err)
+	}
+
+	if _, err := file.Open(ctx, path, &file.ReaderOptions{Session: session}); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("open with closed session = %v, want ErrClosed", err)
+	}
+	if _, err := file.Create(ctx, filepath.Join(dir, "closed.lance"), schema, &file.WriterOptions{Session: session}); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("create with closed session = %v, want ErrClosed", err)
+	}
+	if _, err := file.OpenSession(ctx, dir, &file.SessionOptions{Session: session}); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("file session with closed session = %v, want ErrClosed", err)
+	}
+
+	if _, err := file.Open(ctx, path, &file.ReaderOptions{CacheMode: file.CacheSession}); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("standalone session cache without session = %v, want ErrInvalidArgument", err)
+	}
+}
+
+func TestFileSessionWithRootSession(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	base := t.TempDir()
+	schema := testSchema()
+
+	session, err := lance.NewSession(64<<20, 16<<20)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	fileSession, err := file.OpenSession(ctx, base, &file.SessionOptions{Session: session})
+	if err != nil {
+		t.Fatalf("open file session with root session: %v", err)
+	}
+	defer fileSession.Close()
+
+	writer, err := fileSession.OpenWriter(ctx, "data.lance", schema, nil)
+	if err != nil {
+		t.Fatalf("session open writer: %v", err)
+	}
+	batch := testBatch(t, schema)
+	defer batch.Release()
+	if err := writer.Write(ctx, batch); err != nil {
+		t.Fatalf("session write: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		t.Fatalf("session finish: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("session close writer: %v", err)
+	}
+
+	if _, err := fileSession.OpenReader(ctx, "data.lance", &file.ReaderOptions{Session: session}); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("session reader with explicit session = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := fileSession.OpenWriter(ctx, "other.lance", schema, &file.WriterOptions{Session: session}); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("session writer with explicit session = %v, want ErrInvalidArgument", err)
+	}
+
+	if err := session.Close(); err != nil {
+		t.Fatalf("close root session: %v", err)
+	}
+
+	reader, err := fileSession.OpenReader(ctx, "data.lance", &file.ReaderOptions{CacheMode: file.CacheSession})
+	if err != nil {
+		t.Fatalf("session open reader after root close: %v", err)
+	}
+	if got := collectIDs(t, mustReadAll(t, reader)); !reflect.DeepEqual(got, []int64{1, -1, 3, 4}) {
+		t.Fatalf("file session reader ids = %v, want [1 -1 3 4]", got)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close session reader: %v", err)
+	}
+}
+
+func TestRootSessionSharedByDatasetAndFile(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	dir := t.TempDir()
+	schema := testSchema()
+
+	session, err := lance.NewSession(64<<20, 16<<20)
+	if err != nil {
+		t.Fatalf("new session: %v", err)
+	}
+	defer session.Close()
+
+	batch := testBatch(t, schema)
+	defer batch.Release()
+	recordReader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
+	if err != nil {
+		t.Fatalf("new record reader: %v", err)
+	}
+	defer recordReader.Release()
+	datasetPath := filepath.Join(dir, "dataset.lance")
+	created, err := lance.Create(ctx, datasetPath, recordReader)
+	if err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := created.Close(); err != nil {
+		t.Fatalf("close created dataset: %v", err)
+	}
+	dataset, err := lance.Open(ctx, datasetPath, lance.WithSession(session))
+	if err != nil {
+		t.Fatalf("open dataset with session: %v", err)
+	}
+	defer dataset.Close()
+	if rows, err := dataset.CountRows(ctx); err != nil || rows != 4 {
+		t.Fatalf("dataset rows = %d, %v; want 4, nil", rows, err)
+	}
+
+	filePath := filepath.Join(dir, "file.lance")
+	writer, err := file.Create(ctx, filePath, schema, &file.WriterOptions{Session: session})
+	if err != nil {
+		t.Fatalf("create file with session: %v", err)
+	}
+	if err := writer.Write(ctx, batch); err != nil {
+		t.Fatalf("write file with session: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		t.Fatalf("finish file with session: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close file writer: %v", err)
+	}
+	reader, err := file.Open(ctx, filePath, &file.ReaderOptions{Session: session, CacheMode: file.CacheSession})
+	if err != nil {
+		t.Fatalf("open file with session: %v", err)
+	}
+	defer reader.Close()
+	if got := collectIDs(t, mustReadAll(t, reader)); !reflect.DeepEqual(got, []int64{1, -1, 3, 4}) {
+		t.Fatalf("file ids = %v, want [1 -1 3 4]", got)
+	}
+}
+
+func TestPackedBlobWriterWriteBlobs(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	session, err := file.OpenSession(ctx, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("open session: %v", err)
+	}
+	defer session.Close()
+
+	packed, err := session.OpenPackedBlobWriter(ctx, "packed.lance", 7)
+	if err != nil {
+		t.Fatalf("open packed blob writer: %v", err)
+	}
+	defer packed.Close()
+
+	builder := array.NewBinaryBuilder(memory.DefaultAllocator, arrow.BinaryTypes.Binary)
+	defer builder.Release()
+	builder.Append([]byte("alpha"))
+	builder.AppendNull()
+	builder.Append([]byte{})
+	builder.Append([]byte("delta"))
+	payloads := builder.NewBinaryArray()
+	defer payloads.Release()
+
+	first := array.NewSlice(payloads, 0, 2)
+	defer first.Release()
+	if err := packed.WriteBlobs(ctx, first); err != nil {
+		t.Fatalf("write first blob slice: %v", err)
+	}
+	second := array.NewSlice(payloads, 2, 4)
+	defer second.Release()
+	if err := packed.WriteBlobs(ctx, second); err != nil {
+		t.Fatalf("write second blob slice: %v", err)
+	}
+	if got := string(payloads.Value(0)); got != "alpha" {
+		t.Fatalf("payload array after write = %q, want alpha", got)
+	}
+
+	field, arr, err := packed.FinishArray(ctx, "payloads")
+	if err != nil {
+		t.Fatalf("finish blob array: %v", err)
+	}
+	defer arr.Release()
+	if field.Name != "payloads" {
+		t.Fatalf("descriptor field = %q, want payloads", field.Name)
+	}
+	descriptors, ok := arr.(*array.Struct)
+	if !ok {
+		t.Fatalf("descriptor array = %T, want *array.Struct", arr)
+	}
+	if descriptors.Len() != 4 {
+		t.Fatalf("descriptor rows = %d, want 4", descriptors.Len())
+	}
+	kind := descriptors.Field(0).(*array.Uint8)
+	blobSize := descriptors.Field(4).(*array.Uint64)
+	position := descriptors.Field(5).(*array.Uint64)
+
+	if !descriptors.IsNull(1) {
+		t.Fatal("null payload did not produce a null descriptor")
+	}
+	if kind.Value(0) != 1 || blobSize.Value(0) != 5 || position.Value(0) != 0 {
+		t.Fatalf("first descriptor = kind %d size %d position %d; want packed 5 at 0", kind.Value(0), blobSize.Value(0), position.Value(0))
+	}
+	if kind.Value(2) != 1 || blobSize.Value(2) != 0 {
+		t.Fatalf("empty payload descriptor = kind %d size %d; want zero-size packed", kind.Value(2), blobSize.Value(2))
+	}
+	if kind.Value(3) != 1 || blobSize.Value(3) != 5 || position.Value(3) != 5 {
+		t.Fatalf("last descriptor = kind %d size %d position %d; want packed 5 at 5", kind.Value(3), blobSize.Value(3), position.Value(3))
+	}
+}
+
+func TestPackedBlobWriterWriteBlobsRejectsUnsupported(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	session, err := file.OpenSession(ctx, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("open session: %v", err)
+	}
+	defer session.Close()
+
+	packed, err := session.OpenPackedBlobWriter(ctx, "packed.lance", 8)
+	if err != nil {
+		t.Fatalf("open packed blob writer: %v", err)
+	}
+	defer packed.Close()
+
+	ints := array.NewInt64Builder(memory.DefaultAllocator)
+	defer ints.Release()
+	ints.AppendValues([]int64{1, 2}, nil)
+	unsupported := ints.NewInt64Array()
+	defer unsupported.Release()
+	if err := packed.WriteBlobs(ctx, unsupported); err == nil {
+		t.Fatal("WriteBlobs accepted an int64 array")
+	}
+	if unsupported.Len() != 2 || unsupported.Value(1) != 2 {
+		t.Fatal("unsupported payload array was modified by the failed write")
+	}
+
+	if err := packed.Write(ctx, []byte("after-error")); err != nil {
+		t.Fatalf("write after rejected blob array: %v", err)
+	}
+	field, arr, err := packed.FinishArray(ctx, "payloads")
+	if err != nil {
+		t.Fatalf("finish after rejected blob array: %v", err)
+	}
+	defer arr.Release()
+	if field.Name != "payloads" || arr.Len() != 1 {
+		t.Fatalf("descriptor field = %q, rows = %d; want payloads, 1", field.Name, arr.Len())
+	}
+}
+
 func contains(values []string, want string) bool {
 	values = append([]string(nil), values...)
 	sort.Strings(values)

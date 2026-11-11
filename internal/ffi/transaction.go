@@ -182,14 +182,6 @@ func (o *Operation) UpdateBasesCount() (uint64, error) {
 	return o.count("lance_operation_update_bases_count", o.b.operationUpdateBasesCount)
 }
 
-// BasePath is one native base-path registration.
-type BasePath struct {
-	ID            uint32
-	Path          string
-	Name          *string
-	IsDatasetRoot bool
-}
-
 // BasePathAt copies one borrowed base-path view from an UpdateBases operation.
 func (o *Operation) BasePathAt(index uint64) (BasePath, error) {
 	handle := o.handle.Load()
@@ -926,34 +918,13 @@ func NewUpdateBasesOperation(bases []BasePath) (*Operation, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw := make([]basePath, len(bases))
-	bufs := make([][][]byte, len(bases))
-	for i, base := range bases {
-		if err := validateCString(base.Path); err != nil {
-			return nil, err
-		}
-		raw[i].ID = base.ID
-		raw[i].IsDatasetRoot = base.IsDatasetRoot
-		pathBuf := append([]byte(base.Path), 0)
-		bufs[i] = append(bufs[i], pathBuf)
-		raw[i].Path = uintptr(unsafe.Pointer(&pathBuf[0]))
-		if base.Name != nil {
-			if err := validateCString(*base.Name); err != nil {
-				return nil, err
-			}
-			nameBuf := append([]byte(*base.Name), 0)
-			bufs[i] = append(bufs[i], nameBuf)
-			raw[i].Name = uintptr(unsafe.Pointer(&nameBuf[0]))
-		}
-	}
-	var ptr *basePath
-	if len(raw) > 0 {
-		ptr = &raw[0]
+	list, err := newBasePathList(bases)
+	if err != nil {
+		return nil, err
 	}
 	runtime.LockOSThread()
-	out := b.operationUpdateBasesNew(ptr, uint64(len(raw)))
-	runtime.KeepAlive(raw)
-	runtime.KeepAlive(bufs)
+	out := b.operationUpdateBasesNew(list.ptr(), uint64(len(list.raw)))
+	list.keepAlive()
 	if out == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()
@@ -1524,21 +1495,7 @@ func cStringBuffer(value string) ([]byte, error) {
 	return buf, nil
 }
 
-// Base path raw structs.
-
-type basePath struct {
-	ID            uint32
-	Path          uintptr
-	Name          uintptr
-	IsDatasetRoot bool
-}
-
-type basePathView struct {
-	ID            uint32
-	Path          *byte
-	Name          *byte
-	IsDatasetRoot bool
-}
+// Transaction raw structs.
 
 type transactionOptions struct {
 	UUID                     uintptr

@@ -37,3 +37,17 @@ func TestNamespaceResultErrorIgnoresSuccess(t *testing.T) {
 		t.Fatalf("namespaceResultError(nil) = %v", err)
 	}
 }
+
+func TestRESTAdapterPortDoesNotReadStaleError(t *testing.T) {
+	adapter := &RESTAdapter{handle: 1, b: &bindings{
+		restAdapterPort: func(uintptr) uint16 { return 7341 },
+	}}
+	port, err := adapter.Port()
+	if err != nil || port != 7341 {
+		t.Fatalf("Port = %d, %v; want 7341, nil", port, err)
+	}
+	adapter.b.restAdapterPort = func(uintptr) uint16 { return 0 }
+	if _, err := adapter.Port(); err == nil {
+		t.Fatal("Port succeeded for a stopped adapter")
+	}
+}

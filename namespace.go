@@ -7,7 +7,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 
 	_ "github.com/lance-format/lance-go/internal/bundled"
-	"github.com/lance-format/lance-go/internal/ffi"
 	"github.com/lance-format/lance-go/internal/nshandle"
 	"github.com/lance-format/lance-go/namespace"
 )
@@ -59,14 +58,11 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 			return nil, invalidError("open namespace", "", "%v", err)
 		}
 	}
-	if config.session != nil && !config.session.acquire() {
-		return nil, closedError("open namespace", "")
+	session, releaseSession, err := acquireSession("open namespace", "", config.session)
+	if err != nil {
+		return nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 	lease, err := acquireNamespace(ns, "open namespace")
 	if err != nil {
 		return nil, err
@@ -75,10 +71,6 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	var session *ffi.Session
-	if config.session != nil {
-		session = config.session.native
 	}
 	native, err := lease.OpenDataset(tableID, config.storageOptions, config.version, session)
 	if err != nil {
@@ -119,14 +111,11 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 	if config.hasTransactionProperties {
 		return nil, invalidError("write namespace", "", "WithWriteTransactionProperties is not supported")
 	}
-	if config.session != nil && !config.session.acquire() {
-		return nil, closedError("write namespace", "")
+	session, releaseSession, err := acquireSession("write namespace", "", config.session)
+	if err != nil {
+		return nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 	lease, err := acquireNamespace(ns, "write namespace")
 	if err != nil {
 		return nil, err
@@ -135,10 +124,6 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	var session *ffi.Session
-	if config.session != nil {
-		session = config.session.native
 	}
 	native, err := lease.WriteDataset(tableID, reader, nativeWriteOptions(config), config.storageOptions, session, config.branch)
 	if err != nil {
@@ -173,14 +158,11 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 	if err != nil {
 		return nil, invalidError("commit namespace", "", "%v", err)
 	}
-	if config.session != nil && !config.session.acquire() {
-		return nil, closedError("commit namespace", "")
+	session, releaseSession, err := acquireSession("commit namespace", "", config.session)
+	if err != nil {
+		return nil, err
 	}
-	defer func() {
-		if config.session != nil {
-			config.session.release()
-		}
-	}()
+	defer releaseSession()
 	if !tx.res.acquire() {
 		return nil, closedError("commit namespace", "")
 	}
@@ -193,10 +175,6 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	var session *ffi.Session
-	if config.session != nil {
-		session = config.session.native
 	}
 	native, err := lease.CommitNamespaceURI(tableID, uri, tx.native, ffiCommitOptions(config), session)
 	if err != nil {
