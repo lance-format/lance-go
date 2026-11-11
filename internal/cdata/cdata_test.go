@@ -21,9 +21,29 @@ import (
 var (
 	fixtureReleaseCalls atomic.Int64
 	fixtureReleasePtr   atomic.Uintptr
-	fixtureRelease      = purego.NewCallback(func(ptr uintptr) {
+	fixtureRelease      = purego.NewCallback(func(src *ArrowArray) {
+		// The producer owns the live-to-released transition. A consumer must
+		// not mark the structure released before entering this callback.
+		if src.Release == 0 {
+			return
+		}
 		fixtureReleaseCalls.Add(1)
-		fixtureReleasePtr.Store(ptr)
+		fixtureReleasePtr.Store(uintptr(unsafe.Pointer(src)))
+		src.Release = 0
+	})
+	fixtureSchemaCalls   atomic.Int64
+	fixtureSchemaRelease = purego.NewCallback(func(src *ArrowSchema) {
+		if src.Release != 0 {
+			fixtureSchemaCalls.Add(1)
+			src.Release = 0
+		}
+	})
+	fixtureStreamCalls   atomic.Int64
+	fixtureStreamRelease = purego.NewCallback(func(src *ArrowArrayStream) {
+		if src.Release != 0 {
+			fixtureStreamCalls.Add(1)
+			src.Release = 0
+		}
 	})
 )
 
@@ -920,6 +940,21 @@ func TestImportRecordBatchInvalidSchemaConsumesSource(t *testing.T) {
 }
 
 func TestPublicReleaseHelpers(t *testing.T) {
+	fixtureSchemaCalls.Store(0)
+	foreignSchema := ArrowSchema{Release: fixtureSchemaRelease}
+	ReleaseSchema(&foreignSchema)
+	ReleaseSchema(&foreignSchema)
+	if got := fixtureSchemaCalls.Load(); got != 1 {
+		t.Errorf("foreign schema release calls = %d, want 1", got)
+	}
+	fixtureStreamCalls.Store(0)
+	foreignStream := ArrowArrayStream{Release: fixtureStreamRelease}
+	ReleaseStream(&foreignStream)
+	ReleaseStream(&foreignStream)
+	if got := fixtureStreamCalls.Load(); got != 1 {
+		t.Errorf("foreign stream release calls = %d, want 1", got)
+	}
+
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int32}}, nil)
 
