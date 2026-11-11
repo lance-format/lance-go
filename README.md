@@ -261,6 +261,97 @@ while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
 
+## Raw `.lance` files
+
+The `file` package reads and writes raw Lance files without a dataset or
+manifest. Importing it also initializes the default native bundle on
+`linux/amd64`; `CGO_ENABLED=0` is sufficient. Dataset APIs remain in the root
+`lance` package.
+
+```go
+import (
+    "github.com/lance-format/lance-go/file"
+)
+
+w, err := file.Create(ctx, "data.lance", schema, nil)
+if err != nil {
+    log.Fatal(err)
+}
+if err := w.Write(ctx, batch); err != nil {
+    log.Fatal(err)
+}
+summary, err := w.Finish(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+if err := w.Close(); err != nil {
+    log.Fatal(err)
+}
+
+r, err := file.Open(ctx, "data.lance", nil)
+if err != nil {
+    log.Fatal(err)
+}
+metadata, err := r.Metadata()
+if err != nil {
+    log.Fatal(err)
+}
+info, err := metadata.Info()
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(info.NumRows, info.NumColumns)
+
+rr, err := r.ReadAll(ctx, file.ReadOptions{})
+if err != nil {
+    log.Fatal(err)
+}
+defer rr.Release()
+for rr.Next() {
+    batch := rr.RecordBatch()
+    _ = batch // borrowed until the next Next call
+}
+if err := rr.Err(); err != nil {
+    log.Fatal(err)
+}
+```
+
+`Reader` reads all rows, a row range, or explicit row indices; each returns an
+`array.RecordReader`. Batches are borrowed until the next `Next` call; call
+`Retain` before keeping one. `Reader.ReadGlobalBuffer(0)` returns the serialized
+schema and user buffers start at index 1. `Writer` accepts Arrow batches and
+can add schema metadata and global buffers. `Session` provides local
+`contains`, `list`, `list_with_delimiter`, byte-range read, upload, download,
+delete, and scheduler/object-store statistics, plus packed and dedicated blob
+writers that accept raw bytes.
+
+Contracts and limits:
+
+- `Reader`, `Writer`, `Session`, and blob writers are safe for concurrent use.
+  `Close` waits for in-flight calls and is idempotent. Record readers, metadata
+  and statistics snapshots, and blob writers already opened stay usable after
+  their reader or session is closed.
+- Metadata and statistics snapshots copy native-owned strings and bytes.
+  Close each snapshot when finished. `Reader.NumRows` and `Reader.Schema` are
+  convenience calls that create short-lived native snapshots.
+- Option pointers distinguish an unset value from an explicit zero. Batches
+  passed to `Writer.Write` are borrowed for the duration of the call.
+- Contexts are checked before a native call; they cannot interrupt a native
+  blocking call once it starts. No method claims that cancellation stopped I/O.
+- Storage options are static only. Pass `file.NewStorageOptions` to a
+  standalone reader or writer, and close it after those open calls return.
+  Dynamic Go providers, shared `lance.Session` registry reuse, and remote
+  cloud acceptance are not part of this slice.
+- Blob support here is byte-level: write a blob payload and obtain its
+  descriptor array. The descriptor-list `write_blobs` helper is pending.
+- Raw v2.2 projection follows native lance-c behavior. The upstream projection
+  issue (issue 167) is tracked there; this package does not work around it.
+
+Pending gate: real-library worker tests for file roundtrip, range/index reads,
+metadata, global buffers, local session I/O and packed/dedicated blob writers.
+Dynamic providers, shared root sessions, `write_blobs`, and remote object-store
+acceptance remain open.
+
 ## Blob columns
 
 `BlobField` and `BlobFieldWithOptions` return the native `lance.blob.v2` field.
@@ -400,6 +491,138 @@ and query options accept the same metric values.
 `WithRowIDAllowlist` and `WithRowIDBlocklist` restrict a scan by stable
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
 no IDs selects no rows. The IDs are not positions within a batch or fragment.
+
+## Distributed index segments
+
+Index shards can be built independently and published together.
+`TrainIVFModel` and `TrainPQModel` return a `*Model` that carries the native
+model provenance, so one trained model can be reused by many builders;
+`BuildRQModel` returns the portable IVF-RQ rotation artifact. Pass those models
+through `index.VectorOptions` and restrict `index.SegmentScope` to the fragments
+of one shard.
+
+`NewVectorSegmentBuilder` and `NewScalarSegmentBuilder` create one uncommitted
+segment. A builder is single-use, including when execution fails, owns a dataset
+snapshot, and must be closed. `Execute` writes the segment's index files to the
+dataset storage and returns transportable metadata describing them; it never
+publishes a version.
+
+`ParseIndexSegmentMetadata` inspects or rewrites the coverage of one segment.
+`MergeIndexSegments` merges uncommitted segment metadata, and
+`MergeIndexMetadata` merges an index's root artifact without publishing a
+version; only inverted indexes support that root merge at this native revision.
+`CommitIndexSegments` publishes a complete set in one version and returns a new
+dataset snapshot, leaving the receiver unchanged. Native validation owns
+compatibility, coverage and replacement rules, so an invalid set, a mismatched
+keyed column, or mixed index types fail without changing a version.
+
+`SegmentBuilder.SetProgress` and `index.MergeMetadataOptions.Progress` observe
+advisory build progress. Observers run on native worker threads, may be called
+concurrently, must not block or call back into Lance, and are recovered from
+panics. Stage names are diagnostic and may change between native releases.
+
+## Index optimization
+
+`OptimizeIndices` runs native single-process index optimization and returns a
+new `Dataset` at the committed version. The receiver keeps its version, rows
+and open scanners. A clean dataset is a native no-op and keeps the version
+unchanged. A nil `*compaction.OptimizeOptions` selects native defaults; a
+non-nil value starts from those defaults and applies only the fields that are
+set.
+
+```go
+taskRows := uint64(1 << 20)
+segmentRows := uint64(1 << 20)
+optimized, err := ds.OptimizeIndices(ctx, &compaction.OptimizeOptions{
+    IndexNames:        compaction.Some([]string{"vector_idx"}),
+    MaxRowsPerTask:    compaction.Some(taskRows),
+    MaxRowsPerSegment: compaction.Some(segmentRows),
+})
+if err != nil {
+    return err
+}
+defer optimized.Close()
+```
+
+For distributed work, `PlanOptimizeIndices` captures an immutable plan without
+publishing a version. Plan, task, merge and result snapshots expose native JSON
+with `JSON`; `OptimizeIndicesPlanFromJSON`, `OptimizeIndexTaskFromJSON`,
+`OptimizeIndexMergeFromJSON` and `IndexSegmentResultFromJSON` restore them.
+`OptimizeIndexTask.Execute` writes one uncommitted segment, and
+`OptimizeIndexMerge.Execute` combines the task results of one merge group.
+`CommitOptimizeIndices` publishes the result segments in one version and returns
+a new dataset.
+
+When a plan contains merges, commit the merge outputs rather than the raw task
+results: task outputs in a split group are inputs to that group's merge and do
+not by themselves replace the old segments. Plans expose `TaskCount`/`Task` and
+`MergeCount`/`Merge`. Tasks expose their fragment IDs, reference metadata and
+old segments; merges expose their old segments and replaced segment UUIDs;
+results expose the produced `Segment` metadata.
+
+```go
+plan, err := ds.PlanOptimizeIndices(ctx, &compaction.OptimizeOptions{
+    IndexNames: compaction.Some([]string{"vector_idx"}),
+})
+if err != nil {
+    return err
+}
+var taskResults []*lance.IndexSegmentResult
+for i := uint64(0); i < plan.TaskCount(); i++ {
+    task, err := plan.Task(i)
+    if err != nil {
+        return err
+    }
+    result, err := task.Execute(ctx, ds)
+    if err != nil {
+        return err
+    }
+    if result != nil {
+        taskResults = append(taskResults, result)
+    }
+}
+
+results := taskResults
+if plan.MergeCount() > 0 {
+    results = nil
+    for i := uint64(0); i < plan.MergeCount(); i++ {
+        merge, err := plan.Merge(i)
+        if err != nil {
+            return err
+        }
+        var inputs []*lance.IndexSegmentResult
+        for _, result := range taskResults {
+            if result.Group() == merge.Group() {
+                inputs = append(inputs, result)
+            }
+        }
+        result, err := merge.Execute(ctx, ds, inputs)
+        if err != nil {
+            return err
+        }
+        if result != nil {
+            results = append(results, result)
+        }
+    }
+}
+
+committed, err := ds.CommitOptimizeIndices(ctx, results,
+    &compaction.OptimizeOptions{
+        TransactionProperties: map[string]string{"job": "reindex-2026-11"},
+    })
+if err != nil {
+    return err
+}
+defer committed.Close()
+```
+
+Native JSON is authoritative across a transport boundary. Task JSON carries
+the dataset version and the merge options that execution re-applies;
+`IndexNames` and the row bounds only affect planning. `TransactionProperties`
+apply only to the commit, so pass them again to `CommitOptimizeIndices` after a
+JSON round trip. Native validates plan ID, merge group, read version and
+replacement ownership. Planning, execution and merging write index files but
+publish nothing; only the commit changes the dataset version.
 
 ## Versions, tags and branches
 

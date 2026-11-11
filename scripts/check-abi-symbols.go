@@ -475,6 +475,8 @@ func cClass(typ string) string {
 	switch {
 	case strings.Contains(typ, "("):
 		return "pointer" // function pointer
+	case strings.Contains(typ, "["):
+		return "pointer" // an array parameter decays to a pointer
 	case strings.Contains(typ, "*"):
 		return "pointer"
 	}
@@ -484,7 +486,7 @@ func cClass(typ string) string {
 		return "void"
 	case "int", "int32_t", "LanceErrorCode", "LancePollStatus", "LanceScalarIndexType", "LanceMetadataUpdateMode", "LanceDataType", "LanceMetricType", "LanceApproxMode", "LanceBlobHandling", "LanceMaterializationStyle":
 		return "int32"
-	case "LanceWaker", "LanceScanStatisticsCallback":
+	case "LanceWaker", "LanceScanStatisticsCallback", "LanceIndexBuildProgressCallback":
 		return "pointer"
 	case "uint64_t", "size_t":
 		return "uint64"
