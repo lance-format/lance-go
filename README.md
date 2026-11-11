@@ -187,6 +187,41 @@ fragment; build a Delete operation from it and commit the transaction to
 publish the deletion. Detached fragments cloned from an Append operation expose
 metadata and data-file information but reject logical schema and data access.
 
+`Fragment.AddColumnsSQL`, `AddColumnsNulls`, `AddColumnsStream` and
+`AddColumnsBatchUDF` stage new columns; `MergeColumns` joins source columns;
+`UpdateColumns` stages row updates; `WriteColumns` and
+`WriteColumnWithVersion` stage replacement data files; and `DeleteRows` stages
+physical deletion offsets. These methods clone native fragment metadata and do
+not publish a version. Add-columns and merge return detached fragment metadata
+plus a complete `NativeSchema` with persistent field IDs. `UpdateColumns`
+returns an owned result carrying the detached fragment, modified field IDs and
+matched physical offsets. `WriteColumns` returns a `DataReplacementGroup`;
+`DeleteRows` returns a scannable fragment unless every physical row was deleted.
+
+Publish staged results explicitly. Use `NewMergeOperation` with the complete
+final fragment list and complete schema for add-columns and merge results, and
+`NewUpdateOperation` with the updated fragment, modified field IDs and optional
+`UpdatedFragmentOffsets` for update results. Update operations select native
+RewriteColumns mode because `UpdateColumns` stages a horizontal column rewrite.
+Pass `nil` offsets to represent native None; pass
+`NewUpdatedFragmentOffsets(nil)` for native Some(empty).
+`NewDataReplacementOperation` publishes replacement files, and
+`NewDeleteOperation` publishes partial or full physical deletion. The
+corresponding native Update options for removed or new fragments, compacted
+SSTables, preservation bitmaps, caller-selected update mode and inserted-row
+filters are not exposed as options; staging pins the native mode required by
+`UpdateColumns` and produces none of the other fields.
+
+Arrow streams retain one reader reference. Native consumes that transferred
+stream exactly once after ownership transfer, while the caller keeps and
+releases its original reader; do not inspect or reuse the stream after the
+call. A rejected or early-failing call may return before exhausting the stream.
+`FragmentFileVersionV1` is forwarded to native, which rejects V1 replacement
+writes; use `FragmentFileVersionV2_2` or `FragmentFileVersionV2_3` for
+supported files. Closing a staged fragment, schema, group or result does not
+publish it, and closing the source dataset or scanner does not invalidate an
+already-staged detached result.
+
 `DataFile` parses an existing Lance data file; `Dataset.CreateDataFile` does
 not write one. A `DataReplacementGroup` pairs a fragment ID with a parsed
 replacement file, and `NewDataReplacementOperation` builds the corresponding

@@ -379,29 +379,44 @@ type bindings struct {
 	schemaProject      func(schema uintptr, columns []uintptr, count uint64, out *uintptr) int32
 	schemaFieldID      func(schema uintptr, column string, out *int32) int32
 
-	datasetFragmentCount     func(dataset uintptr) uint64
-	datasetFragmentIDs       func(dataset uintptr, outIDs []uint64) int32
-	datasetOpenFragment      func(dataset uintptr, fragmentID uint64) uintptr
-	fragmentClose            func(fragment uintptr)
-	fragmentID               func(fragment uintptr) uint64
-	fragmentDataFileCount    func(fragment uintptr) uint64
-	fragmentIsBound          func(fragment uintptr, out *bool) int32
-	fragmentDataFileAt       func(fragment uintptr, index uint64, out *uintptr) int32
-	fragmentDataFileForField func(fragment uintptr, fieldID int32, out *uintptr) int32
-	fragmentMetadataJSON     func(fragment uintptr) *byte
-	fragmentSchema           func(fragment uintptr, out *cdata.ArrowSchema) int32
-	fragmentSchemaClone      func(fragment uintptr, out *uintptr) int32
-	fragmentPhysicalRows     func(fragment uintptr, out *uint64) int32
-	fragmentDeletedRows      func(fragment uintptr, out *uint64) int32
-	fragmentLogicalRows      func(fragment uintptr, out *uint64) int32
-	fragmentScan             func(fragment uintptr) uintptr
-	fragmentTake             func(fragment uintptr, indices []uint32, count uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
-	fragmentCountRows        func(fragment uintptr, filter uintptr, out *uint64) int32
-	fragmentDelete           func(fragment uintptr, predicate string, out *uintptr) int32
-	fragmentCreate           func(uri string, fragmentID uint64, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragment *uintptr) int32
-	fragmentCreateMany       func(uri string, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragments **uintptr, outCount *uint64) int32
-	fragmentArrayFree        func(fragments *uintptr, count uint64)
-	fragmentCreateFromFile   func(dataset uintptr, filename string, fragmentID uint64, physicalRows *uint64, outFragment *uintptr) int32
+	datasetFragmentCount                           func(dataset uintptr) uint64
+	datasetFragmentIDs                             func(dataset uintptr, outIDs []uint64) int32
+	datasetOpenFragment                            func(dataset uintptr, fragmentID uint64) uintptr
+	fragmentClose                                  func(fragment uintptr)
+	fragmentID                                     func(fragment uintptr) uint64
+	fragmentDataFileCount                          func(fragment uintptr) uint64
+	fragmentIsBound                                func(fragment uintptr, out *bool) int32
+	fragmentDataFileAt                             func(fragment uintptr, index uint64, out *uintptr) int32
+	fragmentDataFileForField                       func(fragment uintptr, fieldID int32, out *uintptr) int32
+	fragmentMetadataJSON                           func(fragment uintptr) *byte
+	fragmentSchema                                 func(fragment uintptr, out *cdata.ArrowSchema) int32
+	fragmentSchemaClone                            func(fragment uintptr, out *uintptr) int32
+	fragmentPhysicalRows                           func(fragment uintptr, out *uint64) int32
+	fragmentDeletedRows                            func(fragment uintptr, out *uint64) int32
+	fragmentLogicalRows                            func(fragment uintptr, out *uint64) int32
+	fragmentScan                                   func(fragment uintptr) uintptr
+	fragmentTake                                   func(fragment uintptr, indices []uint32, count uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
+	fragmentCountRows                              func(fragment uintptr, filter uintptr, out *uint64) int32
+	fragmentDelete                                 func(fragment uintptr, predicate string, out *uintptr) int32
+	fragmentAddColumnsSQL                          func(fragment uintptr, columns *sqlColumn, count uint64, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsNulls                        func(fragment uintptr, schema *cdata.ArrowSchema, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsStream                       func(fragment uintptr, stream *cdata.ArrowArrayStream, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentAddColumnsBatchUDF                     func(fragment uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32, outFragment, outSchema *uintptr) int32
+	fragmentMergeColumns                           func(fragment uintptr, stream *cdata.ArrowArrayStream, leftOn, rightOn string, outFragment, outSchema *uintptr) int32
+	fragmentUpdateColumns                          func(fragment uintptr, stream *cdata.ArrowArrayStream, leftOn, rightOn string, outResult *uintptr) int32
+	fragmentWriteColumns                           func(fragment uintptr, schema uintptr, stream *cdata.ArrowArrayStream, outGroup *uintptr) int32
+	fragmentWriteColumnWithVersion                 func(fragment uintptr, schema uintptr, stream *cdata.ArrowArrayStream, fileVersion int32, outGroup *uintptr) int32
+	fragmentDeleteRows                             func(fragment uintptr, offsets *uint32, count uint64, outFragment *uintptr) int32
+	fragmentUpdateColumnsResultClose               func(result uintptr)
+	fragmentUpdateColumnsResultFragment            func(result uintptr, out *uintptr) int32
+	fragmentUpdateColumnsResultFieldsModifiedCount func(result uintptr, out *uint64) int32
+	fragmentUpdateColumnsResultFieldsModifiedAt    func(result uintptr, index uint64, out *uint32) int32
+	fragmentUpdateColumnsResultMatchedOffsetCount  func(result uintptr, out *uint64) int32
+	fragmentUpdateColumnsResultMatchedOffsetAt     func(result uintptr, index uint64, out *uint32) int32
+	fragmentCreate                                 func(uri string, fragmentID uint64, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragment *uintptr) int32
+	fragmentCreateMany                             func(uri string, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragments **uintptr, outCount *uint64) int32
+	fragmentArrayFree                              func(fragments *uintptr, count uint64)
+	fragmentCreateFromFile                         func(dataset uintptr, filename string, fragmentID uint64, physicalRows *uint64, outFragment *uintptr) int32
 
 	datasetCreateDataFile    func(dataset uintptr, path string, baseID *uint32, out *uintptr) int32
 	dataFileClose            func(file uintptr)
@@ -453,6 +468,22 @@ type bindings struct {
 	operationDeleteDeletedFragmentCount            func(operation uintptr, out *uint64) int32
 	operationDeleteDeletedFragmentIDAt             func(operation uintptr, index uint64, out *uint64) int32
 	operationDeletePredicate                       func(operation uintptr) *byte
+	operationMergeFragmentCount                    func(operation uintptr, out *uint64) int32
+	operationMergeFragmentAt                       func(operation uintptr, index uint64, out *uintptr) int32
+	operationUpdateUpdatedFragmentCount            func(operation uintptr, out *uint64) int32
+	operationUpdateUpdatedFragmentAt               func(operation uintptr, index uint64, out *uintptr) int32
+	operationUpdateFieldsModifiedCount             func(operation uintptr, out *uint64) int32
+	operationUpdateFieldsModifiedAt                func(operation uintptr, index uint64, out *uint32) int32
+	operationUpdateUpdatedFragmentOffsets          func(operation uintptr, outPresent *bool, out *uintptr) int32
+	operationMergeNew                              func(schema uintptr, fragments *uintptr, count uint64, preservesNullability bool) uintptr
+	operationUpdateNew                             func(options *updateOperationOptions) uintptr
+	updatedFragmentOffsetsNew                      func(entries *updatedFragmentOffsetsView, count uint64) uintptr
+	updatedFragmentOffsetsClone                    func(offsets uintptr) uintptr
+	updatedFragmentOffsetsClose                    func(offsets uintptr)
+	updatedFragmentOffsetsCount                    func(offsets uintptr, out *uint64) int32
+	updatedFragmentOffsetsFragmentIDAt             func(offsets uintptr, index uint64, out *uint64) int32
+	updatedFragmentOffsetsOffsetCountAt            func(offsets uintptr, index uint64, out *uint64) int32
+	updatedFragmentOffsetsOffsetAt                 func(offsets uintptr, index, position uint64, out *uint32) int32
 	operationDataReplacementCount                  func(operation uintptr, out *uint64) int32
 	operationDataReplacementAt                     func(operation uintptr, index uint64, out *uintptr) int32
 	operationSchemaClone                           func(operation uintptr, out *uintptr) int32
@@ -868,6 +899,21 @@ func (b *bindings) symbols() []symbol {
 		{"lance_fragment_take", &b.fragmentTake},
 		{"lance_fragment_count_rows", &b.fragmentCountRows},
 		{"lance_fragment_delete", &b.fragmentDelete},
+		{"lance_fragment_add_columns_sql", &b.fragmentAddColumnsSQL},
+		{"lance_fragment_add_columns_nulls", &b.fragmentAddColumnsNulls},
+		{"lance_fragment_add_columns_stream", &b.fragmentAddColumnsStream},
+		{"lance_fragment_add_columns_batch_udf", &b.fragmentAddColumnsBatchUDF},
+		{"lance_fragment_merge_columns", &b.fragmentMergeColumns},
+		{"lance_fragment_update_columns", &b.fragmentUpdateColumns},
+		{"lance_fragment_write_columns", &b.fragmentWriteColumns},
+		{"lance_fragment_write_column_with_version", &b.fragmentWriteColumnWithVersion},
+		{"lance_fragment_delete_rows", &b.fragmentDeleteRows},
+		{"lance_fragment_update_columns_result_close", &b.fragmentUpdateColumnsResultClose},
+		{"lance_fragment_update_columns_result_fragment", &b.fragmentUpdateColumnsResultFragment},
+		{"lance_fragment_update_columns_result_fields_modified_count", &b.fragmentUpdateColumnsResultFieldsModifiedCount},
+		{"lance_fragment_update_columns_result_fields_modified_at", &b.fragmentUpdateColumnsResultFieldsModifiedAt},
+		{"lance_fragment_update_columns_result_matched_offset_count", &b.fragmentUpdateColumnsResultMatchedOffsetCount},
+		{"lance_fragment_update_columns_result_matched_offset_at", &b.fragmentUpdateColumnsResultMatchedOffsetAt},
 		{"lance_fragment_create", &b.fragmentCreate},
 		{"lance_fragment_create_many", &b.fragmentCreateMany},
 		{"lance_fragment_array_free", &b.fragmentArrayFree},
@@ -923,6 +969,22 @@ func (b *bindings) symbols() []symbol {
 		{"lance_operation_delete_deleted_fragment_count", &b.operationDeleteDeletedFragmentCount},
 		{"lance_operation_delete_deleted_fragment_id_at", &b.operationDeleteDeletedFragmentIDAt},
 		{"lance_operation_delete_predicate", &b.operationDeletePredicate},
+		{"lance_operation_merge_fragment_count", &b.operationMergeFragmentCount},
+		{"lance_operation_merge_fragment_at", &b.operationMergeFragmentAt},
+		{"lance_operation_update_updated_fragment_count", &b.operationUpdateUpdatedFragmentCount},
+		{"lance_operation_update_updated_fragment_at", &b.operationUpdateUpdatedFragmentAt},
+		{"lance_operation_update_fields_modified_count", &b.operationUpdateFieldsModifiedCount},
+		{"lance_operation_update_fields_modified_at", &b.operationUpdateFieldsModifiedAt},
+		{"lance_operation_update_updated_fragment_offsets", &b.operationUpdateUpdatedFragmentOffsets},
+		{"lance_operation_merge_new", &b.operationMergeNew},
+		{"lance_operation_update_new", &b.operationUpdateNew},
+		{"lance_updated_fragment_offsets_new", &b.updatedFragmentOffsetsNew},
+		{"lance_updated_fragment_offsets_clone", &b.updatedFragmentOffsetsClone},
+		{"lance_updated_fragment_offsets_close", &b.updatedFragmentOffsetsClose},
+		{"lance_updated_fragment_offsets_count", &b.updatedFragmentOffsetsCount},
+		{"lance_updated_fragment_offsets_fragment_id_at", &b.updatedFragmentOffsetsFragmentIDAt},
+		{"lance_updated_fragment_offsets_offset_count_at", &b.updatedFragmentOffsetsOffsetCountAt},
+		{"lance_updated_fragment_offsets_offset_at", &b.updatedFragmentOffsetsOffsetAt},
 		{"lance_operation_data_replacement_count", &b.operationDataReplacementCount},
 		{"lance_operation_data_replacement_at", &b.operationDataReplacementAt},
 		{"lance_operation_schema_clone", &b.operationSchemaClone},
