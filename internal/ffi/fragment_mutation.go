@@ -53,10 +53,10 @@ func NewUpdatedFragmentOffsets(entries []FragmentOffsets) (*UpdatedFragmentOffse
 		ptr = &views[0]
 	}
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	native := b.updatedFragmentOffsetsNew(ptr, uint64(len(views)))
 	runtime.KeepAlive(views)
 	runtime.KeepAlive(entries)
-	runtime.UnlockOSThread()
 	if native == 0 {
 		return nil, mutationError(b, "construct updated fragment offsets")
 	}
@@ -75,8 +75,8 @@ func (o *UpdatedFragmentOffsets) Clone() (*UpdatedFragmentOffsets, error) {
 		return nil, fmt.Errorf("ffi: clone closed updated fragment offsets")
 	}
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	native := o.b.updatedFragmentOffsetsClone(handleValue)
-	runtime.UnlockOSThread()
 	if native == 0 {
 		return nil, mutationError(o.b, "clone updated fragment offsets")
 	}
@@ -95,8 +95,8 @@ func (o *UpdatedFragmentOffsets) Close() {
 		return
 	}
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	o.b.updatedFragmentOffsetsClose(handleValue)
-	runtime.UnlockOSThread()
 }
 
 // Count returns the number of fragment entries.
@@ -110,8 +110,8 @@ func (o *UpdatedFragmentOffsets) Count() (uint64, error) {
 	}
 	var count uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.updatedFragmentOffsetsCount(handleValue, &count)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return 0, mutationError(o.b, "read updated fragment offsets count")
 	}
@@ -129,8 +129,8 @@ func (o *UpdatedFragmentOffsets) FragmentIDAt(index uint64) (uint64, error) {
 	}
 	var fragmentID uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.updatedFragmentOffsetsFragmentIDAt(handleValue, index, &fragmentID)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return 0, mutationError(o.b, "read updated fragment offsets fragment id")
 	}
@@ -148,8 +148,8 @@ func (o *UpdatedFragmentOffsets) OffsetAt(index, position uint64) (uint32, error
 	}
 	var offset uint32
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.updatedFragmentOffsetsOffsetAt(handleValue, index, position, &offset)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return 0, mutationError(o.b, "read updated fragment offsets offset")
 	}
@@ -167,8 +167,8 @@ func (o *UpdatedFragmentOffsets) OffsetsAt(index uint64) ([]uint32, error) {
 	}
 	var count uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.updatedFragmentOffsetsOffsetCountAt(handleValue, index, &count)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(o.b, "read updated fragment offsets offset count")
 	}
@@ -199,8 +199,8 @@ func (r *UpdateColumnsResult) Close() {
 		return
 	}
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	r.b.fragmentUpdateColumnsResultClose(handleValue)
-	runtime.UnlockOSThread()
 }
 
 // Fragment clones the detached updated fragment metadata.
@@ -214,8 +214,8 @@ func (r *UpdateColumnsResult) Fragment() (*Fragment, error) {
 	}
 	var result uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := r.b.fragmentUpdateColumnsResultFragment(handleValue, &result)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(r.b, "read update columns fragment")
 	}
@@ -236,17 +236,15 @@ func (r *UpdateColumnsResult) FieldsModified() ([]uint32, error) {
 	}
 	var count uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := r.b.fragmentUpdateColumnsResultFieldsModifiedCount(handleValue, &count)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(r.b, "read update columns fields modified count")
 	}
 	fields := make([]uint32, 0, count)
 	for index := uint64(0); index < count; index++ {
 		var fieldID uint32
-		runtime.LockOSThread()
 		rc = r.b.fragmentUpdateColumnsResultFieldsModifiedAt(handleValue, index, &fieldID)
-		runtime.UnlockOSThread()
 		if rc != 0 {
 			return nil, mutationError(r.b, "read update columns modified field id")
 		}
@@ -266,17 +264,15 @@ func (r *UpdateColumnsResult) MatchedOffsets() ([]uint32, error) {
 	}
 	var count uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := r.b.fragmentUpdateColumnsResultMatchedOffsetCount(handleValue, &count)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(r.b, "read update columns matched offset count")
 	}
 	offsets := make([]uint32, 0, count)
 	for index := uint64(0); index < count; index++ {
 		var offset uint32
-		runtime.LockOSThread()
 		rc = r.b.fragmentUpdateColumnsResultMatchedOffsetAt(handleValue, index, &offset)
-		runtime.UnlockOSThread()
 		if rc != 0 {
 			return nil, mutationError(r.b, "read update columns matched offset")
 		}
@@ -321,14 +317,15 @@ func (f *Fragment) AddColumnsSQL(columns []SQLColumn, batchSize *uint32) (*Fragm
 	}
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentAddColumnsSQL(handleValue, columnsPtr, uint64(len(native)), batchSize, &outFragment, &outSchema)
 	runtime.KeepAlive(nameList)
 	runtime.KeepAlive(expressionList)
 	runtime.KeepAlive(native)
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment add columns sql")
 		closeMutationOutputs(f.b, outFragment, outSchema)
-		return nil, nil, mutationError(f.b, "fragment add columns sql")
+		return nil, nil, err
 	}
 	return adoptFragmentSchema(f.b, outFragment, outSchema)
 }
@@ -349,11 +346,12 @@ func (f *Fragment) AddColumnsNulls(columns *arrow.Schema) (*Fragment, *Schema, e
 	defer cdata.ReleaseSchema(&exported)
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentAddColumnsNulls(handleValue, &exported, &outFragment, &outSchema)
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment add columns nulls")
 		closeMutationOutputs(f.b, outFragment, outSchema)
-		return nil, nil, mutationError(f.b, "fragment add columns nulls")
+		return nil, nil, err
 	}
 	return adoptFragmentSchema(f.b, outFragment, outSchema)
 }
@@ -380,12 +378,13 @@ func (f *Fragment) AddColumnsStream(reader array.RecordReader, batchSize *uint32
 	}()
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentAddColumnsStream(handleValue, &stream, batchSize, &outFragment, &outSchema)
 	consumed = true
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment add columns stream")
 		closeMutationOutputs(f.b, outFragment, outSchema)
-		return nil, nil, mutationError(f.b, "fragment add columns stream")
+		return nil, nil, err
 	}
 	return adoptFragmentSchema(f.b, outFragment, outSchema)
 }
@@ -427,15 +426,16 @@ func (f *Fragment) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCo
 	}
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentAddColumnsBatchUDF(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
 	runtime.KeepAlive(adapter)
 	runtime.KeepAlive(native)
 	runtime.KeepAlive(readPtrs)
 	runtime.KeepAlive(readList)
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment add columns batch udf")
 		closeMutationOutputs(f.b, outFragment, outSchema)
-		return nil, nil, mutationError(f.b, "fragment add columns batch udf")
+		return nil, nil, err
 	}
 	return adoptFragmentSchema(f.b, outFragment, outSchema)
 }
@@ -467,12 +467,13 @@ func (f *Fragment) MergeColumns(reader array.RecordReader, leftOn, rightOn strin
 	}()
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentMergeColumns(handleValue, &stream, leftOn, rightOn, &outFragment, &outSchema)
 	consumed = true
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment merge columns")
 		closeMutationOutputs(f.b, outFragment, outSchema)
-		return nil, nil, mutationError(f.b, "fragment merge columns")
+		return nil, nil, err
 	}
 	return adoptFragmentSchema(f.b, outFragment, outSchema)
 }
@@ -504,14 +505,15 @@ func (f *Fragment) UpdateColumns(reader array.RecordReader, leftOn, rightOn stri
 	}()
 	var outResult uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentUpdateColumns(handleValue, &stream, leftOn, rightOn, &outResult)
 	consumed = true
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment update columns")
 		if outResult != 0 {
 			f.b.fragmentUpdateColumnsResultClose(outResult)
 		}
-		return nil, mutationError(f.b, "fragment update columns")
+		return nil, err
 	}
 	if outResult == 0 {
 		return nil, fmt.Errorf("ffi: native update columns returned NULL result")
@@ -559,6 +561,7 @@ func (f *Fragment) writeColumns(schema *Schema, reader array.RecordReader, fileV
 	}()
 	var outGroup uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	var rc int32
 	if fileVersion == nil {
 		rc = f.b.fragmentWriteColumns(handleValue, schemaHandle, &stream, &outGroup)
@@ -566,12 +569,12 @@ func (f *Fragment) writeColumns(schema *Schema, reader array.RecordReader, fileV
 		rc = f.b.fragmentWriteColumnWithVersion(handleValue, schemaHandle, &stream, *fileVersion, &outGroup)
 	}
 	consumed = true
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment write columns")
 		if outGroup != 0 {
 			f.b.dataReplacementGroupClose(outGroup)
 		}
-		return nil, mutationError(f.b, "fragment write columns")
+		return nil, err
 	}
 	if outGroup == 0 {
 		return nil, fmt.Errorf("ffi: native write columns returned NULL group")
@@ -595,14 +598,15 @@ func (f *Fragment) DeleteRows(offsets []uint32) (*Fragment, error) {
 	}
 	var outFragment uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentDeleteRows(handleValue, ptr, uint64(len(offsets)), &outFragment)
 	runtime.KeepAlive(offsets)
-	runtime.UnlockOSThread()
 	if rc != 0 {
+		err := mutationError(f.b, "fragment delete rows")
 		if outFragment != 0 {
 			f.b.fragmentClose(outFragment)
 		}
-		return nil, mutationError(f.b, "fragment delete rows")
+		return nil, err
 	}
 	if outFragment == 0 {
 		return nil, nil
@@ -781,8 +785,8 @@ func (o *Operation) MergeFragmentAt(index uint64) (*Fragment, error) {
 	}
 	var fragment uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.operationMergeFragmentAt(handleValue, index, &fragment)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(o.b, "operation merge fragment at")
 	}
@@ -805,8 +809,8 @@ func (o *Operation) UpdateUpdatedFragmentAt(index uint64) (*Fragment, error) {
 	}
 	var fragment uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.operationUpdateUpdatedFragmentAt(handleValue, index, &fragment)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(o.b, "operation update updated fragment at")
 	}
@@ -824,17 +828,15 @@ func (o *Operation) UpdateFieldsModified() ([]uint32, error) {
 	}
 	var count uint64
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.operationUpdateFieldsModifiedCount(handleValue, &count)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, mutationError(o.b, "operation update fields modified count")
 	}
 	fields := make([]uint32, 0, count)
 	for index := uint64(0); index < count; index++ {
 		var fieldID uint32
-		runtime.LockOSThread()
 		rc = o.b.operationUpdateFieldsModifiedAt(handleValue, index, &fieldID)
-		runtime.UnlockOSThread()
 		if rc != 0 {
 			return nil, mutationError(o.b, "operation update fields modified at")
 		}
@@ -852,8 +854,8 @@ func (o *Operation) UpdateUpdatedFragmentOffsets() (*UpdatedFragmentOffsets, boo
 	var present bool
 	var offsets uintptr
 	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	rc := o.b.operationUpdateUpdatedFragmentOffsets(handleValue, &present, &offsets)
-	runtime.UnlockOSThread()
 	if rc != 0 {
 		return nil, false, mutationError(o.b, "operation update updated fragment offsets")
 	}
