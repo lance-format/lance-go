@@ -176,11 +176,14 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reader schema: %v", err)
 	}
-	if gotSchema.Metadata().Get("owner") != "lance" || gotSchema.Metadata().Get("stage") != "roundtrip" {
-		t.Fatalf("schema metadata owner = %q, stage = %q", gotSchema.Metadata().Get("owner"), gotSchema.Metadata().Get("stage"))
+	owner, ownerOK := gotSchema.Metadata().GetValue("owner")
+	stage, stageOK := gotSchema.Metadata().GetValue("stage")
+	if !ownerOK || !stageOK || owner != "lance" || stage != "roundtrip" {
+		t.Fatalf("schema metadata owner = %q, stage = %q", owner, stage)
 	}
-	if gotSchema.Field(0).Metadata.Get("role") != "primary" {
-		t.Fatalf("field metadata = %q", gotSchema.Field(0).Metadata.Get("role"))
+	role, roleOK := gotSchema.Field(0).Metadata.GetValue("role")
+	if !roleOK || role != "primary" {
+		t.Fatalf("field metadata = %q", role)
 	}
 
 	schemaBuffer, err := reader.ReadGlobalBuffer(ctx, 0)
