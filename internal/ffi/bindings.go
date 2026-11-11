@@ -223,6 +223,75 @@ type bindings struct {
 	scannerSchema                func(scanner uintptr, out *cdata.ArrowSchema) int32
 	scannerPollNext              func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
 
+	storageAccessorNew   func(initial *storageOptionsInput, provider uintptr) uintptr
+	storageAccessorClose func(accessor uintptr)
+
+	fileSessionNew                     func(baseURI string, storageOptions uintptr, session uintptr, scheduler *fileSchedulerConfig) uintptr
+	fileSessionClose                   func(session uintptr)
+	fileSessionBasePath                func(session uintptr) *byte
+	fileSessionOpenReader              func(session uintptr, relativePath string, options *fileReaderOptions) uintptr
+	fileSessionOpenWriter              func(session uintptr, relativePath string, schema *cdata.ArrowSchema, options *fileWriterOptions) uintptr
+	fileSessionOpenPackedBlobWriter    func(session uintptr, dataFilePath string, blobID uint32) uintptr
+	fileSessionOpenDedicatedBlobWriter func(session uintptr, dataFilePath string, blobID uint32) uintptr
+	fileSessionContains                func(session uintptr, relativePath string, outExists *int32) int32
+	fileSessionList                    func(session uintptr, relativePath *byte) uintptr
+	fileSessionListWithDelimiter       func(session uintptr, relativePath *byte) uintptr
+	fileSessionReadRange               func(session uintptr, relativePath string, offset, length uint64) uintptr
+	fileSessionDeleteFile              func(session uintptr, relativePath string) int32
+	fileSessionUploadFile              func(session uintptr, localPath, relativeRemotePath string) int32
+	fileSessionDownloadFile            func(session uintptr, relativeRemotePath, localPath string) int32
+	fileSessionGetSchedulerStats       func(session uintptr, out *fileScanStats) int32
+	fileSessionGetRegistryStats        func(session uintptr, out *fileRegistryStats) int32
+	fileSessionGetStoreInfo            func(session uintptr, out *fileStoreInfo) int32
+	fileSessionGetStoreIOStats         func(session uintptr, out *fileStoreIOStats) int32
+	pathListCount                      func(list uintptr) uint64
+	pathListAt                         func(list uintptr, index uint64) *byte
+	pathListClose                      func(list uintptr)
+	delimitedListCommonPrefixCount     func(list uintptr) uint64
+	delimitedListCommonPrefixAt        func(list uintptr, index uint64) *byte
+	delimitedListObjectCount           func(list uintptr) uint64
+	delimitedListObjectAt              func(list uintptr, index uint64) *byte
+	delimitedListClose                 func(list uintptr)
+	byteBufferData                     func(buffer uintptr) *byte
+	byteBufferLen                      func(buffer uintptr) uint64
+	byteBufferClose                    func(buffer uintptr)
+	fileReaderOpen                     func(uri string, storageOptions uintptr, options *fileReaderOptions, session uintptr, scheduler *fileSchedulerConfig) uintptr
+	fileReaderNumRows                  func(reader uintptr, outRows *uint64) int32
+	fileReaderGetMetadata              func(reader uintptr, outMetadata *uintptr) int32
+	fileReaderGetStatistics            func(reader uintptr, outStatistics *uintptr) int32
+	fileReaderReadGlobalBuffer         func(reader uintptr, index uint32, outBytes *uintptr) int32
+	fileReaderReadAll                  func(reader uintptr, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderReadRange                func(reader uintptr, offset, numRows uint64, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderReadIndices              func(reader uintptr, indices *uint32, count uint64, batchSize, batchReadahead uint32, out *cdata.ArrowArrayStream) int32
+	fileReaderGetIOStats               func(reader uintptr, out *fileScanStats) int32
+	fileReaderClose                    func(reader uintptr)
+	fileMetadataGetInfo                func(metadata uintptr, out *fileMetadataInfo) int32
+	fileMetadataGetSchema              func(metadata uintptr, out *cdata.ArrowSchema) int32
+	fileMetadataGetGlobalBuffers       func(metadata uintptr, outBuffers **fileBufferDescriptor, outCount *uint64) int32
+	fileMetadataGetColumns             func(metadata uintptr, outColumns **fileColumnMetadata, outCount *uint64) int32
+	fileMetadataClose                  func(metadata uintptr)
+	fileStatisticsGetColumns           func(statistics uintptr, outColumns **fileColumnStatistics, outCount *uint64) int32
+	fileStatisticsClose                func(statistics uintptr)
+	fileWriterOpen                     func(uri string, schema *cdata.ArrowSchema, options *fileWriterOptions, storageOptions uintptr, session uintptr) uintptr
+	fileWriterWriteBatch               func(writer uintptr, batch uintptr) int32
+	fileWriterAddSchemaMetadata        func(writer uintptr, key, value string) int32
+	fileWriterAddGlobalBuffer          func(writer uintptr, data *byte, length uint64, outIndex *uint32) int32
+	fileWriterFinish                   func(writer uintptr, outSummary *fileWriteSummary) int32
+	fileWriterAbort                    func(writer uintptr) int32
+	fileWriterClose                    func(writer uintptr)
+	packedBlobWriterBlobID             func(writer uintptr) uint32
+	packedBlobWriterPath               func(writer uintptr) *byte
+	packedBlobWriterWriteBlob          func(writer uintptr, data *byte, length uint64) int32
+	packedBlobWriterFinishArray        func(writer uintptr, fieldName string, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	packedBlobWriterClose              func(writer uintptr)
+	dedicatedBlobWriterBlobID          func(writer uintptr) uint32
+	dedicatedBlobWriterPath            func(writer uintptr) *byte
+	dedicatedBlobWriterWrite           func(writer uintptr, data *byte, length uint64) int32
+	dedicatedBlobWriterFinishArray     func(writer uintptr, fieldName string, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
+	dedicatedBlobWriterClose           func(writer uintptr)
+
+	batchFromArrow func(array *cdata.ArrowArray, schema *cdata.ArrowSchema, out *uintptr) int32
+
 	batchToArrow func(batch uintptr, outArray *cdata.ArrowArray, outSchema *cdata.ArrowSchema) int32
 	batchFree    func(batch uintptr)
 
@@ -691,6 +760,75 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_fts_index_segments", &b.scannerSetFTSIndexSegments},
 		{"lance_scanner_schema", &b.scannerSchema},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
+
+		{"lance_storage_options_accessor_new", &b.storageAccessorNew},
+		{"lance_storage_options_accessor_close", &b.storageAccessorClose},
+
+		{"lance_file_session_new", &b.fileSessionNew},
+		{"lance_file_session_close", &b.fileSessionClose},
+		{"lance_file_session_base_path", &b.fileSessionBasePath},
+		{"lance_file_session_open_reader", &b.fileSessionOpenReader},
+		{"lance_file_session_open_writer", &b.fileSessionOpenWriter},
+		{"lance_file_session_open_packed_blob_writer", &b.fileSessionOpenPackedBlobWriter},
+		{"lance_file_session_open_dedicated_blob_writer", &b.fileSessionOpenDedicatedBlobWriter},
+		{"lance_file_session_contains", &b.fileSessionContains},
+		{"lance_file_session_list", &b.fileSessionList},
+		{"lance_file_session_list_with_delimiter", &b.fileSessionListWithDelimiter},
+		{"lance_file_session_read_range", &b.fileSessionReadRange},
+		{"lance_file_session_delete_file", &b.fileSessionDeleteFile},
+		{"lance_file_session_upload_file", &b.fileSessionUploadFile},
+		{"lance_file_session_download_file", &b.fileSessionDownloadFile},
+		{"lance_file_session_get_scheduler_stats", &b.fileSessionGetSchedulerStats},
+		{"lance_file_session_get_registry_stats", &b.fileSessionGetRegistryStats},
+		{"lance_file_session_get_store_info", &b.fileSessionGetStoreInfo},
+		{"lance_file_session_get_store_io_stats", &b.fileSessionGetStoreIOStats},
+		{"lance_path_list_count", &b.pathListCount},
+		{"lance_path_list_at", &b.pathListAt},
+		{"lance_path_list_close", &b.pathListClose},
+		{"lance_delimited_list_common_prefix_count", &b.delimitedListCommonPrefixCount},
+		{"lance_delimited_list_common_prefix_at", &b.delimitedListCommonPrefixAt},
+		{"lance_delimited_list_object_count", &b.delimitedListObjectCount},
+		{"lance_delimited_list_object_at", &b.delimitedListObjectAt},
+		{"lance_delimited_list_close", &b.delimitedListClose},
+		{"lance_byte_buffer_data", &b.byteBufferData},
+		{"lance_byte_buffer_len", &b.byteBufferLen},
+		{"lance_byte_buffer_close", &b.byteBufferClose},
+		{"lance_file_reader_open", &b.fileReaderOpen},
+		{"lance_file_reader_num_rows", &b.fileReaderNumRows},
+		{"lance_file_reader_get_metadata", &b.fileReaderGetMetadata},
+		{"lance_file_reader_get_statistics", &b.fileReaderGetStatistics},
+		{"lance_file_reader_read_global_buffer", &b.fileReaderReadGlobalBuffer},
+		{"lance_file_reader_read_all", &b.fileReaderReadAll},
+		{"lance_file_reader_read_range", &b.fileReaderReadRange},
+		{"lance_file_reader_read_indices", &b.fileReaderReadIndices},
+		{"lance_file_reader_get_io_stats", &b.fileReaderGetIOStats},
+		{"lance_file_reader_close", &b.fileReaderClose},
+		{"lance_file_metadata_get_info", &b.fileMetadataGetInfo},
+		{"lance_file_metadata_get_schema", &b.fileMetadataGetSchema},
+		{"lance_file_metadata_get_global_buffers", &b.fileMetadataGetGlobalBuffers},
+		{"lance_file_metadata_get_columns", &b.fileMetadataGetColumns},
+		{"lance_file_metadata_close", &b.fileMetadataClose},
+		{"lance_file_statistics_get_columns", &b.fileStatisticsGetColumns},
+		{"lance_file_statistics_close", &b.fileStatisticsClose},
+		{"lance_file_writer_open", &b.fileWriterOpen},
+		{"lance_file_writer_write_batch", &b.fileWriterWriteBatch},
+		{"lance_file_writer_add_schema_metadata", &b.fileWriterAddSchemaMetadata},
+		{"lance_file_writer_add_global_buffer", &b.fileWriterAddGlobalBuffer},
+		{"lance_file_writer_finish", &b.fileWriterFinish},
+		{"lance_file_writer_abort", &b.fileWriterAbort},
+		{"lance_file_writer_close", &b.fileWriterClose},
+		{"lance_packed_blob_writer_blob_id", &b.packedBlobWriterBlobID},
+		{"lance_packed_blob_writer_path", &b.packedBlobWriterPath},
+		{"lance_packed_blob_writer_write_blob", &b.packedBlobWriterWriteBlob},
+		{"lance_packed_blob_writer_finish_array", &b.packedBlobWriterFinishArray},
+		{"lance_packed_blob_writer_close", &b.packedBlobWriterClose},
+		{"lance_dedicated_blob_writer_blob_id", &b.dedicatedBlobWriterBlobID},
+		{"lance_dedicated_blob_writer_path", &b.dedicatedBlobWriterPath},
+		{"lance_dedicated_blob_writer_write", &b.dedicatedBlobWriterWrite},
+		{"lance_dedicated_blob_writer_finish_array", &b.dedicatedBlobWriterFinishArray},
+		{"lance_dedicated_blob_writer_close", &b.dedicatedBlobWriterClose},
+
+		{"lance_batch_from_arrow", &b.batchFromArrow},
 
 		{"lance_compaction_options_v2_new", &b.compactionOptionsNew},
 		{"lance_compaction_options_v2_free", &b.compactionOptionsFree},
