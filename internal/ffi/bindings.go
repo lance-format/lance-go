@@ -36,6 +36,26 @@ type bindings struct {
 	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 
+	datasetMetadataJSON             func(dataset uintptr) *byte
+	datasetUpdateMetadataJSON       func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
+	datasetUpdateSchemaMetadataJSON func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
+	datasetUpdateFieldMetadata      func(dataset uintptr, updates *fieldMetadataUpdate, count uint64) int32
+	datasetResolveFieldID           func(dataset uintptr, ref *fieldReference, out *int32) int32
+	datasetFieldIDCount             func(dataset uintptr, out *uint64) int32
+	datasetFieldIDAt                func(dataset uintptr, index uint64, out *int32) int32
+	datasetDropColumns              func(dataset uintptr, columns *uintptr, count uint64) int32
+	datasetAlterColumns             func(dataset uintptr, alterations *columnAlteration, count uint64) int32
+	datasetAddColumnsSQL            func(dataset uintptr, columns *sqlColumn, count uint64, batchSize uint64) int32
+	datasetAddColumnsNulls          func(dataset uintptr, schema *cdata.ArrowSchema) int32
+	datasetAddColumnsStream         func(dataset uintptr, stream *cdata.ArrowArrayStream, batchSize uint64) int32
+	datasetAddColumnsBatchUDF       func(dataset uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32) int32
+	datasetConfig                   func(dataset uintptr) uintptr
+	datasetConfigCount              func(config uintptr) uint64
+	datasetConfigKeyAt              func(config uintptr, index uint64) *byte
+	datasetConfigValueAt            func(config uintptr, index uint64) *byte
+	datasetConfigClose              func(config uintptr)
+	datasetUpdateConfigJSON         func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
+
 	datasetCurrentVersion  func(dataset uintptr) uintptr
 	versionID              func(version uintptr) uint64
 	versionTimestampNS     func(version uintptr) int64
@@ -174,6 +194,26 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_statistics_close", &b.dataStatsClose},
 		{"lance_dataset_take", &b.datasetTake},
 		{"lance_dataset_take_rows", &b.datasetTakeRows},
+
+		{"lance_dataset_metadata_json", &b.datasetMetadataJSON},
+		{"lance_dataset_update_metadata_json", &b.datasetUpdateMetadataJSON},
+		{"lance_dataset_update_schema_metadata_json", &b.datasetUpdateSchemaMetadataJSON},
+		{"lance_dataset_update_field_metadata", &b.datasetUpdateFieldMetadata},
+		{"lance_dataset_resolve_field_id", &b.datasetResolveFieldID},
+		{"lance_dataset_field_id_count", &b.datasetFieldIDCount},
+		{"lance_dataset_field_id_at", &b.datasetFieldIDAt},
+		{"lance_dataset_drop_columns", &b.datasetDropColumns},
+		{"lance_dataset_alter_columns", &b.datasetAlterColumns},
+		{"lance_dataset_add_columns_sql", &b.datasetAddColumnsSQL},
+		{"lance_dataset_add_columns_nulls", &b.datasetAddColumnsNulls},
+		{"lance_dataset_add_columns_stream", &b.datasetAddColumnsStream},
+		{"lance_dataset_add_columns_batch_udf", &b.datasetAddColumnsBatchUDF},
+		{"lance_dataset_config", &b.datasetConfig},
+		{"lance_dataset_config_count", &b.datasetConfigCount},
+		{"lance_dataset_config_key_at", &b.datasetConfigKeyAt},
+		{"lance_dataset_config_value_at", &b.datasetConfigValueAt},
+		{"lance_dataset_config_close", &b.datasetConfigClose},
+		{"lance_dataset_update_config_json", &b.datasetUpdateConfigJSON},
 
 		{"lance_dataset_current_version", &b.datasetCurrentVersion},
 		{"lance_version_id", &b.versionID},
