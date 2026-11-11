@@ -93,6 +93,10 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 	if err != nil {
 		return nil, wrapError("scan", d.uri, err)
 	}
+	if err := applyFTSScan(native, &config); err != nil {
+		native.Close()
+		return nil, wrapError("scan", d.uri, err)
+	}
 	return &Scanner{
 		native:        native,
 		uri:           d.uri,

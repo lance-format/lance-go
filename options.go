@@ -207,6 +207,7 @@ type scanConfig struct {
 	substraitAggregate   []byte
 	additionalSQLFilters []string
 	statistics           func(ScanStatistics)
+	fts                  ftsScanConfig
 }
 
 type ffiProjection struct {
