@@ -40,7 +40,9 @@ static-inspection host.
 - Go 1.23 or newer, with the repository's existing Arrow v18.4.1 dependency.
 - Python 3.10 or newer.
 - Java 11 or newer and Maven.
-- Rust 1.94.0, with the lance core git revision above available to Cargo.
+- Rust 1.96.1 (the acceptance toolchain), with the lance core git revision above
+  available to Cargo. The committed lockfile requires at least Rust 1.95;
+  the core crate's lower MSRV alone does not satisfy this dependency graph.
 - The repository's existing native07 bundle for lance-go.
 
 ### Python

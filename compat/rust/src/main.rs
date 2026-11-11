@@ -410,31 +410,22 @@ fn canonical_row(
             format!("d:{}", format_decimal(amounts.value(row), 9))
         },
     );
-    for (name, timestamp_array) in [
-        (
-            "ts_us",
-            batch
-                .column_by_name("ts_us")
-                .ok_or("missing ts_us")?
-                .as_any()
-                .downcast_ref::<TimestampMicrosecondArray>()
-                .ok_or("ts_us is not timestamp[us]")?,
-        ),
-        (
-            "ts_ns",
-            batch
-                .column_by_name("ts_ns")
-                .ok_or("missing ts_ns")?
-                .as_any()
-                .downcast_ref::<TimestampNanosecondArray>()
-                .ok_or("ts_ns is not timestamp[ns]")?,
-        ),
+    let ts_us = batch
+        .column_by_name("ts_us")
+        .ok_or("missing ts_us")?
+        .as_any()
+        .downcast_ref::<TimestampMicrosecondArray>()
+        .ok_or("ts_us is not timestamp[us]")?;
+    let ts_ns = batch
+        .column_by_name("ts_ns")
+        .ok_or("missing ts_ns")?
+        .as_any()
+        .downcast_ref::<TimestampNanosecondArray>()
+        .ok_or("ts_ns is not timestamp[ns]")?;
+    for (name, value) in [
+        ("ts_us", (!ts_us.is_null(row)).then(|| ts_us.value(row))),
+        ("ts_ns", (!ts_ns.is_null(row)).then(|| ts_ns.value(row))),
     ] {
-        let value = if timestamp_array.is_null(row) {
-            None
-        } else {
-            Some(timestamp_array.value(row))
-        };
         row_values.insert(name.to_string(), optional_timestamp(value));
     }
     values.insert(key, row_values);
@@ -717,7 +708,7 @@ async fn read_report(path: &str, version: u64, want_rows: usize) -> Result<Repor
     if dataset.version_id() != version {
         return Err(format!("opened version {}, want {version}", dataset.version_id()).into());
     }
-    validate_schema(dataset.schema())?;
+    validate_schema(&Schema::from(dataset.schema()))?;
     let count = dataset.count_rows(None).await?;
     if count != want_rows {
         return Err(format!("dataset has {count} rows, want {want_rows}").into());

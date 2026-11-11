@@ -103,14 +103,14 @@ public final class Main {
   }
 
   private static void produce(BufferAllocator allocator, String path, String storageVersion)
-      throws IOException {
+      throws Exception {
     write(allocator, path, baseRoot(allocator), WriteParams.WriteMode.CREATE, storageVersion);
     Report report = read(path, allocator, 1, BASE_ROWS);
     System.out.print(report.text());
   }
 
   private static void append(BufferAllocator allocator, String path, String storageVersion)
-      throws IOException {
+      throws Exception {
     Report before = read(path, allocator, 1, BASE_ROWS);
     if (before.version != 1) {
       throw new IllegalStateException("before append version " + before.version + ", want 1");
@@ -161,7 +161,7 @@ public final class Main {
   }
 
   private static Report read(String path, BufferAllocator allocator, long version, int wantRows)
-      throws IOException {
+      throws Exception {
     try (Dataset latest = Dataset.open(path);
         Dataset dataset = latest.checkoutVersion(version)) {
       if (dataset.version() != version) {

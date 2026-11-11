@@ -68,6 +68,10 @@ def canonical_type(typ: pa.DataType) -> str:
         return "utf8"
     if pa.types.is_int64(typ):
         return "int64"
+    if pa.types.is_int32(typ):
+        return "int32"
+    if pa.types.is_float32(typ):
+        return "float32"
     if pa.types.is_binary(typ):
         return "binary"
     if pa.types.is_list(typ):
