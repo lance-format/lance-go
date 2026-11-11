@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
@@ -273,7 +274,13 @@ func (f *Fragment) Scan(opts ...ScanOption) (*Scanner, error) {
 	if config.filter != nil {
 		return nil, &Error{Op: "scan fragment", URI: f.uri, Code: CodeNotSupported, Message: "fragment scan does not support WithSQLFilter"}
 	}
-	native, err := f.native.Scan(nativeScannerOptions(config))
+	if err := config.validateVector(); err != nil {
+		return nil, invalidError("scan fragment", f.uri, "%v", err)
+	}
+	native, err := f.native.Scan(nativeScannerOptions(config), func(native *ffi.Scanner) error {
+		return applyFTSScan(native, &config)
+	})
+	runtime.KeepAlive(&config)
 	if err != nil {
 		return nil, wrapError("scan fragment", f.uri, err)
 	}

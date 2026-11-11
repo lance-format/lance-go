@@ -23,7 +23,7 @@ func requireErrorCode(t *testing.T, err error, code lance.Code) {
 	}
 }
 
-func scanIDs(t *testing.T, scanner *lance.Scanner) []int64 {
+func scannerIDs(t *testing.T, scanner *lance.Scanner) []int64 {
 	t.Helper()
 	defer scanner.Close()
 	var ids []int64
@@ -96,7 +96,7 @@ func TestUncommittedCreateSerializeAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
 	}
-	if ids := scanIDs(t, mustScan(t, committed)); len(ids) != 3 {
+	if ids := scannerIDs(t, mustScan(t, committed)); len(ids) != 3 {
 		t.Fatalf("committed ids = %v, want 3 rows", ids)
 	}
 	if err := committed.Close(); err != nil {
@@ -301,7 +301,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 			t.Fatalf("fragment %d take = %v, want [1 2] or [3 4]", fragment.ID(), ids)
 		}
 		byFirstRow[ids[0]] = fragment
-		if got := scanIDs(t, mustFragmentScan(t, fragment)); !reflect.DeepEqual(got, ids) {
+		if got := scannerIDs(t, mustFragmentScan(t, fragment)); !reflect.DeepEqual(got, ids) {
 			t.Fatalf("fragment %d scan = %v, take = %v", fragment.ID(), got, ids)
 		}
 		filtered, err := fragment.Scan(lance.WithAdditionalSQLFilter("id >= 2"))
@@ -312,7 +312,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 		if ids[0] == 1 {
 			want = []int64{2}
 		}
-		if got := scanIDs(t, filtered); !reflect.DeepEqual(got, want) {
+		if got := scannerIDs(t, filtered); !reflect.DeepEqual(got, want) {
 			t.Fatalf("filtered fragment = %v, want %v", got, want)
 		}
 		if count, err := fragment.CountRows(nil); err != nil || count != 2 {
@@ -337,7 +337,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 	if count, err := updated.CountRows(nil); err != nil || count != 1 {
 		t.Fatalf("staged count = %d, %v; want 1", count, err)
 	}
-	if got := scanIDs(t, mustFragmentScan(t, updated)); !reflect.DeepEqual(got, []int64{2}) {
+	if got := scannerIDs(t, mustFragmentScan(t, updated)); !reflect.DeepEqual(got, []int64{2}) {
 		t.Fatalf("staged rows = %v, want [2]", got)
 	}
 	op, err := lance.NewDeleteOperation([]*lance.Fragment{updated}, nil, "id = 1")
@@ -355,7 +355,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 		t.Fatalf("Commit partial delete: %v", err)
 	}
 	defer partialCommit.Close()
-	if got := scanIDs(t, mustScan(t, partialCommit)); !reflect.DeepEqual(got, []int64{2, 3, 4}) {
+	if got := scannerIDs(t, mustScan(t, partialCommit)); !reflect.DeepEqual(got, []int64{2, 3, 4}) {
 		t.Fatalf("rows after partial commit = %v, want [2 3 4]", got)
 	}
 	partialCommit.Close()
@@ -372,7 +372,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 	if count, err := persisted.DeletedRows(); err != nil || count != 1 {
 		t.Fatalf("persisted deleted rows = %d, %v; want 1", count, err)
 	}
-	if got := scanIDs(t, mustFragmentScan(t, persisted)); !reflect.DeepEqual(got, []int64{2}) {
+	if got := scannerIDs(t, mustFragmentScan(t, persisted)); !reflect.DeepEqual(got, []int64{2}) {
 		t.Fatalf("persisted partial rows = %v, want [2]", got)
 	}
 	allRowID := byFirstRow[3].ID()
@@ -411,7 +411,7 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 		t.Fatalf("Open after all-row delete: %v", err)
 	}
 	defer reopened.Close()
-	if got := scanIDs(t, mustScan(t, reopened)); !reflect.DeepEqual(got, []int64{2}) {
+	if got := scannerIDs(t, mustScan(t, reopened)); !reflect.DeepEqual(got, []int64{2}) {
 		t.Fatalf("final rows = %v, want [2]", got)
 	}
 	deletedFragment, err := reopened.OpenFragment(allRowID)
@@ -432,8 +432,6 @@ func mustFragmentScan(t *testing.T, fragment *lance.Fragment) *lance.Scanner {
 	}
 	return scanner
 }
-
-func ptr[T any](value T) *T { return &value }
 
 func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 	requireNative(t)

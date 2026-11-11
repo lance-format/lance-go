@@ -84,7 +84,7 @@ func TestDerivedHandlesOutliveOwners(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fragment Scan after dataset close: %v", err)
 	}
-	if ids := scanIDs(t, scanner); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+	if ids := scannerIDs(t, scanner); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
 		t.Fatalf("fragment scan after dataset close = %v, want [1 2]", ids)
 	}
 	fragment.Close()

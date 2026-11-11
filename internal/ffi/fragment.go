@@ -3,13 +3,11 @@ package ffi
 import (
 	"fmt"
 	"runtime"
-	"sync"
 	"sync/atomic"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/lance-format/lance-go/internal/cdata"
-	"github.com/lance-format/lance-go/internal/handle"
 )
 
 // Fragment is an owned snapshot of native Lance fragment metadata. A bound
@@ -331,7 +329,7 @@ func (f *Fragment) rowCount(name string, call func(uintptr, *uint64) int32) (uin
 // Native fragment scans do not accept initial column selection or a SQL filter;
 // callers must use projection expressions or filter through the returned
 // scanner's supported setters.
-func (f *Fragment) Scan(opts ScannerOptions) (*Scanner, error) {
+func (f *Fragment) Scan(opts ScannerOptions, initialize func(*Scanner) error) (*Scanner, error) {
 	handleValue := f.handle.Load()
 	if handleValue == 0 {
 		return nil, ErrClosed
@@ -355,32 +353,7 @@ func (f *Fragment) Scan(opts ScannerOptions) (*Scanner, error) {
 	}
 	runtime.UnlockOSThread()
 
-	s := &Scanner{
-		b:         f.b,
-		closeCh:   make(chan struct{}),
-		closeDone: make(chan struct{}),
-		waiter:    newPollWaiter(),
-		stats:     &statsState{},
-	}
-	s.handle.Store(scannerHandle)
-	s.cond = sync.NewCond(&s.mu)
-	s.waiterHandle = handle.New(s.waiter)
-	s.statsHandle = handle.New(s.stats)
-	if err := s.configure(opts); err != nil {
-		s.abort()
-		return nil, err
-	}
-	if err := s.registerStatistics(); err != nil {
-		s.abort()
-		return nil, err
-	}
-	schema, err := s.loadSchema()
-	if err != nil {
-		s.abort()
-		return nil, err
-	}
-	s.schema = schema
-	return s, nil
+	return newScanner(f.b, scannerHandle, opts, initialize)
 }
 
 // Take returns fragment-local logical rows by index. A nil columns slice

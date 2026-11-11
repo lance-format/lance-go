@@ -199,7 +199,7 @@ func TestNativeProjectPreservesFieldIDsAndTypes(t *testing.T) {
 			t.Fatalf("reopened FieldID(%q) = %d, %v; want %d", column, got, err, want)
 		}
 	}
-	if ids := scanIDs(t, mustScanColumns(t, reopened, "id")); len(ids) != 3 || ids[0] != 1 || ids[1] != 2 || ids[2] != 3 {
+	if ids := scannerIDs(t, mustScanColumns(t, reopened, "id")); len(ids) != 3 || ids[0] != 1 || ids[1] != 2 || ids[2] != 3 {
 		t.Fatalf("projected ids = %v, want [1 2 3]", ids)
 	}
 }
@@ -377,7 +377,7 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		t.Fatalf("Commit data replacement: %v", err)
 	}
 	tx.Close()
-	if ids := scanIDs(t, mustScan(t, dataset)); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+	if ids := scannerIDs(t, mustScan(t, dataset)); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
 		t.Fatalf("source snapshot after replacement = %v, want [1 2]", ids)
 	}
 	dataset.Close()
@@ -385,7 +385,7 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		committed.Close()
 		t.Fatalf("rows after replacement = %d, %v; want 2", rows, err)
 	}
-	if ids := scanIDs(t, mustScan(t, committed)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
+	if ids := scannerIDs(t, mustScan(t, committed)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
 		committed.Close()
 		t.Fatalf("ids after replacement = %v, want [101 102]", ids)
 	}
@@ -395,7 +395,7 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		t.Fatalf("reopen after replacement: %v", err)
 	}
 	defer reopened.Close()
-	if ids := scanIDs(t, mustScan(t, reopened)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
+	if ids := scannerIDs(t, mustScan(t, reopened)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
 		t.Fatalf("reopened replacement rows = %v, want [101 102]", ids)
 	}
 }
