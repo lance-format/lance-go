@@ -102,23 +102,62 @@ func TestStorageOptionsAccessorSnapshotRefreshAndPresence(t *testing.T) {
 		}
 	})
 
-	t.Run("initial and provider merge", func(t *testing.T) {
-		provider := &accessorTestProvider{
-			id:      "test/initial-merge",
-			options: map[string]string{"allow_http": "true"},
-		}
-		accessor, err := lance.NewStorageOptionsAccessor(map[string]string{"region": "initial"}, provider)
+	t.Run("valid initial options defer fetch", func(t *testing.T) {
+		provider := &accessorTestProvider{id: "test/initial-valid", options: map[string]string{"allow_http": "true"}}
+		owned, err := lance.NewStorageOptionsAccessor(map[string]string{"region": "initial"}, provider)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer accessor.Close()
-
-		snapshot, has, err := accessor.Snapshot()
+		defer owned.Close()
+		snapshot, has, err := owned.Snapshot()
 		if err != nil {
-			t.Fatalf("snapshot: %v", err)
+			t.Fatal(err)
 		}
-		if !has || snapshot["region"] != "initial" || snapshot["allow_http"] != "true" {
-			t.Fatalf("merged snapshot = %v, has=%v", snapshot, has)
+		if !has || len(snapshot) != 1 || snapshot["region"] != "initial" {
+			t.Fatalf("initial snapshot = %v, has=%v", snapshot, has)
+		}
+		if got := provider.fetchCount(); got != 0 {
+			t.Fatalf("fetches = %d, want 0 while initial options remain valid", got)
+		}
+	})
+
+	t.Run("expired initial options are replaced", func(t *testing.T) {
+		provider := &accessorTestProvider{id: "test/initial-expired", options: map[string]string{"allow_http": "true"}}
+		initial := map[string]string{"region": "initial", "expires_at_millis": strconv.FormatInt(time.Now().Add(-time.Hour).UnixMilli(), 10)}
+		owned, err := lance.NewStorageOptionsAccessor(initial, provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer owned.Close()
+		snapshot, has, err := owned.Snapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !has || len(snapshot) != 1 || snapshot["allow_http"] != "true" {
+			t.Fatalf("refreshed snapshot = %v, has=%v", snapshot, has)
+		}
+		if got := provider.fetchCount(); got != 1 {
+			t.Fatalf("refresh fetches = %d, want 1", got)
+		}
+	})
+
+	t.Run("absent provider result falls back to initial", func(t *testing.T) {
+		provider := &accessorTestProvider{id: "test/initial-fallback"}
+		initial := map[string]string{"region": "initial", "expires_at_millis": strconv.FormatInt(time.Now().Add(-time.Hour).UnixMilli(), 10)}
+		owned, err := lance.NewStorageOptionsAccessor(initial, provider)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer owned.Close()
+		snapshot, has, err := owned.Snapshot()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !has || len(snapshot) != len(initial) || snapshot["region"] != "initial" || snapshot["expires_at_millis"] != initial["expires_at_millis"] {
+			t.Fatalf("fallback snapshot = %v, has=%v", snapshot, has)
+		}
+		if got := provider.fetchCount(); got != 1 {
+			t.Fatalf("fallback fetches = %d, want 1", got)
 		}
 	})
 }
@@ -126,33 +165,41 @@ func TestStorageOptionsAccessorSnapshotRefreshAndPresence(t *testing.T) {
 func TestStorageOptionsAccessorCallbackErrors(t *testing.T) {
 	requireNative(t)
 
-	t.Run("typed error", func(t *testing.T) {
-		provider := &accessorTestProvider{id: "test/error", err: errors.New("no credentials")}
-		accessor, err := lance.NewStorageOptionsAccessor(nil, provider)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer accessor.Close()
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"plain error", errors.New("no credentials")},
+		{"typed error", &lance.Error{Code: lance.CodeInvalidArgument, Message: "no credentials"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := &accessorTestProvider{id: "test/error/" + tc.name, err: tc.err}
+			accessor, err := lance.NewStorageOptionsAccessor(nil, provider)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer accessor.Close()
 
-		_, _, err = accessor.Snapshot()
-		if err == nil {
-			t.Fatal("snapshot succeeded, want provider error")
-		}
-		var nativeErr *lance.Error
-		if !errors.As(err, &nativeErr) {
-			t.Fatalf("snapshot error = %T %v, want *lance.Error", err, err)
-		}
-		if !errors.Is(err, lance.ErrInternal) {
-			t.Fatalf("snapshot error = %v, want ErrInternal", err)
-		}
-		if nativeErr.Code != lance.CodeInternal {
-			t.Fatalf("snapshot error code = %v, want internal", nativeErr.Code)
-		}
-		if !strings.Contains(err.Error(), "no credentials") {
-			t.Fatalf("snapshot error lost provider message: %v", err)
-		}
-	})
+			_, _, err = accessor.Snapshot()
+			if err == nil {
+				t.Fatal("snapshot succeeded, want provider error")
+			}
+			var nativeErr *lance.Error
+			if !errors.As(err, &nativeErr) {
+				t.Fatalf("snapshot error = %T %v, want *lance.Error", err, err)
+			}
+			if !errors.Is(err, lance.ErrIO) {
+				t.Fatalf("snapshot error = %v, want ErrIO", err)
+			}
+			if nativeErr.Code != lance.CodeIO {
+				t.Fatalf("snapshot error code = %v, want IO", nativeErr.Code)
+			}
+			if !strings.Contains(err.Error(), "no credentials") {
+				t.Fatalf("snapshot error lost provider message: %v", err)
+			}
+		})
 
+	}
 	t.Run("panic", func(t *testing.T) {
 		provider := &accessorTestProvider{
 			id: "test/panic",

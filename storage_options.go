@@ -38,6 +38,8 @@ type StorageOptionsAccessor = accessor.Accessor
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map
 // means native None; a non-nil map, including an empty one, means Some(initial).
+// Native uses valid initial options without fetching. After expiration, provider
+// options replace the initial set; a nil result falls back to the initial set.
 func NewStorageOptionsAccessor(initial map[string]string, provider StorageOptionsProvider) (*StorageOptionsAccessor, error) {
 	created, err := accessor.New(initial, provider, wrapError)
 	if err != nil {

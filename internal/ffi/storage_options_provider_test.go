@@ -81,6 +81,7 @@ func TestStorageOptionsProviderCallbacksPresenceAndRelease(t *testing.T) {
 
 	var out storageOptionsFetchResult
 	var callbackErr callbackError
+	defer ownedStringReleaseCallback(&callbackErr.Message)
 	if rc := storageOptionsFetchCallback(spec.ProviderCtx, &out, &callbackErr); rc != 0 {
 		t.Fatalf("fetch callback rc = %d, error = %+v", rc, callbackErr)
 	}
@@ -127,6 +128,7 @@ func TestStorageOptionsProviderForceCallbackWiring(t *testing.T) {
 
 	var out storageOptionsFetchResult
 	var callbackErr callbackError
+	defer ownedStringReleaseCallback(&callbackErr.Message)
 	if rc := storageOptionsForceFetchCallback(spec.ProviderCtx, &out, &callbackErr); rc != 0 {
 		t.Fatalf("force callback rc = %d, error = %+v", rc, callbackErr)
 	}
@@ -183,7 +185,8 @@ func TestStorageOptionsFetchCallbackNilAndEmpty(t *testing.T) {
 			defer handle.Take(ctx)
 			var out storageOptionsFetchResult
 			var callbackErr callbackError
-			if rc := storageOptionsFetchCallback(ctx, &out, &callbackErr); rc != 0 {
+			defer ownedStringReleaseCallback(&callbackErr.Message)
+			if rc := storageOptionsFetchCallback(uintptr(ctx), &out, &callbackErr); rc != 0 {
 				t.Fatalf("callback rc = %d, error = %+v", rc, callbackErr)
 			}
 			if out.HasOptions != tc.wantHas || out.Count != tc.wantCount || (out.SnapshotCtx != 0) != tc.wantCtx {
@@ -213,7 +216,8 @@ func TestStorageOptionsFetchCallbackForceFallbackAndPanic(t *testing.T) {
 
 	var out storageOptionsFetchResult
 	var callbackErr callbackError
-	if rc := storageOptionsFetchCallback(ctx, &out, &callbackErr); rc != 0 {
+	defer ownedStringReleaseCallback(&callbackErr.Message)
+	if rc := storageOptionsFetchCallback(uintptr(ctx), &out, &callbackErr); rc != 0 {
 		t.Fatalf("fetch rc = %d, error = %+v", rc, callbackErr)
 	}
 	if fetchCalls != 1 || forceCalls != 0 {
@@ -221,7 +225,7 @@ func TestStorageOptionsFetchCallbackForceFallbackAndPanic(t *testing.T) {
 	}
 	contextReleaseCallback(out.SnapshotCtx)
 
-	if rc := storageOptionsForceFetchCallback(ctx, &out, &callbackErr); rc != 0 {
+	if rc := storageOptionsForceFetchCallback(uintptr(ctx), &out, &callbackErr); rc != 0 {
 		t.Fatalf("force fetch rc = %d, error = %+v", rc, callbackErr)
 	}
 	if fetchCalls != 1 || forceCalls != 1 {
@@ -237,7 +241,7 @@ func TestStorageOptionsFetchCallbackForceFallbackAndPanic(t *testing.T) {
 		return map[string]string{"source": "fallback"}, nil
 	}})
 	defer handle.Take(fallbackCtx)
-	if rc := storageOptionsForceFetchCallback(fallbackCtx, &out, &callbackErr); rc != 0 {
+	if rc := storageOptionsForceFetchCallback(uintptr(fallbackCtx), &out, &callbackErr); rc != 0 {
 		t.Fatalf("force fallback rc = %d, error = %+v", rc, callbackErr)
 	}
 	if fallbackCalls != 1 {
@@ -253,7 +257,7 @@ func TestStorageOptionsFetchCallbackForceFallbackAndPanic(t *testing.T) {
 	defer handle.Take(panicCtx)
 	out = storageOptionsFetchResult{HasOptions: 1, Count: 99, SnapshotCtx: 123}
 	callbackErr = callbackError{}
-	if rc := storageOptionsFetchCallback(panicCtx, &out, &callbackErr); rc == 0 {
+	if rc := storageOptionsFetchCallback(uintptr(panicCtx), &out, &callbackErr); rc == 0 {
 		t.Fatal("panic callback succeeded")
 	}
 	if out.HasOptions != 0 || out.Count != 0 || out.SnapshotCtx != 0 || out.ReleaseSnapshot != 0 {
@@ -285,7 +289,8 @@ func TestStorageOptionsFetchCallbackTypedErrorAndValidation(t *testing.T) {
 			defer handle.Take(ctx)
 			var out storageOptionsFetchResult
 			var callbackErr callbackError
-			if rc := storageOptionsFetchCallback(ctx, &out, &callbackErr); rc == 0 {
+			defer ownedStringReleaseCallback(&callbackErr.Message)
+			if rc := storageOptionsFetchCallback(uintptr(ctx), &out, &callbackErr); rc == 0 {
 				t.Fatal("callback succeeded, want error")
 			}
 			if Code(callbackErr.Code) != tc.want {
@@ -306,8 +311,8 @@ func (e *testCallbackCodeError) ErrorCode() int32 { return int32(e.code) }
 func TestContextReleaseCallbackExactlyOnce(t *testing.T) {
 	releaser := &countingReleaser{}
 	ctx := handle.New(releaser)
-	contextReleaseCallback(ctx)
-	contextReleaseCallback(ctx)
+	contextReleaseCallback(uintptr(ctx))
+	contextReleaseCallback(uintptr(ctx))
 	if releaser.count != 1 {
 		t.Fatalf("release count = %d, want 1", releaser.count)
 	}

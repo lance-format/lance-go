@@ -305,18 +305,22 @@ equality and object-store registry entries. Use a distinct, stable ID for each
 tenant, role or credential scope; never put secrets in the ID.
 
 `FetchStorageOptions` and optional `ForceFetchStorageOptions` may run
-concurrently on native worker threads. Return typed errors when callers need a
-specific native code; an ordinary error maps to an internal error and a panic
-becomes a typed callback error. Do not log returned values or error text that
+concurrently on native worker threads. The callback boundary preserves typed
+error codes; an ordinary error maps to an internal callback error and a panic
+becomes a callback error. The Rust accessor wraps provider fetch failures as
+IO errors, so `Snapshot` returns `*lance.Error` matching `lance.ErrIO`, with the
+provider message retained. Do not log returned values or error text that
 contains credentials. The callback context is background-scoped and valid only
 for that call: it is not a request context and cannot cancel native I/O.
 
 `StorageOptionsAccessor` is reusable across datasets, raw files and file
 sessions. It stores optional initial options and a provider. A nil initial map
 means native None; a non-nil map, including an empty one, means an explicit
-initial set. At the callback boundary a fetch returning nil means None and an
+initial set. Valid initial options are cached without fetching; once expired,
+a provider result replaces them rather than merging maps. An absent provider
+result falls back to the initial options. At the callback boundary a fetch returning nil means None and an
 empty map means Some(empty); native then applies its fallback, so a resolved
-snapshot with no initial options is Some(empty). `Snapshot` returns an
+snapshot with a provider but no initial options is Some(empty). `Snapshot` returns an
 independent Go map and preserves whether native resolved Some or None.
 `Close` stops new local acquisitions and waits for in-flight snapshots and
 native calls that already acquired the accessor. Native datasets, readers,

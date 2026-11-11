@@ -156,7 +156,8 @@ func (a *Accessor) ProviderID() string {
 
 // Snapshot returns the currently resolved options. A nil map with hasOptions
 // false means native None; a non-nil empty map with true means Some(empty).
-// The map is an independent copy and may be mutated by the caller.
+// The map is an independent copy and may be mutated by the caller. Native
+// wraps provider fetch failures as IO errors while retaining their messages.
 func (a *Accessor) Snapshot() (map[string]string, bool, error) {
 	if a == nil {
 		return nil, false, ffi.ErrClosed
