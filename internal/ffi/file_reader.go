@@ -141,13 +141,18 @@ func (r *FileReader) ReadGlobalBuffer(index uint32) ([]byte, error) {
 		return nil, ErrClosed
 	}
 	runtime.LockOSThread()
-	buffer := r.b.fileReaderReadGlobalBuffer(handle, index)
-	if buffer == 0 {
+	var buffer uintptr
+	rc := r.b.fileReaderReadGlobalBuffer(handle, index, &buffer)
+	if rc != 0 {
 		nativeErr := r.b.takeError()
 		runtime.UnlockOSThread()
 		if nativeErr != nil {
 			return nil, nativeErr
 		}
+		return nil, fmt.Errorf("ffi: lance_file_reader_read_global_buffer failed without setting an error")
+	}
+	if buffer == 0 {
+		runtime.UnlockOSThread()
 		return nil, fmt.Errorf("ffi: lance_file_reader_read_global_buffer returned NULL without setting an error")
 	}
 	data, err := copyNativeByteBuffer(r.b, buffer)
