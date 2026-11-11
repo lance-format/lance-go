@@ -127,8 +127,9 @@ func (c *borrowedClone) clone(src *ArrowArray) (*ArrowArray, error) {
 			return nil, invalidf("array has %d children but a nil children pointer", src.NChildren)
 		}
 		children := make([]*ArrowArray, src.NChildren)
+		srcChildren := arrayChildren(src)
 		for i := range children {
-			child, err := c.clone(src.Children[i])
+			child, err := c.clone(srcChildren[i])
 			if err != nil {
 				return nil, err
 			}
