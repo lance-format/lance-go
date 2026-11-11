@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/apache/arrow-go/v18 v18.4.1
 	github.com/ebitengine/purego v0.10.2
+	github.com/klauspost/compress v1.18.0
 )
 
 require (
