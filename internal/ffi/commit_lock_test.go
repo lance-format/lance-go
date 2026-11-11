@@ -2,6 +2,7 @@ package ffi
 
 import (
 	"errors"
+	"runtime"
 	"strings"
 	"testing"
 	"unsafe"
@@ -38,8 +39,7 @@ func newCommitLockTestContext(t *testing.T, state *commitLockTestState) (uint64,
 				state.destroyed = append(state.destroyed, lease)
 			},
 		},
-		leases:    make(map[uintptr]any),
-		nextLease: 1,
+		leases: make(map[unsafe.Pointer]*commitLeaseState),
 	}
 	id := handle.New(ctx)
 	t.Cleanup(func() { contextReleaseCallback(uintptr(id)) })
@@ -51,14 +51,15 @@ func TestCommitLockCallbackLeaseLifecycle(t *testing.T) {
 	id, _ := newCommitLockTestContext(t, state)
 
 	var acquireErr callbackError
-	var lease uintptr
+	var lease unsafe.Pointer
 	if got := batchUDFInsertFragmentCallback(uintptr(id), 7, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 0 {
 		t.Fatalf("acquire status = %d, want 0 (error %+v)", got, acquireErr)
 	}
-	if state.acquireCalls != 1 || lease == 0 {
-		t.Fatalf("acquire calls = %d lease = %d, want one nonzero lease", state.acquireCalls, lease)
+	if state.acquireCalls != 1 || lease == nil {
+		t.Fatalf("acquire calls = %d lease = %p, want one nonzero lease", state.acquireCalls, lease)
 	}
 
+	runtime.GC()
 	var releaseErr callbackError
 	if got := commitLockReleaseCallback(uintptr(id), lease, true, &releaseErr); got != 0 {
 		t.Fatalf("release status = %d, want 0 (error %+v)", got, releaseErr)
@@ -82,12 +83,12 @@ func TestCommitLockCallbackPartialAndPanic(t *testing.T) {
 		state := &commitLockTestState{lease: "partial", acquireErr: errors.New("conflict")}
 		id, _ := newCommitLockTestContext(t, state)
 		var acquireErr callbackError
-		var lease uintptr
+		var lease unsafe.Pointer
 		if got := batchUDFInsertFragmentCallback(uintptr(id), 1, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 1 {
 			t.Fatalf("acquire status = %d, want 1", got)
 		}
-		if lease == 0 || acquireErr.Code == 0 {
-			t.Fatalf("partial lease = %d error code = %d, want both", lease, acquireErr.Code)
+		if lease == nil || acquireErr.Code == 0 {
+			t.Fatalf("partial lease = %p error code = %d, want both", lease, acquireErr.Code)
 		}
 		dispatchVoid2(uintptr(id), lease)
 		if state.releaseCalls != 0 || state.destroyCalls != 1 || state.destroyed[0] != "partial" {
@@ -103,12 +104,12 @@ func TestCommitLockCallbackPartialAndPanic(t *testing.T) {
 			panic("boom")
 		}
 		var acquireErr callbackError
-		var lease uintptr
+		var lease unsafe.Pointer
 		if got := batchUDFInsertFragmentCallback(uintptr(id), 1, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 1 {
 			t.Fatalf("acquire status = %d, want 1", got)
 		}
-		if lease != 0 || acquireErr.Code == 0 || !strings.Contains(goString(acquireErr.Message.Data), "boom") {
-			t.Fatalf("lease = %d error = %+v, want contained panic", lease, acquireErr)
+		if lease != nil || acquireErr.Code == 0 || !strings.Contains(goString(acquireErr.Message.Data), "boom") {
+			t.Fatalf("lease = %p error = %+v, want contained panic", lease, acquireErr)
 		}
 	})
 
@@ -116,7 +117,7 @@ func TestCommitLockCallbackPartialAndPanic(t *testing.T) {
 		state := &commitLockTestState{lease: "lease", releaseErr: errors.New("release failed")}
 		id, _ := newCommitLockTestContext(t, state)
 		var acquireErr callbackError
-		var lease uintptr
+		var lease unsafe.Pointer
 		if got := batchUDFInsertFragmentCallback(uintptr(id), 1, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 0 {
 			t.Fatalf("acquire status = %d, want 0", got)
 		}
@@ -127,13 +128,14 @@ func TestCommitLockCallbackPartialAndPanic(t *testing.T) {
 		if releaseErr.Code == 0 || state.destroyCalls != 0 {
 			t.Fatalf("release error code = %d destroy calls = %d, want error and no destroy", releaseErr.Code, state.destroyCalls)
 		}
+		dispatchVoid2(uintptr(id), lease)
 	})
 
 	t.Run("destroy panic", func(t *testing.T) {
 		state := &commitLockTestState{lease: "lease"}
 		id, ctx := newCommitLockTestContext(t, state)
 		var acquireErr callbackError
-		var lease uintptr
+		var lease unsafe.Pointer
 		if got := batchUDFInsertFragmentCallback(uintptr(id), 1, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 0 {
 			t.Fatalf("acquire status = %d, want 0", got)
 		}
@@ -153,14 +155,14 @@ func TestCommitLockCallbackStatelessDestroy(t *testing.T) {
 	state := &commitLockTestState{}
 	id, _ := newCommitLockTestContext(t, state)
 	var acquireErr callbackError
-	var lease uintptr
+	var lease unsafe.Pointer
 	if got := batchUDFInsertFragmentCallback(uintptr(id), 1, (*byte)(unsafe.Pointer(&lease)), &acquireErr); got != 0 {
 		t.Fatalf("acquire status = %d, want 0", got)
 	}
-	if lease != 0 {
-		t.Fatalf("stateless lease = %d, want 0", lease)
+	if lease != nil {
+		t.Fatalf("stateless lease = %p, want 0", lease)
 	}
-	dispatchVoid2(uintptr(id), 0)
+	dispatchVoid2(uintptr(id), nil)
 	if state.destroyCalls != 1 || len(state.destroyed) != 1 || state.destroyed[0] != nil {
 		t.Fatalf("destroy calls = %d values = %v, want one nil lease", state.destroyCalls, state.destroyed)
 	}

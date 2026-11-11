@@ -212,7 +212,7 @@ func TestNativeWriteProgressDispatchRouting(t *testing.T) {
 	if rc := dispatchStatus3(uintptr(ctxID), true, unsafe.Pointer(&complete), &callbackErr); rc != 0 {
 		t.Fatalf("complete rc = %d error = %s", rc, goString(callbackErr.Message.Data))
 	}
-	dispatchVoid2(uintptr(ctxID), uintptr(unsafe.Pointer(&nativeWriteStats{BytesWritten: 1024, RowsWritten: 11, FilesWritten: 3})))
+	dispatchVoid2(uintptr(ctxID), unsafe.Pointer(&nativeWriteStats{BytesWritten: 1024, RowsWritten: 11, FilesWritten: 3}))
 	if begins.Load() != 1 || completes.Load() != 1 || stats.Load() != 1 {
 		t.Fatalf("callbacks = begins %d completes %d stats %d", begins.Load(), completes.Load(), stats.Load())
 	}
@@ -241,6 +241,6 @@ func TestNativeWriteProgressInvalidContextAndPanic(t *testing.T) {
 	}}
 	statsCtx := handle.New(statsAdapter)
 	defer handle.Take(statsCtx)
-	dispatchVoid2(uintptr(statsCtx), uintptr(unsafe.Pointer(&nativeWriteStats{})))
-	dispatchVoid2(0, uintptr(unsafe.Pointer(&nativeWriteStats{})))
+	dispatchVoid2(uintptr(statsCtx), unsafe.Pointer(&nativeWriteStats{}))
+	dispatchVoid2(0, unsafe.Pointer(&nativeWriteStats{}))
 }

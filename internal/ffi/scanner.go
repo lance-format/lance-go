@@ -201,14 +201,14 @@ var pollWaker = sync.OnceValue(func() uintptr {
 })
 
 var statisticsCallback = sync.OnceValue(func() uintptr {
-	return purego.NewCallback(func(ctx uintptr, raw uintptr) (ret uintptr) {
+	return purego.NewCallback(func(ctx uintptr, raw unsafe.Pointer) (ret uintptr) {
 		dispatchVoid2(ctx, raw)
 		return
 	})
 })
 
-func (s *statsState) dispatchVoid2(payload uintptr) {
-	s.store((*scanStatistics)(unsafe.Pointer(payload)))
+func (s *statsState) dispatchVoid2(payload unsafe.Pointer) {
+	s.store((*scanStatistics)(payload))
 }
 
 func (s *statsState) store(raw *scanStatistics) {

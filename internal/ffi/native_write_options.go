@@ -502,8 +502,8 @@ func (a *nativeWriteProgressAdapter) dispatchStatus3(complete bool, payload unsa
 	return 0
 }
 
-func (a *nativeWriteProgressAdapter) dispatchVoid2(payload uintptr) {
-	raw := (*nativeWriteStats)(unsafe.Pointer(payload))
+func (a *nativeWriteProgressAdapter) dispatchVoid2(payload unsafe.Pointer) {
+	raw := (*nativeWriteStats)(payload)
 	if raw == nil || a.progress.WriteStats == nil {
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
@@ -44,7 +45,7 @@ func initCommitLockReleaseCallback() {
 	})
 }
 
-func commitLockReleaseCallback(ctx uintptr, token uintptr, success bool, cbErr *callbackError) (ret uintptr) {
+func commitLockReleaseCallback(ctx uintptr, token unsafe.Pointer, success bool, cbErr *callbackError) (ret uintptr) {
 	clearCallbackError(cbErr)
 	adapter, ok := lookupCommitLockContext(ctx)
 	if !ok {
@@ -57,9 +58,8 @@ func commitLockReleaseCallback(ctx uintptr, token uintptr, success bool, cbErr *
 type commitLockContext struct {
 	callbacks CommitLockCallbacks
 
-	mu        sync.Mutex
-	leases    map[uintptr]any
-	nextLease uintptr
+	mu     sync.Mutex
+	leases map[unsafe.Pointer]*commitLeaseState
 }
 
 // CommitLock is an owned native commit-lock handle. Native datasets,
@@ -91,8 +91,7 @@ func NewCommitLock(callbacks CommitLockCallbacks) (*CommitLock, error) {
 
 	ctx := &commitLockContext{
 		callbacks: callbacks,
-		leases:    make(map[uintptr]any),
-		nextLease: 1,
+		leases:    make(map[unsafe.Pointer]*commitLeaseState),
 	}
 	ctxID := handle.New(ctx)
 	raw := commitLockCallbacks{
@@ -107,15 +106,17 @@ func NewCommitLock(callbacks CommitLockCallbacks) (*CommitLock, error) {
 	nativeHandle := b.commitLockNew(&raw)
 	runtime.KeepAlive(ctx)
 	runtime.KeepAlive(raw)
-	runtime.UnlockOSThread()
 	if nativeHandle == 0 {
+		nativeErr := b.takeError()
+		runtime.UnlockOSThread()
 		handle.Take(ctxID)
-		if nativeErr := b.takeError(); nativeErr != nil {
+		if nativeErr != nil {
 			return nil, nativeErr
 		}
 		return nil, errors.New("ffi: native commit lock construction failed")
 	}
 
+	runtime.UnlockOSThread()
 	lock := &CommitLock{b: b}
 	lock.handle.Store(nativeHandle)
 	return lock, nil
@@ -156,16 +157,16 @@ func lookupCommitLockContext(ctx uintptr) (*commitLockContext, bool) {
 	return adapter, ok
 }
 
-func (c *commitLockContext) acquire(version uint64, outLease *uintptr, cbErr *callbackError) (ret uintptr) {
+func (c *commitLockContext) acquire(version uint64, outLease *unsafe.Pointer, cbErr *callbackError) (ret uintptr) {
 	clearCallbackError(cbErr)
 	if outLease == nil {
 		setCallbackError(cbErr, errors.New("commit lock acquire received a nil lease slot"))
 		return 1
 	}
-	*outLease = 0
+	*outLease = nil
 	defer func() {
 		if r := recover(); r != nil {
-			*outLease = 0
+			*outLease = nil
 			setCallbackError(cbErr, fmt.Errorf("commit lock acquire panic: %v", r))
 			ret = 1
 		}
@@ -173,15 +174,7 @@ func (c *commitLockContext) acquire(version uint64, outLease *uintptr, cbErr *ca
 
 	lease, err := c.callbacks.Acquire(version)
 	if lease != nil {
-		token, tokenErr := c.storeLease(lease)
-		if tokenErr != nil {
-			if c.callbacks.Destroy != nil {
-				c.callbacks.Destroy(lease)
-			}
-			setCallbackError(cbErr, tokenErr)
-			return 1
-		}
-		*outLease = token
+		*outLease = c.storeLease(lease)
 	}
 	if err != nil {
 		setCallbackError(cbErr, err)
@@ -190,7 +183,7 @@ func (c *commitLockContext) acquire(version uint64, outLease *uintptr, cbErr *ca
 	return 0
 }
 
-func (c *commitLockContext) release(token uintptr, success bool, cbErr *callbackError) (ret uintptr) {
+func (c *commitLockContext) release(token unsafe.Pointer, success bool, cbErr *callbackError) (ret uintptr) {
 	clearCallbackError(cbErr)
 	defer func() {
 		if r := recover(); r != nil {
@@ -202,23 +195,27 @@ func (c *commitLockContext) release(token uintptr, success bool, cbErr *callback
 	c.mu.Lock()
 	lease, ok := c.leases[token]
 	c.mu.Unlock()
-	if !ok && token != 0 {
-		setCallbackError(cbErr, fmt.Errorf("commit lock lease %d is not available", token))
+	if !ok && token != nil {
+		setCallbackError(cbErr, fmt.Errorf("commit lock lease %p is not available", token))
 		return 1
 	}
-	if err := c.callbacks.Release(lease, success); err != nil {
+	var value any
+	if ok {
+		value = lease.value
+	}
+	if err := c.callbacks.Release(value, success); err != nil {
 		setCallbackError(cbErr, err)
 		return 1
 	}
 	return 0
 }
 
-func (c *commitLockContext) dispatchVoid2(payload uintptr) {
+func (c *commitLockContext) dispatchVoid2(payload unsafe.Pointer) {
 	c.destroy(payload)
 }
 
-func (c *commitLockContext) destroy(token uintptr) {
-	if token == 0 {
+func (c *commitLockContext) destroy(token unsafe.Pointer) {
+	if token == nil {
 		c.destroyLease(nil)
 		return
 	}
@@ -232,7 +229,8 @@ func (c *commitLockContext) destroy(token uintptr) {
 	if !ok {
 		return
 	}
-	c.destroyLease(lease)
+	defer lease.pin.Unpin()
+	c.destroyLease(lease.value)
 }
 
 // destroyLease contains user panics because native's destroy callback cannot
@@ -247,16 +245,23 @@ func (c *commitLockContext) destroyLease(lease any) {
 	c.callbacks.Destroy(lease)
 }
 
-func (c *commitLockContext) storeLease(lease any) (uintptr, error) {
+// A lease token is a pinned scalar allocation, so shared pointer callbacks
+// never receive a small integer masquerading as a Go pointer. The user value
+// stays in the Go registry and is never exposed to native code.
+type commitLeaseState struct {
+	token *byte
+	pin   runtime.Pinner
+	value any
+}
+
+func (c *commitLockContext) storeLease(value any) unsafe.Pointer {
+	lease := &commitLeaseState{token: new(byte), value: value}
+	lease.pin.Pin(lease.token)
+	token := unsafe.Pointer(lease.token)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	token := c.nextLease
-	if token == 0 {
-		return 0, errors.New("commit lock lease token space exhausted")
-	}
-	c.nextLease++
 	c.leases[token] = lease
-	return token, nil
+	c.mu.Unlock()
+	return token
 }
 
 // releaseContext drops the adapter after the last native owner releases the

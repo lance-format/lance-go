@@ -350,7 +350,7 @@ func batchUDFGetFragmentCallback(ctx uintptr, fragmentID uint32, out *ownedStrin
 
 func batchUDFInsertFragmentCallback(ctx uintptr, fragmentID uint64, fragmentJSON *byte, cbErr *callbackError) (ret uintptr) {
 	if adapter, ok := lookupCommitLockContext(ctx); ok {
-		return adapter.acquire(fragmentID, (*uintptr)(unsafe.Pointer(fragmentJSON)), cbErr)
+		return adapter.acquire(fragmentID, (*unsafe.Pointer)(unsafe.Pointer(fragmentJSON)), cbErr)
 	}
 	clearCallbackError(cbErr)
 	defer func() {

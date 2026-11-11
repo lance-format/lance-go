@@ -19,7 +19,7 @@ type status3Dispatcher interface {
 // (ctx, payload) -> void ABI. Scanner statistics and write statistics share
 // this trampoline while keeping their decoding in separate owners.
 type void2Dispatcher interface {
-	dispatchVoid2(payload uintptr)
+	dispatchVoid2(payload unsafe.Pointer)
 }
 
 // dispatchStatus3 routes an ABI-identical status callback through the integer
@@ -53,7 +53,7 @@ func dispatchStatus3(ctx uintptr, force bool, payload unsafe.Pointer, outError *
 // dispatchVoid2 routes an ABI-identical void callback through the integer
 // handle registry. It has no error channel, so invalid contexts and panics are
 // ignored rather than allowed to unwind through native frames.
-func dispatchVoid2(ctx uintptr, payload uintptr) {
+func dispatchVoid2(ctx uintptr, payload unsafe.Pointer) {
 	defer func() {
 		_ = recover()
 	}()
