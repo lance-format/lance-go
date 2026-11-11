@@ -185,7 +185,8 @@ func TestNativeRestNamespaceDynamicContextErrorContinues(t *testing.T) {
 			}
 			defer ns.Close()
 			runtime.GC()
-			response, err := ns.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{})
+			rootID := []string{}
+			response, err := ns.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{ID: &rootID})
 			if err != nil {
 				t.Fatalf("ListNamespaces after provider failure: %v", err)
 			}
@@ -223,7 +224,8 @@ func TestNativeRESTAdapterOutlivesNamespace(t *testing.T) {
 		t.Fatalf("new adapter client: %v", err)
 	}
 	defer client.Close()
-	response, err := client.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{})
+	rootID := []string{}
+	response, err := client.ListNamespaces(context.Background(), &namespace.ListNamespacesRequest{ID: &rootID})
 	if err != nil {
 		t.Fatalf("request after namespace Close: %v", err)
 	}
