@@ -9,9 +9,9 @@ import (
 	"github.com/lance-format/lance-go/internal/ffi"
 )
 
-// Dataset is a checked-out, read-only view of a Lance dataset. It is safe for
-// concurrent use. Close waits for in-flight operations before releasing the
-// native handle.
+// Dataset is a checked-out snapshot of a Lance dataset. Mutations return a new
+// Dataset and leave this snapshot unchanged. It is safe for concurrent use.
+// Close waits for in-flight operations before releasing the native handle.
 type Dataset struct {
 	native *ffi.Dataset
 	res    *resource

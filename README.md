@@ -6,16 +6,17 @@ official `lance-c` C ABI without cgo.
 ## Status
 
 The core API supports dataset creation, append/overwrite, metadata, shared
-sessions, projected and filtered scans, and row selection. It uses Arrow Go v18
-and requires Go 1.23 or newer. Supply the pinned native library as described
-below; bundled artifacts and zero-configuration installation are still pending.
+sessions, projected and filtered scans, row selection, and bounded immutable
+mutations. It uses Arrow Go v18 and requires Go 1.23 or newer. Supply the pinned
+native library as described below; bundled artifacts and zero-configuration
+installation are still pending.
 
 Linux amd64 has native test coverage. Linux and macOS on amd64 and arm64, plus
 Windows arm64, are cross-compiled in CI. Windows amd64 also runs the loader,
 cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
 and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Immutable
-mutation, index, blob, maintenance and namespace APIs are tracked in
+Windows DLL belongs to the lance-c release process. Index, blob, maintenance
+and namespace APIs are tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
 ## Read a dataset
@@ -59,6 +60,11 @@ func main() {
 The caller owns the reader and releases it after the write. `Append` creates
 an absent dataset; `Overwrite` commits a replacement version while preserving
 older versions. `WriteParams` exposes the options available in the pinned C ABI.
+
+`Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
+snapshot and return a new committed `Dataset`. The receiver keeps its version
+and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
+The caller retains ownership and releases the reader after the call.
 
 A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
@@ -220,7 +226,7 @@ establishes native Windows DLL support.
 ## Layout
 
 ```text
-*.go              public Dataset, Session, Write, Scanner and option APIs
+*.go              public Dataset, Session, Write, Scanner, mutation and option APIs
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
