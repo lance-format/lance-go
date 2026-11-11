@@ -140,6 +140,9 @@ type bindings struct {
 	datasetBranchForceDelete     func(dataset uintptr, name string) int32
 	datasetBranchReplaceMetadata func(dataset uintptr, name string, metadata []uintptr) int32
 
+	datasetBasePathsJSON func(dataset uintptr) *byte
+	datasetAddBases      func(dataset uintptr, bases []basePath, baseCount uint64, properties *transactionProperties) int32
+
 	datasetCloneHandle   func(dataset uintptr) uintptr
 	datasetDelete        func(dataset uintptr, predicate string, outNumDeleted *uint64) int32
 	datasetUpdate        func(dataset uintptr, predicate uintptr, columns []uintptr, values []uintptr, numUpdates uint64, outNumUpdated *uint64) int32
@@ -688,6 +691,9 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_branch_delete", &b.datasetBranchDelete},
 		{"lance_dataset_branch_force_delete", &b.datasetBranchForceDelete},
 		{"lance_dataset_branch_replace_metadata", &b.datasetBranchReplaceMetadata},
+
+		{"lance_dataset_base_paths_json", &b.datasetBasePathsJSON},
+		{"lance_dataset_add_bases", &b.datasetAddBases},
 
 		{"lance_dataset_clone_handle", &b.datasetCloneHandle},
 		{"lance_dataset_delete", &b.datasetDelete},
