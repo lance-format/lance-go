@@ -2,7 +2,7 @@
 
 //go:build !lance_external_lib && linux && amd64
 
-package lance
+package bundled
 
 import (
 	"github.com/lance-format/lance-go/internal/loader"

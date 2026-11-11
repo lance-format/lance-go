@@ -24,9 +24,10 @@
 //
 // The loader package does not embed a bundle itself: generated per-platform
 // artifact modules and the selector files that register them are supplied by
-// the module that imports this package. The root module ships a selector for
-// linux/amd64; without a selector for the running target, the default build
-// uses the system loader.
+// the module that imports this package. This module ships its linux/amd64
+// selector in internal/bundled, which every public entry point blank-imports;
+// without a selector for the running target, the default build uses the system
+// loader.
 //
 // The library is loaded at most once per process and is never unloaded.
 // lance-c owns a Tokio runtime, thread-local error state and handles that may

@@ -75,6 +75,7 @@ type batchUDFAdapter struct {
 
 var (
 	batchUDFCallbacksOnce  sync.Once
+	ownedReleaseOnce       sync.Once
 	callbackBatchMapper    uintptr
 	callbackBatchGet       uintptr
 	callbackBatchInsert    uintptr
@@ -90,6 +91,16 @@ func initBatchUDFCallbacks() {
 		callbackBatchInsert = purego.NewCallback(batchUDFInsertBatchCallback)
 		callbackFragmentGet = purego.NewCallback(batchUDFGetFragmentCallback)
 		callbackFragmentInsert = purego.NewCallback(batchUDFInsertFragmentCallback)
+	})
+	initOwnedReleaseCallback()
+}
+
+// initOwnedReleaseCallback installs the shared release hook used by every
+// native-owned string produced by a Go callback. Namespace context providers
+// reuse it, so the process-wide callback budget grows by exactly one for the
+// provider entry point itself, not one per string field.
+func initOwnedReleaseCallback() {
+	ownedReleaseOnce.Do(func() {
 		callbackOwnedRelease = purego.NewCallback(ownedStringReleaseCallback)
 	})
 }
@@ -383,7 +394,7 @@ func setCallbackError(dst *callbackError, err error) {
 	}
 	message := err.Error()
 	if message == "" {
-		message = "batch UDF callback failed"
+		message = "Go callback failed"
 	}
 	*dst = callbackError{Code: callbackErrorCode(err), Message: newOwnedString(message)}
 }
@@ -416,6 +427,7 @@ type ownedStringBox struct {
 }
 
 func newOwnedString(value string) ownedString {
+	initOwnedReleaseCallback()
 	data := append([]byte(value), 0)
 	box := &ownedStringBox{data: data}
 	box.pinner.Pin(&data[0])

@@ -3,8 +3,8 @@
 //
 // The generated module embeds a zstd-compressed copy of the library. It does
 // not import the root module, link native code, or download anything. The
-// generated selector is the only file that imports internal/loader, and it
-// does so only after the packaging process copies it into the root package.
+// generated selector is normally copied into internal/bundled, which is the
+// only package that imports internal/loader for compiled-in activation.
 package artifactgen
 
 import (

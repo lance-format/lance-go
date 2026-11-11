@@ -16,7 +16,7 @@ Usage: scripts/sync-lance-c.sh --library PATH --header PATH \
          [--selector-package NAME]
 
 Packages an already-built lance-c shared library as a data-only Go module and
-generates a platform-constrained selector for the root package.
+generates a platform-constrained selector for internal/bundled.
 
 Required:
   --library PATH          built liblance_c.so, liblance_c.dylib, or lance_c.dll
@@ -27,7 +27,7 @@ Required:
 Optional:
   --module-path PATH      generated module path
                           (default: github.com/lance-format/lance-go/artifacts/<goos>-<goarch>)
-  --selector-package NAME package name for the generated selector (default: lance)
+  --selector-package NAME package name for the generated selector (default: bundled)
 
 The output directory contains:
   module/                 go.mod, artifact.go, and the compressed payload
@@ -59,7 +59,7 @@ header=""
 target=""
 out_dir=""
 module_path=""
-selector_package="lance"
+selector_package="bundled"
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -178,6 +178,6 @@ sync-lance-c: wrote $out_dir
 
 Next steps:
   1. Publish module/ at $module_path and add it to the root module requirements.
-  2. Copy the generated selector into the root package and rebuild the root module.
+  2. Copy the generated selector into internal/bundled and rebuild the root module.
   3. Repeat for each target, then verify a cold-cache consumer build on NieR.
 EOF

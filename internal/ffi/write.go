@@ -1,6 +1,7 @@
 package ffi
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 
@@ -74,36 +75,27 @@ func Write(uri string, reader array.RecordReader, opts WriteOptions, storageOpti
 	return writeDataset(b, uri, reader, opts, storageOptions)
 }
 
-func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string) (*Dataset, error) {
-	if reader == nil {
-		return nil, fmt.Errorf("ffi: record reader must not be nil")
-	}
-	schema := reader.Schema()
-	if schema == nil {
-		return nil, fmt.Errorf("ffi: record reader schema must not be nil")
-	}
+// buildWriteParameters converts public write options into the native layout
+// shared by URI writes and namespace writes. The returned string list must stay
+// alive for the duration of the native call.
+func buildWriteParameters(opts WriteOptions) (writeOptions, *cStringList, error) {
 	if opts.Mode < WriteModeCreate || opts.Mode > WriteModeOverwrite {
-		return nil, fmt.Errorf("ffi: invalid write mode %d", opts.Mode)
-	}
-	if err := validateCString(uri); err != nil {
-		return nil, err
+		return writeOptions{}, nil, fmt.Errorf("ffi: invalid write mode %d", opts.Mode)
 	}
 	if opts.Params.DataStorageVersion != "" {
 		if err := validateCString(opts.Params.DataStorageVersion); err != nil {
-			return nil, err
+			return writeOptions{}, nil, err
 		}
 	}
-	storageList, err := storageOptionList(storageOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	versionList := &cStringList{}
+	var versionList *cStringList
+	var err error
 	if opts.Params.DataStorageVersion != "" {
 		versionList, err = newCStringList([]string{opts.Params.DataStorageVersion})
 		if err != nil {
-			return nil, err
+			return writeOptions{}, nil, err
 		}
+	} else {
+		versionList = &cStringList{}
 	}
 
 	var rawOptions writeOptions
@@ -116,7 +108,7 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	}
 	if opts.AutoCleanup != nil {
 		if opts.AutoCleanup.OlderThanNanos < -999999999 || opts.AutoCleanup.OlderThanNanos > 999999999 {
-			return nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
+			return writeOptions{}, nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
 		}
 		cleanup := &autoCleanupParams{
 			Interval:         opts.AutoCleanup.Interval,
@@ -126,6 +118,45 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 		rawOptions.AutoCleanup = cleanup
 	}
 	rawOptions.SkipAutoCleanup = opts.SkipAutoCleanup
+	return rawOptions, versionList, nil
+}
+
+// storageOptionsJSON encodes storage options for native entry points that take
+// a JSON object instead of a NULL-terminated string array. Nil and empty maps
+// both become an empty string, which native code treats as absent.
+func storageOptionsJSON(options map[string]string) (string, error) {
+	if len(options) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(options)
+	if err != nil {
+		return "", fmt.Errorf("ffi: encode storage options: %w", err)
+	}
+	if err := validateCString(string(encoded)); err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string) (*Dataset, error) {
+	if reader == nil {
+		return nil, fmt.Errorf("ffi: record reader must not be nil")
+	}
+	schema := reader.Schema()
+	if schema == nil {
+		return nil, fmt.Errorf("ffi: record reader schema must not be nil")
+	}
+	if err := validateCString(uri); err != nil {
+		return nil, err
+	}
+	storageList, err := storageOptionList(storageOptions)
+	if err != nil {
+		return nil, err
+	}
+	rawOptions, versionList, err := buildWriteParameters(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	var rawSchema cdata.ArrowSchema
 	if err := cdata.ExportSchema(schema, &rawSchema); err != nil {

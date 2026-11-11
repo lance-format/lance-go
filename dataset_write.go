@@ -53,6 +53,9 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	if config.hasTransactionProperties {
 		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")
 	}
+	if config.branch != "" {
+		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
+	}
 	nativeOptions := nativeWriteOptions(config)
 
 	native, err := ffi.Write(uri, reader, nativeOptions, config.storageOptions)
