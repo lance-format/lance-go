@@ -7,8 +7,9 @@ official `lance-c` C ABI without cgo.
 
 The core API supports dataset creation, append/overwrite, metadata, shared
 sessions, projected and filtered scans, row selection, vector and full-text search,
-immutable row/schema mutations, version history, tags, branches, and Blob reads.
-It uses Arrow Go v18 and requires Go 1.23 or newer.
+immutable row/schema mutations, version history, tags, branches, staged transactions,
+fragment inspection, and Blob reads. It uses Arrow Go v18 and requires Go 1.23
+or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
 and load it automatically after verifying and unpacking it into the user cache.
@@ -99,6 +100,122 @@ A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
 snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
+
+`WriteUncommitted` writes data files without publishing a version and returns
+a `Transaction`. The transaction can be serialized with `MarshalBinary` and
+restored with `ParseTransaction`, or built directly from an `Operation`.
+`CommitTransaction` publishes one transaction and returns the committed
+dataset; `CommitTransactionBatch` atomically commits append transactions.
+`Dataset.ReadTransaction` and `ReadTransactionByVersion` read transactions
+that the manifest references. Committing is explicit: closing a transaction
+does not publish it or delete uncommitted data files.
+
+```go
+tx, err := lance.WriteUncommitted(ctx, "data.lance", reader)
+if err != nil {
+    log.Fatal(err)
+}
+defer tx.Close()
+encoded, err := tx.MarshalBinary()
+if err != nil {
+    log.Fatal(err)
+}
+parsed, err := lance.ParseTransaction(encoded)
+if err != nil {
+    log.Fatal(err)
+}
+defer parsed.Close()
+ds, err := lance.CommitTransaction(ctx, "data.lance", parsed)
+if err != nil {
+    log.Fatal(err)
+}
+defer ds.Close()
+```
+
+Commit options expose stable row IDs, v2 manifest paths, retry and timeout
+policy, detached commits, storage options and sessions. A detached commit
+requires v2 manifest paths, does not create a new dataset, and returns a
+dataset at the detached version. Transactions and operations are independent;
+closing a transaction does not invalidate a dataset that was returned by a
+successful commit.
+
+Transaction UUID, tag and properties distinguish absent values from explicitly
+empty ones in memory, but protobuf transport is not lossless: empty tags and
+property maps normalize to absent, Overwrite schemas may omit metadata, and an
+Unknown operation can be inspected but not serialized or committed. Public
+writes reassign field IDs; `NativeSchema.Project` preserves the selected
+schema's IDs, which can therefore be nonconsecutive.
+
+`Dataset.FragmentIDs` and `Dataset.OpenFragment` expose fragment snapshots.
+A bound fragment supports `Scan`, `Take`, `CountRows` and `Delete` without the
+source dataset. Fragment scans accept projection, limit, offset, batch sizing,
+ordering and row-address options. `WithColumns` and `WithSQLFilter` require
+constructor arguments that the native fragment API does not expose; they return
+`ErrNotSupported`. For filtering, `WithAdditionalSQLFilter`, `WithSubstraitFilter`
+and `WithSubstraitAggregate` use the ordinary scanner setters after fragment
+selection and retain native validation semantics. `Take` uses fragment-local
+logical row indices. `Delete` stages a deletion and returns a new scannable
+fragment; build a Delete operation from it and commit the transaction to
+publish the deletion. Detached fragments cloned from an Append operation expose
+metadata and data-file information but reject logical schema and data access.
+
+`DataFile` parses an existing Lance data file; `Dataset.CreateDataFile` does
+not write one. A `DataReplacementGroup` pairs a fragment ID with a parsed
+replacement file, and `NewDataReplacementOperation` builds the corresponding
+operation. `NewProjectOperation` accepts a `NativeSchema`, which preserves
+native field IDs that the lossy Arrow schema view does not. Schemas, data files
+and fragments returned by operations are independently owned and remain valid
+after their parent object is closed.
+
+## Compaction and cleanup
+
+`CompactFiles` rewrites small fragments through the native V2 compaction API
+and returns a new committed `Dataset` plus fragment and file metrics. The
+receiver keeps its version, rows and open scanners. Native compaction can commit
+fragment-ID reservations before the rewrite, so a successful operation can advance
+the stored version more than once. A nil options pointer uses
+the dataset configuration; a non-nil `compaction.Options` starts from native
+defaults and applies only the fields that are set.
+
+For distributed work, `PlanCompaction` captures an immutable plan. Plans, tasks
+and rewrite results expose native JSON with `JSON`, and
+`CompactionPlanFromJSON`, `CompactionTaskFromJSON` and
+`RewriteResultFromJSON` restore them. `CompactionTask.Execute` writes new data
+files without publishing metadata; pass its result to `CommitCompaction` to
+publish it. Plan and task options include the exact data storage version
+resolved by native planning.
+
+```go
+targetRows := uint64(1 << 20)
+plan, err := ds.PlanCompaction(ctx, &compaction.Options{
+    TargetRowsPerFragment: &targetRows,
+})
+if err != nil {
+    return err
+}
+task, err := plan.Task(0)
+if err != nil {
+    return err
+}
+result, err := task.Execute(ctx, ds)
+if err != nil {
+    return err
+}
+taskOptions := task.Options()
+committed, _, err := ds.CommitCompaction(ctx,
+    []*lance.RewriteResult{result}, &taskOptions)
+if err != nil {
+    return err
+}
+defer committed.Close()
+```
+
+`CleanupOldVersions`, `Cleanup` and `CleanupExplain` expose native old-version
+deletion. Cleanup is destructive storage maintenance: it does not take a
+snapshot lease, does not change the current dataset version, and cannot roll
+back files already deleted after a later failure. An explanation observes the
+current state and is not a reservation; `Cleanup` re-evaluates references when
+it executes.
 
 A scanner is single-use. Each batch yielded by `Records` is borrowed until
 iteration advances: call `Retain` before keeping it and later call `Release`.
@@ -448,7 +565,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show ab5c2d39c8b912fff19a05486732dde4b49c3f33:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show 07cd7d0cd06d65c5c643972267cc7981decef067:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
@@ -510,9 +627,10 @@ unit tests, not a packaged DLL.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
-shared sessions, version history and restore, tags, branches, blob fields and
-descriptors, blob handle and planned reads, and cancellation/close interactions.
-Arrow bridge tests check
+shared sessions, version history and restore, tags, branches, uncommitted and
+detached transactions, fragment scans and deletions, protobuf round trips,
+data replacement, project operations, blob fields and descriptors, blob handle
+and planned reads, and cancellation/close interactions. Arrow bridge tests check
 C layouts, producer ownership, release callbacks and stream reader lifetimes.
 The race lane also enables Go's pointer checks; native Rust internals are outside
 Go's race detector.
@@ -531,7 +649,7 @@ Windows arm64; neither establishes native Windows DLL support.
 ## Layout
 
 ```text
-*.go              public Dataset, Session, Write, Scanner, mutation and option APIs
+*.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
 lance_bundle_linux_amd64.go  generated selector that registers the bundle
 artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
