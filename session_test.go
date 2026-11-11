@@ -80,7 +80,7 @@ func TestSessionSharedCachesAndDatasetLifetime(t *testing.T) {
 	first.Close()
 
 	second, err := lance.NewSessionWithCacheSpecs(
-		lance.CacheSpec{Kind: lance.CacheSpecDefault},
+		lance.CacheSpec{Kind: lance.CacheSpecConfig, BackendKind: "moka", Options: map[string]string{"capacity": "1048576"}},
 		lance.CacheSpec{Kind: lance.CacheSpecDefault},
 	)
 	if err != nil {

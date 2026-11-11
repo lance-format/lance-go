@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sort"
 	"sync/atomic"
+	"unsafe"
 )
 
 // CacheSpecKind selects one field group in a native session cache spec.
@@ -32,8 +33,8 @@ type sessionCacheSpec struct {
 	SizeBytes    uint64
 	BackendURI   uintptr
 	BackendKind  uintptr
-	OptionKeys   uintptr
-	OptionValues uintptr
+	OptionKeys   **byte
+	OptionValues **byte
 	OptionCount  uint64
 }
 
@@ -183,8 +184,8 @@ func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecKeepAlive
 			if err != nil {
 				return sessionCacheSpec{}, keep, err
 			}
-			raw.OptionKeys = keyList.ptrs[0]
-			raw.OptionValues = valueList.ptrs[0]
+			raw.OptionKeys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
+			raw.OptionValues = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
 			raw.OptionCount = uint64(len(keys))
 			keep.values = append(keep.values, keyList, valueList)
 		}
