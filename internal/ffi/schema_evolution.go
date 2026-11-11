@@ -59,7 +59,7 @@ type fieldMetadataUpdate struct {
 	Field  fieldReference
 	Keys   *uintptr
 	Values *uintptr
-	Count  uintptr
+	Count  uint64
 	Mode   int32
 }
 
@@ -127,7 +127,7 @@ func (d *Dataset) UpdateFieldMetadata(updates []FieldMetadataUpdate) error {
 			Field:  ref,
 			Keys:   listPtr(keys),
 			Values: listPtr(values),
-			Count:  uintptr(len(update.Keys)),
+			Count:  uint64(len(update.Keys)),
 			Mode:   update.Mode,
 		}
 	}
@@ -139,7 +139,7 @@ func (d *Dataset) UpdateFieldMetadata(updates []FieldMetadataUpdate) error {
 	b := d.b
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if rc := b.datasetUpdateFieldMetadata(handleID, &native[0], uintptr(len(native))); rc != 0 {
+	if rc := b.datasetUpdateFieldMetadata(handleID, &native[0], uint64(len(native))); rc != 0 {
 		if err := b.takeError(); err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func (d *Dataset) FieldIDCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 	b := d.b
-	var count uintptr
+	var count uint64
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.datasetFieldIDCount(handleID, &count); rc != 0 {
@@ -166,7 +166,7 @@ func (d *Dataset) FieldIDCount() (uint64, error) {
 		}
 		return 0, fmt.Errorf("ffi: lance_dataset_field_id_count failed without setting an error")
 	}
-	return uint64(count), nil
+	return count, nil
 }
 
 func (d *Dataset) FieldIDAt(index uint64) (int32, error) {
@@ -178,7 +178,7 @@ func (d *Dataset) FieldIDAt(index uint64) (int32, error) {
 	var fieldID int32
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if rc := b.datasetFieldIDAt(handleID, uintptr(index), &fieldID); rc != 0 {
+	if rc := b.datasetFieldIDAt(handleID, index, &fieldID); rc != 0 {
 		if err := b.takeError(); err != nil {
 			return 0, err
 		}
@@ -225,7 +225,7 @@ func (d *Dataset) DropColumns(columns []string) error {
 	b := d.b
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if rc := b.datasetDropColumns(handleID, listPtr(list), uintptr(len(columns))); rc != 0 {
+	if rc := b.datasetDropColumns(handleID, listPtr(list), uint64(len(columns))); rc != 0 {
 		if err := b.takeError(); err != nil {
 			return err
 		}
@@ -284,7 +284,7 @@ func (d *Dataset) AlterColumns(alterations []ColumnAlteration) error {
 	b := d.b
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if rc := b.datasetAlterColumns(handleID, &native[0], uintptr(len(native))); rc != 0 {
+	if rc := b.datasetAlterColumns(handleID, &native[0], uint64(len(native))); rc != 0 {
 		if err := b.takeError(); err != nil {
 			return err
 		}
@@ -328,7 +328,7 @@ func (d *Dataset) AddColumnsSQL(columns []SQLColumn, batchSize uint64) error {
 	b := d.b
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if rc := b.datasetAddColumnsSQL(handleID, &native[0], uintptr(len(native)), batchSize); rc != 0 {
+	if rc := b.datasetAddColumnsSQL(handleID, &native[0], uint64(len(native)), batchSize); rc != 0 {
 		if err := b.takeError(); err != nil {
 			return err
 		}
@@ -420,7 +420,7 @@ func (d *Dataset) readMetadataJSON(call func(uintptr) *byte) (string, error) {
 	return goString(out), nil
 }
 
-func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uintptr, int32) *byte, keys []string, values []*string, mode int32) (string, error) {
+func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uint64, int32) *byte, keys []string, values []*string, mode int32) (string, error) {
 	if len(keys) != len(values) {
 		return "", invalidf("metadata update keys and values have different lengths")
 	}
@@ -442,7 +442,7 @@ func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uint
 	b := d.b
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	out := call(handleID, listPtr(keyList), listPtr(valueList), uintptr(len(keys)), mode)
+	out := call(handleID, listPtr(keyList), listPtr(valueList), uint64(len(keys)), mode)
 	keyList.keepAlive()
 	valueList.keepAlive()
 	if out == nil {

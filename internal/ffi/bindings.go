@@ -36,24 +36,24 @@ type bindings struct {
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 
 	datasetMetadataJSON             func(dataset uintptr) *byte
-	datasetUpdateMetadataJSON       func(dataset uintptr, keys *uintptr, values *uintptr, count uintptr, mode int32) *byte
-	datasetUpdateSchemaMetadataJSON func(dataset uintptr, keys *uintptr, values *uintptr, count uintptr, mode int32) *byte
-	datasetUpdateFieldMetadata      func(dataset uintptr, updates *fieldMetadataUpdate, count uintptr) int32
+	datasetUpdateMetadataJSON       func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
+	datasetUpdateSchemaMetadataJSON func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
+	datasetUpdateFieldMetadata      func(dataset uintptr, updates *fieldMetadataUpdate, count uint64) int32
 	datasetResolveFieldID           func(dataset uintptr, ref *fieldReference, out *int32) int32
-	datasetFieldIDCount             func(dataset uintptr, out *uintptr) int32
-	datasetFieldIDAt                func(dataset uintptr, index uintptr, out *int32) int32
-	datasetDropColumns              func(dataset uintptr, columns *uintptr, count uintptr) int32
-	datasetAlterColumns             func(dataset uintptr, alterations *columnAlteration, count uintptr) int32
-	datasetAddColumnsSQL            func(dataset uintptr, columns *sqlColumn, count uintptr, batchSize uint64) int32
+	datasetFieldIDCount             func(dataset uintptr, out *uint64) int32
+	datasetFieldIDAt                func(dataset uintptr, index uint64, out *int32) int32
+	datasetDropColumns              func(dataset uintptr, columns *uintptr, count uint64) int32
+	datasetAlterColumns             func(dataset uintptr, alterations *columnAlteration, count uint64) int32
+	datasetAddColumnsSQL            func(dataset uintptr, columns *sqlColumn, count uint64, batchSize uint64) int32
 	datasetAddColumnsNulls          func(dataset uintptr, schema *cdata.ArrowSchema) int32
 	datasetAddColumnsStream         func(dataset uintptr, stream *cdata.ArrowArrayStream, batchSize uint64) int32
 	datasetAddColumnsBatchUDF       func(dataset uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32) int32
 	datasetConfig                   func(dataset uintptr) uintptr
 	datasetConfigCount              func(config uintptr) uint64
-	datasetConfigKeyAt              func(config uintptr, index uintptr) *byte
-	datasetConfigValueAt            func(config uintptr, index uintptr) *byte
+	datasetConfigKeyAt              func(config uintptr, index uint64) *byte
+	datasetConfigValueAt            func(config uintptr, index uint64) *byte
 	datasetConfigClose              func(config uintptr)
-	datasetUpdateConfigJSON         func(dataset uintptr, keys *uintptr, values *uintptr, count uintptr, mode int32) *byte
+	datasetUpdateConfigJSON         func(dataset uintptr, keys *uintptr, values *uintptr, count uint64, mode int32) *byte
 
 	datasetCloneHandle   func(dataset uintptr) uintptr
 	datasetDelete        func(dataset uintptr, predicate string, outNumDeleted *uint64) int32

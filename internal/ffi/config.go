@@ -37,14 +37,14 @@ func (d *Dataset) Config() (map[string]string, error) {
 	}
 	entries := make(map[string]string, count)
 	for i := uint64(0); i < count; i++ {
-		key := b.datasetConfigKeyAt(config, uintptr(i))
+		key := b.datasetConfigKeyAt(config, i)
 		if key == nil {
 			if err := b.takeError(); err != nil {
 				return nil, err
 			}
 			return nil, fmt.Errorf("ffi: config snapshot returned a nil key without setting an error")
 		}
-		value := b.datasetConfigValueAt(config, uintptr(i))
+		value := b.datasetConfigValueAt(config, i)
 		if value == nil {
 			if err := b.takeError(); err != nil {
 				return nil, err
