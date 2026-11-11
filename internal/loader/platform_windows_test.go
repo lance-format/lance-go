@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -46,7 +47,7 @@ func TestLoadFromEnvRejectsInvalidWindowsLibrary(t *testing.T) {
 	if errors.Is(err, ErrNotFound) {
 		t.Fatalf("explicitly configured invalid DLL must not be reported as ErrNotFound: %v", err)
 	}
-	for _, want := range []string{EnvLibPath, path} {
+	for _, want := range []string{EnvLibPath, strconv.Quote(path)} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error does not mention %q: %v", want, err)
 		}

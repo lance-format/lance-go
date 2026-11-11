@@ -118,6 +118,7 @@ func schemaReleaseCallback(s *ArrowSchema) (ret uintptr) {
 	if r, ok := v.(schemaReleaser); ok {
 		r.releaseSchema(s)
 	}
+	return
 }
 
 func arrayReleaseCallback(a *ArrowArray) (ret uintptr) {
@@ -140,6 +141,7 @@ func arrayReleaseCallback(a *ArrowArray) (ret uintptr) {
 	if r, ok := v.(arrayReleaser); ok {
 		r.releaseArray(a)
 	}
+	return
 }
 
 func streamReleaseCallback(s *ArrowArrayStream) (ret uintptr) {
@@ -162,4 +164,5 @@ func streamReleaseCallback(s *ArrowArrayStream) (ret uintptr) {
 	if r, ok := v.(streamReleaser); ok {
 		r.releaseStream(s)
 	}
+	return
 }

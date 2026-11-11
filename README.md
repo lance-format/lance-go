@@ -91,9 +91,9 @@ committed dataset, avoiding an error that could encourage duplicate writes.
 3. Otherwise the platform library name (`liblance_c.so` on Linux,
    `liblance_c.dylib` on macOS, `lance_c.dll` on Windows) is opened through
    the platform loader. Unix honors `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH`,
-   ldconfig and the usual system directories. Windows uses the standard DLL
-   search order, including the application directory, system directories and
-   `PATH`.
+   ldconfig and the usual system directories. Windows applies the process's
+   DLL search policy, which can include the application, system and current
+   directories and `PATH`.
 
 The library is never unloaded. `lance-c` owns a Tokio runtime, thread-local
 error state and handles that may outlive a dataset, so unloading while native

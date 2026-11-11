@@ -16,8 +16,8 @@
 //  3. The platform library name (liblance_c.so on Linux, liblance_c.dylib on
 //     macOS, lance_c.dll on Windows), resolved by the platform loader. Unix
 //     honors LD_LIBRARY_PATH, DYLD_LIBRARY_PATH, ldconfig caches and the usual
-//     system directories. Windows uses the standard DLL search order,
-//     including the application directory and PATH.
+//     system directories. Windows applies the process's DLL search policy,
+//     which can include the application, system and current directories and PATH.
 //
 // Builds tagged lance_external_lib omit bundle, cache, and decompression code
 // entirely and use only the environment and system-loader steps.
