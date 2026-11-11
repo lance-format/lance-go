@@ -6,7 +6,9 @@ contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
 Only `linux/amd64` has an active bundle. Windows and other Unix runtime
-support, and real S3 acceptance, remain pending. Release notes may claim only
+support remain pending. Real AWS S3 refresh passed in both direct-accessor and
+operator-owned namespace modes at `59a427e` through PR #37; this does not claim
+commercial namespace-service or production-account support. Release notes may claim only
 the evidence recorded for the claimed target; they must not claim that issue #1
 is complete.
 
@@ -179,8 +181,9 @@ it does not establish runtime coverage of every native export.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s, and the dynamic loader. Older glibc, musl,
-Windows, and other architectures have no compatible bundle claim. Real S3
-acceptance is also pending. Source review is a separate state: it can justify
+Windows, and other architectures have no compatible bundle claim. The real S3
+acceptance above is scoped to Linux amd64 and the paired native88 library.
+Source review is a separate state: it can justify
 understanding of the native change, but it is not ABI or runtime acceptance.
 
 A race run must use a supplied library; record whether it used the default
@@ -428,8 +431,9 @@ current pin examples, not a released preview.
 Prepare release notes from that record. Include the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,
 the default and external behavior, and what remains pending. Do not claim
-Windows or other Unix runtime support, real S3 acceptance, or completion of
-issue #1.
+Windows or other Unix runtime support or completion of issue #1 without the
+corresponding accepted evidence. Describe S3 acceptance with its tested source,
+native library, and self-hosted namespace boundary.
 
 This document is not release authorization or acceptance. A maintainer decides
 readiness and authorizes the preview tag only after the evidence above exists
