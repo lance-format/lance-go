@@ -210,3 +210,40 @@ Only one artifact target is published, so these checks do not establish archive
 selection across a multi-platform release. Broader glibc/musl coverage, macOS
 runtime support, and real Windows DLL build, packaging and cold-cache loading
 remain pending.
+
+## Native Unix validation workflow
+
+`.github/workflows/unix-native.yml` builds and tests the pinned lance-c source
+on native runners for `linux/amd64`, `linux/arm64`, `darwin/amd64`, and
+`darwin/arm64`. The runners are `ubuntu-24.04`, `ubuntu-24.04-arm`,
+`macos-15-intel`, and `macos-15`. The workflow runs on pull requests and `main`
+pushes that touch native inputs, and on manual dispatch.
+
+Each job restores or builds the exact pinned source through
+`scripts/build-lance-c.sh`, validates the install cache with
+`scripts/lance-c-cache.sh`, and runs `scripts/check-native-library.sh` against
+the installed library and header. That check verifies the pinned header hash,
+object format and architecture, direct dependencies, the libc or macOS
+deployment floor, and that every symbol in the Go binding table is exported. It
+reports observed export and dependency counts; it does not assert that the
+library exports only `lance_` symbols.
+
+The workflow then runs `scripts/check-abi-symbols.go` and three test passes
+against the supplied library: the default build, an external build
+(`-tags lance_external_lib`) with `CGO_ENABLED=0`, and an external build with
+the race detector. A skipped native test fails the job.
+
+Finally, the job packages the library with `scripts/sync-lance-c.sh` into a
+companion module under an `artifacts/staging/<goos>-<goarch>` module path. The
+module directory is created outside the checkout, and
+`scripts/verify-lance-c-artifact` checks the compressed payload hash and size,
+decompresses it, compares it byte for byte with the library, and checks the
+uncompressed hash, size, pin, and module path. The staged module and evidence
+are uploaded with seven-day retention. The workflow asserts that the checkout
+is unchanged, so it cannot activate a selector.
+
+These uploads are validation evidence, not a published target. The workflow
+does not publish a module, create a release or tag, or change a build
+constraint. A successful run establishes native build and test results for
+that commit only; it does not claim macOS runtime support, a deployment floor,
+or completion of the platform roadmap.
