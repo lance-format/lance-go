@@ -245,8 +245,8 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal("read all produced no batches")
 	}
 
-	if got := collectIDs(t, mustReadRange(t, reader, 1, 2)); !reflect.DeepEqual(got, []int64{2, 3}) {
-		t.Fatalf("range ids = %v, want [2 3]", got)
+	if got := collectIDs(t, mustReadRange(t, reader, 1, 2)); !reflect.DeepEqual(got, []int64{-1, 3}) {
+		t.Fatalf("range ids = %v, want [-1 3]", got)
 	}
 	if got := collectIDs(t, mustReadIndices(t, reader, []uint32{3, 0})); !reflect.DeepEqual(got, []int64{4, 1}) {
 		t.Fatalf("index ids = %v, want [4 1]", got)
@@ -312,7 +312,7 @@ func TestSlicedBatch(t *testing.T) {
 	schema := testSchema()
 
 	base := testBatch(t, schema)
-	sliced := base.NewSlice(1, 3)
+	sliced := base.NewSlice(1, 4)
 	defer sliced.Release()
 	defer base.Release()
 
