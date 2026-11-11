@@ -394,7 +394,7 @@ func (s *Scanner) setProjection(columns []ProjectionColumn) error {
 		return err
 	}
 	raw := make([]projectionColumn, len(columns))
-	for i, column := range columns {
+	for i := range columns {
 		raw[i] = projectionColumn{
 			OutputName: list.ptrs[i*2],
 			Expression: list.ptrs[i*2+1],

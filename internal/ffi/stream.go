@@ -63,27 +63,30 @@ func releaseRecordBatches(batches []arrow.RecordBatch) {
 }
 
 func callStreamGetSchema(stream *cdata.ArrowArrayStream, out *cdata.ArrowSchema) uintptr {
-	return purego.SyscallN(
+	result, _, _ := purego.SyscallN(
 		stream.GetSchema,
 		uintptr(unsafe.Pointer(stream)),
 		uintptr(unsafe.Pointer(out)),
 	)
+	return result
 }
 
 func callStreamGetNext(stream *cdata.ArrowArrayStream, out *cdata.ArrowArray) uintptr {
-	return purego.SyscallN(
+	result, _, _ := purego.SyscallN(
 		stream.GetNext,
 		uintptr(unsafe.Pointer(stream)),
 		uintptr(unsafe.Pointer(out)),
 	)
+	return result
 }
 
 func streamError(stream *cdata.ArrowArrayStream, operation string) error {
 	message := "native Arrow stream reported an error"
 	if stream.GetLastError != 0 {
-		ptr, _, _ := purego.SyscallN(stream.GetLastError, uintptr(unsafe.Pointer(stream)))
-		if ptr != 0 {
-			message = goString((*byte)(unsafe.Pointer(ptr)))
+		var getLastError func(*cdata.ArrowArrayStream) *byte
+		purego.RegisterFunc(&getLastError, stream.GetLastError)
+		if ptr := getLastError(stream); ptr != nil {
+			message = goString(ptr)
 		}
 	}
 	return fmt.Errorf("ffi: Arrow stream %s: %s", operation, message)
