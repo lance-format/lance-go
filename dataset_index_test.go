@@ -257,6 +257,25 @@ func TestVectorIndexTrainingAndOptions(t *testing.T) {
 	if indices[0].Type == "" {
 		t.Fatalf("vector index type is empty")
 	}
+
+	indexed.Close()
+	reopened, err := lance.Open(ctx, uri)
+	if err != nil {
+		t.Fatalf("reopen indexed dataset: %v", err)
+	}
+	defer reopened.Close()
+	scan, err := reopened.Scan(
+		lance.WithNearest("vector", lance.NewFloat32Vector([]float32{0, 1, 2, 3}), 1),
+		lance.WithVectorMetric(index.MetricL2),
+		lance.WithVectorNProbes(2),
+		lance.WithVectorFastSearch(true),
+	)
+	if err != nil {
+		t.Fatalf("indexed nearest scan: %v", err)
+	}
+	rows := collectNearest(t, scan)
+	requireNearestIDs(t, rows, []int64{1})
+	requireNearestDistances(t, rows, []float32{0})
 }
 
 func TestLegacyVectorParamsExpansion(t *testing.T) {
