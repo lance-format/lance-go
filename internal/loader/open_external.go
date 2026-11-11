@@ -1,4 +1,4 @@
-//go:build lance_external_lib && (linux || darwin)
+//go:build lance_external_lib && (linux || darwin || windows)
 
 package loader
 

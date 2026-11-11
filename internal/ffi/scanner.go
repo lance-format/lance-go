@@ -127,7 +127,7 @@ func (w *pollWaiter) drain() {
 }
 
 var pollWaker = sync.OnceValue(func() uintptr {
-	return purego.NewCallback(func(ctx uintptr) {
+	return purego.NewCallback(func(ctx uintptr) (ret uintptr) {
 		defer func() { _ = recover() }()
 		value, ok := handle.Get(uint64(ctx))
 		if !ok {
@@ -138,11 +138,12 @@ var pollWaker = sync.OnceValue(func() uintptr {
 			return
 		}
 		waiter.wake()
+		return
 	})
 })
 
 var statisticsCallback = sync.OnceValue(func() uintptr {
-	return purego.NewCallback(func(ctx uintptr, raw *scanStatistics) {
+	return purego.NewCallback(func(ctx uintptr, raw *scanStatistics) (ret uintptr) {
 		defer func() { _ = recover() }()
 		value, ok := handle.Get(uint64(ctx))
 		if !ok || raw == nil {
@@ -153,6 +154,7 @@ var statisticsCallback = sync.OnceValue(func() uintptr {
 			return
 		}
 		state.store(raw)
+		return
 	})
 })
 
