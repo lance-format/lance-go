@@ -489,8 +489,10 @@ func TestMovedChildStructuresAreReleasedByParent(t *testing.T) {
 	movedSchema := *child
 	child.Release = 0
 	ReleaseSchema(&root)
-	if got := handle.Len(); got != before+1 {
-		t.Fatalf("moved child schema handle was released by the parent: got %d, want %d", got, before+1)
+	// The moved list schema still owns its element schema, so two handles
+	// remain: the child and its grandchild.
+	if got := handle.Len(); got != before+2 {
+		t.Fatalf("moved child schema handle was released by the parent: got %d, want %d", got, before+2)
 	}
 	ReleaseSchema(&movedSchema)
 	if movedSchema.Release != 0 {
@@ -515,8 +517,9 @@ func TestMovedChildStructuresAreReleasedByParent(t *testing.T) {
 	movedArray := *childArray
 	childArray.Release = 0
 	ReleaseArray(&dst)
-	if got := handle.Len(); got != before+1 {
-		t.Fatalf("moved child array handle was released by the parent: got %d, want %d", got, before+1)
+	// The moved list array still owns its values array, so two handles remain.
+	if got := handle.Len(); got != before+2 {
+		t.Fatalf("moved child array handle was released by the parent: got %d, want %d", got, before+2)
 	}
 	if movedArray.Length != 2 || (*[2]int32)(cBuffer(&movedArray, 1))[0] != 1 {
 		t.Fatal("moved child array data was freed with the parent")

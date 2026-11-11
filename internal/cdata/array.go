@@ -778,7 +778,7 @@ func exportNode(data arrow.ArrayData, dt arrow.DataType) (*arrayExporter, error)
 			e.cChildren[int(i)] = &child.value
 		}
 	}
-	if dictData := data.Dictionary(); dictData != nil {
+	if dictData := dictionaryData(data); dictData != nil {
 		dictType, ok := dt.(*arrow.DictionaryType)
 		if !ok {
 			e.freeTree()
@@ -795,6 +795,20 @@ func exportNode(data arrow.ArrayData, dt arrow.DataType) (*arrayExporter, error)
 	e.value.NChildren = int64(c)
 	e.register()
 	return e, nil
+}
+
+// dictionaryData returns data.Dictionary with the typed-nil interface
+// normalized to nil. *array.Data implements arrow.ArrayData, so a nil
+// *array.Data stored in the interface compares non-nil.
+func dictionaryData(data arrow.ArrayData) arrow.ArrayData {
+	dict := data.Dictionary()
+	if dict == nil {
+		return nil
+	}
+	if concrete, ok := dict.(*array.Data); ok && concrete == nil {
+		return nil
+	}
+	return dict
 }
 
 func childDataType(dt arrow.DataType, i int) (arrow.DataType, error) {
