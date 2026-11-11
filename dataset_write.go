@@ -12,6 +12,10 @@ import (
 // Write writes all batches from reader using the supplied options. The
 // default mode is Create.
 //
+// reader is borrowed and advanced during the call, possibly only partially
+// when a write fails. The caller retains ownership and must release reader
+// after the call. Do not use or release it concurrently with Write.
+//
 // The native write is synchronous and cannot be interrupted once it starts.
 // A canceled context is observed before the native call; if the write commits
 // after cancellation, the committed Dataset is returned instead of reporting

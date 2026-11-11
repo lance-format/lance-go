@@ -88,11 +88,11 @@ func (d *Dataset) Update(ctx context.Context, predicate string, updates ...Colum
 // find-or-create: existing keys are kept and missing source keys are inserted.
 // See MergeInsertParams for expression requirements.
 //
-// source is borrowed for this call. Its schema must be compatible with d, and
-// it is consumed by the native merge on every path after the stream is handed
-// to Lance. The caller must not read or release source after this method
-// returns. If local argument validation fails before export, source is left
-// untouched.
+// source is borrowed and may be partially or fully advanced, including on
+// failure. Its schema must be compatible with d. The caller retains ownership
+// and must release source after this method returns. Do not use or release it
+// concurrently with the call. Argument validation failures before stream export
+// leave source untouched.
 //
 // The returned Dataset owns an independent native handle and must be closed by
 // the caller. The native merge is synchronous; ctx is checked before the
@@ -143,10 +143,10 @@ func (d *Dataset) MergeInsert(ctx context.Context, onColumns []string, source ar
 // are forwarded to native validation. The source field named by rightOn is the
 // join key and is not appended; every other source field must be new to d.
 //
-// source is borrowed for this call and is consumed by the native merge on
-// every path after the stream is handed to Lance. The caller must not read or
-// release source after this method returns. If local argument validation fails
-// before export, source is left untouched.
+// source is borrowed and may be partially or fully advanced, including on
+// failure. The caller retains ownership and must release source after this
+// method returns. Do not use or release it concurrently with the call. Argument
+// validation failures before stream export leave source untouched.
 //
 // The returned Dataset owns an independent native handle and must be closed by
 // the caller. The native merge is synchronous; ctx is checked before the

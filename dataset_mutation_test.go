@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -63,7 +64,7 @@ func readMutationRows(t *testing.T, dataset *lance.Dataset) []mutationRow {
 		for i, id := range ids {
 			row := mutationRow{
 				ID:        id,
-				Name:      names.Value(i),
+				Name:      strings.Clone(names.Value(i)),
 				NameValid: !names.IsNull(i),
 			}
 			if scores != nil {
