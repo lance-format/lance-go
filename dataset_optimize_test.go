@@ -348,8 +348,18 @@ func TestOptimizeIndicesPlanTransportAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListIndices: %v", err)
 	}
-	if len(indices) != 1 || indices[0].Name != "id_bitmap" {
-		t.Fatalf("optimized indices = %v, want one id_bitmap index", indices)
+	// The original eight-row segment stays intact. The eight appended rows
+	// become two four-row segments under MaxRowsPerSegment, all under one name.
+	if len(indices) != 3 {
+		t.Fatalf("optimized indices = %v, want three id_bitmap segments", indices)
+	}
+	seen := make(map[string]bool)
+	for _, segment := range indices {
+		if segment.Name != "id_bitmap" || segment.Type != "Bitmap" ||
+			!slices.Equal(segment.Columns, []string{"id"}) || segment.UUID == "" || seen[segment.UUID] {
+			t.Fatalf("unexpected optimized segment: %+v", segment)
+		}
+		seen[segment.UUID] = true
 	}
 	if err := optimized.Close(); err != nil {
 		t.Fatalf("close optimized dataset: %v", err)
