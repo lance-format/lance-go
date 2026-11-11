@@ -39,7 +39,7 @@ func TestNativeErrorSemantics(t *testing.T) {
 
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
 
-	handle := b.datasetOpen(missing, 0, 0)
+	handle := b.datasetOpen(missing, nil, 0)
 	if handle != 0 {
 		b.datasetClose(handle)
 		t.Fatalf("lance_dataset_open(%q) unexpectedly succeeded", missing)

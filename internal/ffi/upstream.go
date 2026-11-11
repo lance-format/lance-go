@@ -3,12 +3,11 @@ package ffi
 // Upstream lance-c revision this package is written against.
 //
 // upstreamRelease is the most recent release tag at the time of the pin. The
-// pin is 60 commits past that tag, but every symbol bound here has the same
-// signature in both revisions, so a v0.1.9 release build is suitable for
-// smoke tests while a source build from upstreamCommit is authoritative.
+// release tag is informational; the expanded bindings require a source build
+// from upstreamCommit with the exact header recorded below.
 //
-// There is no version symbol in lance-c yet (tracked upstream as
-// lance-format/lance-c#165), so these values cannot be verified at runtime. They
+// There is no version symbol in the pinned lance-c ABI, so these values cannot
+// be verified at runtime. They
 // document intent and give scripts/check-abi-symbols.go and
 // scripts/build-lance-c.sh a single source of truth.
 const (
