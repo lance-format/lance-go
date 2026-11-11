@@ -583,17 +583,18 @@ func WithBlobHandling(handling BlobHandling) ScanOption {
 // MaterializationAllEarlyExcept. An empty exception list with that style loads
 // every projected column early.
 func WithMaterializationStyle(style MaterializationStyle, earlyExcept ...string) ScanOption {
+	early := append([]string(nil), earlyExcept...)
 	return func(config *scanConfig) error {
 		switch style {
 		case MaterializationHeuristic, MaterializationAllLate, MaterializationAllEarly, MaterializationAllEarlyExcept:
 		default:
 			return fmt.Errorf("invalid materialization style %d", style)
 		}
-		if style != MaterializationAllEarlyExcept && len(earlyExcept) > 0 {
+		if style != MaterializationAllEarlyExcept && len(early) > 0 {
 			return fmt.Errorf("materialization style %d does not accept early-except columns", style)
 		}
-		columns := make([]string, len(earlyExcept))
-		for i, column := range earlyExcept {
+		columns := make([]string, len(early))
+		for i, column := range early {
 			if column == "" {
 				return fmt.Errorf("early-except column must not be empty")
 			}
@@ -613,8 +614,9 @@ func WithMaterializationStyle(style MaterializationStyle, earlyExcept ...string)
 // with no IDs selects no fragments. It replaces the metadata selection staged
 // by Fragment.Scan, including staged deletion metadata.
 func WithFragmentIDs(fragmentIDs ...uint64) ScanOption {
+	copied := append([]uint64(nil), fragmentIDs...)
 	return func(config *scanConfig) error {
-		config.fragmentIDs = append([]uint64(nil), fragmentIDs...)
+		config.fragmentIDs = append([]uint64(nil), copied...)
 		config.fragmentIDsSet = true
 		return nil
 	}
