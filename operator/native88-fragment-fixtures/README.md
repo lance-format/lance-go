@@ -166,8 +166,8 @@ ldd "$WORK/fragment_mutation_cpp" > "$LOGS/ldd-cpp.txt" 2>&1
 
 Run the C main first, then the C++ main. Each main mutates the five datasets
 given to it, so run each fixture exactly once and regenerate the whole set for
-a rerun. The fifth argument is `replace`, corresponding to the upstream
-`REPLACE_URI`.
+a rerun. The five dataset arguments are `add`, `merge`, `update`, `replace`
+and `delete`, in that order.
 
 ```bash
 set +e

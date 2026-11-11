@@ -819,7 +819,7 @@ func collectBatchRows(batch arrow.RecordBatch, rows map[int64]rowFacts, rowIDs m
 			ID:           id,
 			Value:        value,
 			ProfileScore: score,
-			ProfileTag:   tag,
+			ProfileTag:   strings.Clone(tag),
 			RowID:        rowID,
 		}
 	}
