@@ -189,10 +189,10 @@ func TestNativeCustomNamespaceDispatchesFourOperations(t *testing.T) {
 		}
 	}
 
-	var namespaceErr *namespace.NamespaceError
+	var nativeErr *namespace.NativeError
 	_, err = ns.ListNamespaces(ctx, &namespace.ListNamespacesRequest{})
-	if !errors.As(err, &namespaceErr) || namespaceErr.Code != namespace.ErrorCodeUnsupported {
-		t.Fatalf("ListNamespaces = %v, want Unsupported", err)
+	if !errors.As(err, &nativeErr) || nativeErr.Code != int32(lance.CodeNotSupported) {
+		t.Fatalf("ListNamespaces = %v, want native CodeNotSupported", err)
 	}
 	if got := len(client.recordedCalls()); got != len(wantCalls) {
 		t.Fatalf("unsupported operation reached the client: %v", client.recordedCalls())

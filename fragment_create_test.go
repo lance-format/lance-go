@@ -2,6 +2,7 @@ package lance_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -54,10 +55,7 @@ func TestCreateFragmentPublishesThroughAppend(t *testing.T) {
 	if fragment.IsBound() {
 		t.Fatal("new fragment is bound to a dataset, want detached metadata")
 	}
-	physicalRows, err := fragment.PhysicalRows()
-	if err != nil {
-		t.Fatalf("PhysicalRows: %v", err)
-	}
+	physicalRows := detachedFragmentPhysicalRows(t, fragment)
 	if physicalRows != 3 {
 		t.Fatalf("physical rows = %d, want 3", physicalRows)
 	}
@@ -83,6 +81,7 @@ func TestCreateFragmentPublishesThroughAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAppendOperation: %v", err)
 	}
+	defer operation.Close()
 	if err := fragment.Close(); err != nil {
 		t.Fatalf("Close fragment: %v", err)
 	}
@@ -90,6 +89,7 @@ func TestCreateFragmentPublishesThroughAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer transaction.Close()
 	committed, err := lance.CommitTransaction(ctx, uri, transaction)
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
@@ -173,10 +173,7 @@ func TestWriteFragmentsUsesNativeSplitting(t *testing.T) {
 		if fragment.IsBound() {
 			t.Fatalf("fragment %d is bound, want detached metadata", i)
 		}
-		rows, err := fragment.PhysicalRows()
-		if err != nil {
-			t.Fatalf("fragment %d PhysicalRows: %v", i, err)
-		}
+		rows := detachedFragmentPhysicalRows(t, fragment)
 		if rows != wantRows[i] {
 			t.Fatalf("fragment %d physical rows = %d, want %d", i, rows, wantRows[i])
 		}
@@ -186,6 +183,7 @@ func TestWriteFragmentsUsesNativeSplitting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAppendOperation: %v", err)
 	}
+	defer operation.Close()
 	for i, fragment := range fragments {
 		if err := fragment.Close(); err != nil {
 			t.Fatalf("Close fragment %d: %v", i, err)
@@ -195,6 +193,7 @@ func TestWriteFragmentsUsesNativeSplitting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer transaction.Close()
 	committed, err := lance.CommitTransaction(ctx, uri, transaction)
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
@@ -256,6 +255,7 @@ func TestWriteFragmentsAggregatesIndependentCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAppendOperation: %v", err)
 	}
+	defer operation.Close()
 	for i, fragment := range all {
 		if err := fragment.Close(); err != nil {
 			t.Fatalf("Close fragment %d: %v", i, err)
@@ -265,6 +265,7 @@ func TestWriteFragmentsAggregatesIndependentCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer transaction.Close()
 	committed, err := lance.CommitTransaction(ctx, uri, transaction)
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
@@ -355,6 +356,7 @@ func TestCreateFragmentPreservesNativeFieldIDs(t *testing.T) {
 		t.Fatalf("NewTransaction project: %v", err)
 	}
 	projectOperation.Close()
+	defer projectTransaction.Close()
 	projectedDataset, err := lance.CommitTransaction(ctx, sourceURI, projectTransaction)
 	if err != nil {
 		projected.Close()
@@ -391,31 +393,27 @@ func TestCreateFragmentPreservesNativeFieldIDs(t *testing.T) {
 		t.Fatalf("Close projected schema: %v", err)
 	}
 
-	fragmentSchema, err := fragment.NativeSchema()
+	if _, err := fragment.NativeSchema(); !errors.Is(err, lance.ErrNotSupported) {
+		t.Fatalf("detached NativeSchema = %v, want ErrNotSupported", err)
+	}
+	dataFile, err := fragment.DataFileAt(0)
 	if err != nil {
-		t.Fatalf("fragment NativeSchema: %v", err)
+		t.Fatalf("DataFileAt: %v", err)
 	}
-	id, err := fragmentSchema.FieldID("id")
+	fieldIDs, err := dataFile.FieldIDs()
+	dataFile.Close()
 	if err != nil {
-		fragmentSchema.Close()
-		t.Fatalf("FieldID(id): %v", err)
+		t.Fatalf("FieldIDs: %v", err)
 	}
-	extra, err := fragmentSchema.FieldID("extra")
-	if err != nil {
-		fragmentSchema.Close()
-		t.Fatalf("FieldID(extra): %v", err)
-	}
-	if err := fragmentSchema.Close(); err != nil {
-		t.Fatalf("Close fragment schema: %v", err)
-	}
-	if id != 0 || extra != 2 {
-		t.Fatalf("fragment field IDs = (%d, %d), want (0, 2)", id, extra)
+	if len(fieldIDs) != 2 || fieldIDs[0] != 0 || fieldIDs[1] != 2 {
+		t.Fatalf("fragment file field IDs = %v, want [0 2]", fieldIDs)
 	}
 
 	operation, err := lance.NewAppendOperation(fragment)
 	if err != nil {
 		t.Fatalf("NewAppendOperation: %v", err)
 	}
+	defer operation.Close()
 	if err := fragment.Close(); err != nil {
 		t.Fatalf("Close fragment: %v", err)
 	}
@@ -423,6 +421,7 @@ func TestCreateFragmentPreservesNativeFieldIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer transaction.Close()
 	committed, err := lance.CommitTransaction(ctx, sourceURI, transaction)
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
@@ -439,11 +438,11 @@ func TestCreateFragmentPreservesNativeFieldIDs(t *testing.T) {
 		t.Fatalf("target NativeSchema: %v", err)
 	}
 	defer reopenedSchema.Close()
-	id, err = reopenedSchema.FieldID("id")
+	id, err := reopenedSchema.FieldID("id")
 	if err != nil {
 		t.Fatalf("target FieldID(id): %v", err)
 	}
-	extra, err = reopenedSchema.FieldID("extra")
+	extra, err := reopenedSchema.FieldID("extra")
 	if err != nil {
 		t.Fatalf("target FieldID(extra): %v", err)
 	}
@@ -758,18 +757,11 @@ func TestCreateFragmentFromFile(t *testing.T) {
 	if fragment.IsBound() {
 		t.Fatal("file fragment is bound, want detached metadata")
 	}
-	physicalRows, err := fragment.PhysicalRows()
-	if err != nil {
-		t.Fatalf("PhysicalRows: %v", err)
-	}
+	physicalRows := detachedFragmentPhysicalRows(t, fragment)
 	if physicalRows != 3 {
 		t.Fatalf("physical rows = %d, want 3", physicalRows)
 	}
-	explicitPhysicalRows, err := explicitFragment.PhysicalRows()
-	if err != nil {
-		explicitFragment.Close()
-		t.Fatalf("explicit PhysicalRows: %v", err)
-	}
+	explicitPhysicalRows := detachedFragmentPhysicalRows(t, explicitFragment)
 	if explicitPhysicalRows != explicitRows {
 		explicitFragment.Close()
 		t.Fatalf("explicit physical rows = %d, want %d", explicitPhysicalRows, explicitRows)
@@ -782,6 +774,7 @@ func TestCreateFragmentFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewAppendOperation: %v", err)
 	}
+	defer operation.Close()
 	if err := fragment.Close(); err != nil {
 		t.Fatalf("Close fragment: %v", err)
 	}
@@ -789,6 +782,7 @@ func TestCreateFragmentFromFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer transaction.Close()
 	committed, err := lance.CommitTransaction(ctx, sourceURI, transaction)
 	if err != nil {
 		t.Fatalf("CommitTransaction: %v", err)
@@ -991,4 +985,27 @@ func TestFragmentSchemaRejectedForNamespaceWrite(t *testing.T) {
 	if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "WithFragmentSchema is valid only") {
 		t.Fatalf("namespace write error = %v, want fragment-only schema rejection before namespace acquisition", err)
 	}
+}
+
+// Detached fragments expose persisted metadata without requiring a dataset
+// snapshot. Row-count methods may perform I/O and require a bound fragment.
+func detachedFragmentPhysicalRows(t *testing.T, fragment *lance.Fragment) uint64 {
+	t.Helper()
+	if _, err := fragment.PhysicalRows(); !errors.Is(err, lance.ErrNotSupported) {
+		t.Fatalf("detached PhysicalRows = %v, want ErrNotSupported", err)
+	}
+	data, err := fragment.MetadataJSON()
+	if err != nil {
+		t.Fatalf("MetadataJSON: %v", err)
+	}
+	var metadata struct {
+		PhysicalRows *uint64 `json:"physical_rows"`
+	}
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatalf("decode fragment metadata: %v", err)
+	}
+	if metadata.PhysicalRows == nil {
+		t.Fatal("fragment metadata has no physical row count")
+	}
+	return *metadata.PhysicalRows
 }

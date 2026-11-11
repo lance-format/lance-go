@@ -3,6 +3,8 @@ package lance_test
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -250,37 +252,53 @@ func TestNativeWriteOptionsExternalBlobModes(t *testing.T) {
 	root := t.TempDir()
 	uri := filepath.Join(root, "blob.lance")
 	base := filepath.Join(root, "base")
-	builder, err := lance.NewBlobDescriptorBuilder("blob")
+	externalPath := filepath.Join(root, "external.bin")
+	if err := os.WriteFile(externalPath, []byte("blob"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	field, err := lance.BlobField("blob", true)
 	if err != nil {
-		t.Fatalf("NewBlobDescriptorBuilder: %v", err)
-	}
-	defer builder.Close()
-	if err := builder.AppendExternal(1, "s3://bucket/blob", 0, 4); err != nil {
-		t.Fatalf("AppendExternal: %v", err)
-	}
-	field, err := builder.Field()
-	if err != nil {
-		t.Fatalf("Field: %v", err)
-	}
-	blobArray, finishedField, err := builder.Finish()
-	if err != nil {
-		t.Fatalf("Finish: %v", err)
-	}
-	defer blobArray.Release()
-	if finishedField.Name != field.Name {
-		t.Fatalf("finished field = %q, want %q", finishedField.Name, field.Name)
+		t.Fatalf("BlobField: %v", err)
 	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
-		finishedField,
+		field,
 	}, nil)
-	idBuilder := array.NewInt64Builder(memory.DefaultAllocator)
-	defer idBuilder.Release()
-	idBuilder.Append(1)
-	idArray := idBuilder.NewArray()
-	defer idArray.Release()
-	record := array.NewRecord(schema, []arrow.Array{idArray, blobArray}, 1)
+	// Prepared descriptors already contain resolved locations and bypass URI
+	// policy validation. Use a raw URI so the native writer resolves it.
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	builder.Field(0).(*array.Int64Builder).Append(1)
+	blobs := builder.Field(1).(*array.StructBuilder)
+	blobs.Append(true)
+	blobs.FieldBuilder(0).(*array.BinaryBuilder).AppendNull()
+	blobs.FieldBuilder(1).(*array.StringBuilder).Append("file://" + externalPath)
+	record := builder.NewRecordBatch()
 	defer record.Release()
+	checkPayload := func(uri string) {
+		t.Helper()
+		dataset, err := lance.Open(ctx, uri)
+		if err != nil {
+			t.Fatalf("reopen blob dataset: %v", err)
+		}
+		defer dataset.Close()
+		files, err := dataset.TakeBlobsByIndices(ctx, []uint64{0}, "blob")
+		if err != nil {
+			t.Fatalf("TakeBlobsByIndices: %v", err)
+		}
+		for _, file := range files {
+			if file != nil {
+				defer file.Close()
+			}
+		}
+		if len(files) != 1 || files[0] == nil {
+			t.Fatalf("blob files = %v, want one non-null file", files)
+		}
+		payload, err := io.ReadAll(files[0])
+		if err != nil || string(payload) != "blob" {
+			t.Fatalf("blob payload = %q, %v; want blob", payload, err)
+		}
+	}
 
 	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record),
 		lance.WithWriteParams(lance.WriteParams{
@@ -298,6 +316,7 @@ func TestNativeWriteOptionsExternalBlobModes(t *testing.T) {
 		t.Fatalf("CountRows = %d, %v; want 1", rows, err)
 	}
 	dataset.Close()
+	checkPayload(uri)
 
 	_, err = lance.Create(ctx, filepath.Join(root, "no-allow.lance"), makeReader(t, schema, record),
 		lance.WithWriteParams(lance.WriteParams{
@@ -306,8 +325,8 @@ func TestNativeWriteOptionsExternalBlobModes(t *testing.T) {
 			ExternalBlobMode: lance.ExternalBlobModeReference,
 		}),
 	)
-	if err == nil {
-		t.Fatal("external reference outside the bases was accepted without the allow-outside policy")
+	if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "outside registered external bases") {
+		t.Fatalf("external reference without allow-outside = %v, want outside-base InvalidArgument", err)
 	}
 
 	_, err = lance.Create(ctx, filepath.Join(root, "ingest.lance"), makeReader(t, schema, record),
@@ -316,9 +335,20 @@ func TestNativeWriteOptionsExternalBlobModes(t *testing.T) {
 			ExternalBlobMode:              lance.ExternalBlobModeIngest,
 		}),
 	)
-	if err == nil {
-		t.Fatal("ingest with allow-outside policy was accepted")
+	if !errors.Is(err, lance.ErrInvalidArgument) || !strings.Contains(err.Error(), "only applies") {
+		t.Fatalf("ingest with allow-outside = %v, want incompatible-policy InvalidArgument", err)
 	}
+	ingestURI := filepath.Join(root, "ingested.lance")
+	ingested, err := lance.Create(ctx, ingestURI, makeReader(t, schema, record),
+		lance.WithWriteParams(lance.WriteParams{ExternalBlobMode: lance.ExternalBlobModeIngest}))
+	if err != nil {
+		t.Fatalf("Create ingested blob: %v", err)
+	}
+	ingested.Close()
+	if err := os.Remove(externalPath); err != nil {
+		t.Fatal(err)
+	}
+	checkPayload(ingestURI)
 }
 
 func TestNativeWriteOptionsProgressAndStats(t *testing.T) {
