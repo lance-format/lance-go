@@ -1004,7 +1004,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 88c07cf8ccafebf579e769416251be370b45180e:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show ac2634c553b450c7787577ffe964fc2b283b8334:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
