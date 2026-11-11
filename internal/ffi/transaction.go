@@ -1028,7 +1028,7 @@ func NewTransaction(readVersion uint64, operation *Operation, opts TransactionOp
 	if handle == 0 {
 		return nil, ErrClosed
 	}
-	raw, keepAlives, err := transactionOptions(opts)
+	raw, keepAlives, err := makeTransactionOptions(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -1049,7 +1049,7 @@ func NewTransaction(readVersion uint64, operation *Operation, opts TransactionOp
 	return wrapTransaction(operation.b, out), nil
 }
 
-func transactionOptions(opts TransactionOptions) (*transactionOptions, []func(), error) {
+func makeTransactionOptions(opts TransactionOptions) (*transactionOptions, []func(), error) {
 	raw := &transactionOptions{}
 	var keepAlives []func()
 	if opts.UUID != nil {
