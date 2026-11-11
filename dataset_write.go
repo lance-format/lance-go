@@ -56,9 +56,20 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	if config.branch != "" {
 		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
+	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStorage()
+
 	nativeOptions := nativeWriteOptions(config)
 
-	native, err := ffi.Write(uri, reader, nativeOptions, config.storageOptions)
+	var native *ffi.Dataset
+	if storageAccessor != nil {
+		native, err = ffi.WriteWithAccessor(uri, reader, nativeOptions, storageAccessor)
+	} else {
+		native, err = ffi.Write(uri, reader, nativeOptions, config.storageOptions)
+	}
 	if err != nil {
 		return nil, wrapError("write", uri, err)
 	}

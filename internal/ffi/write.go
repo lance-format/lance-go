@@ -72,7 +72,18 @@ func Write(uri string, reader array.RecordReader, opts WriteOptions, storageOpti
 	if err != nil {
 		return nil, err
 	}
-	return writeDataset(b, uri, reader, opts, storageOptions)
+	return writeDataset(b, uri, reader, opts, storageOptions, nil)
+}
+
+// WriteWithAccessor writes reader using a reusable storage-options accessor.
+// The accessor is mutually exclusive with static storage options and is
+// retained by the returned dataset for later I/O.
+func WriteWithAccessor(uri string, reader array.RecordReader, opts WriteOptions, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	b, err := load()
+	if err != nil {
+		return nil, err
+	}
+	return writeDataset(b, uri, reader, opts, nil, accessor)
 }
 
 // buildWriteParameters converts public write options into the native layout
@@ -138,7 +149,13 @@ func storageOptionsJSON(options map[string]string) (string, error) {
 	return string(encoded), nil
 }
 
-func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string) (*Dataset, error) {
+func writeDataset(b *bindings, uri string, reader array.RecordReader, opts WriteOptions, storageOptions map[string]string, accessor *StorageOptionsAccessor) (*Dataset, error) {
+	if storageOptions != nil && accessor != nil {
+		return nil, fmt.Errorf("ffi: storage options and storage options accessor are mutually exclusive")
+	}
+	if accessor != nil && accessor.Handle() == 0 {
+		return nil, ErrClosed
+	}
 	if reader == nil {
 		return nil, fmt.Errorf("ffi: record reader must not be nil")
 	}
@@ -177,7 +194,13 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 
 	runtime.LockOSThread()
 	var handle uintptr
-	rc := b.datasetWriteWithOptions(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, storageList.ptrs, &handle)
+	var rc int32
+	if accessor != nil {
+		rc = b.datasetWriteWithOptionsAndAccessor(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, accessor.Handle(), &handle)
+		runtime.KeepAlive(accessor)
+	} else {
+		rc = b.datasetWriteWithOptions(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, storageList.ptrs, &handle)
+	}
 	streamConsumed = true
 	versionList.keepAlive()
 	storageList.keepAlive()

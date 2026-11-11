@@ -45,9 +45,11 @@ func copyStorageOptions(options map[string]string) (map[string]string, error) {
 }
 
 type openConfig struct {
-	version        uint64
-	storageOptions map[string]string
-	session        *Session
+	version                uint64
+	storageOptions         map[string]string
+	storageOptionsSet      bool
+	storageOptionsAccessor *StorageOptionsAccessor
+	session                *Session
 }
 
 // OpenOption configures Open.
@@ -69,6 +71,20 @@ func WithStorageOptions(options map[string]string) OpenOption {
 			return err
 		}
 		config.storageOptions = copied
+		config.storageOptionsSet = options != nil
+		return nil
+	}
+}
+
+// WithStorageOptionsAccessor supplies a reusable dynamic storage-options
+// accessor. It is mutually exclusive with WithStorageOptions and is safe to
+// close after Open returns; native datasets retain their own reference.
+func WithStorageOptionsAccessor(accessor *StorageOptionsAccessor) OpenOption {
+	return func(config *openConfig) error {
+		if accessor == nil {
+			return fmt.Errorf("storage options accessor must not be nil")
+		}
+		config.storageOptionsAccessor = accessor
 		return nil
 	}
 }
@@ -115,6 +131,8 @@ type writeConfig struct {
 	autoCleanup              *AutoCleanupParams
 	skipAutoCleanup          bool
 	storageOptions           map[string]string
+	storageOptionsSet        bool
+	storageOptionsAccessor   *StorageOptionsAccessor
 	session                  *Session
 	transactionProperties    map[string]string
 	hasTransactionProperties bool
@@ -218,6 +236,19 @@ func WithWriteStorageOptions(options map[string]string) WriteOption {
 			return err
 		}
 		config.storageOptions = copied
+		config.storageOptionsSet = options != nil
+		return nil
+	}
+}
+
+// WithWriteStorageOptionsAccessor supplies a reusable dynamic accessor for a
+// dataset write. It is mutually exclusive with WithWriteStorageOptions.
+func WithWriteStorageOptionsAccessor(accessor *StorageOptionsAccessor) WriteOption {
+	return func(config *writeConfig) error {
+		if accessor == nil {
+			return fmt.Errorf("storage options accessor must not be nil")
+		}
+		config.storageOptionsAccessor = accessor
 		return nil
 	}
 }
