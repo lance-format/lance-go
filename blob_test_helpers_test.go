@@ -119,7 +119,7 @@ func makeBlobRecord(t *testing.T, schema *arrow.Schema, firstID int, values []bl
 
 	ids := builder.Field(0).(*array.Int64Builder)
 	blobs := builder.Field(1).(*array.StructBuilder)
-	data := blobs.FieldBuilder(0).(*array.LargeBinaryBuilder)
+	data := blobs.FieldBuilder(0).(*array.BinaryBuilder)
 	uri := blobs.FieldBuilder(1).(*array.StringBuilder)
 	for i, value := range values {
 		ids.Append(int64(firstID + i))
