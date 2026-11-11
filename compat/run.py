@@ -33,7 +33,7 @@ FOREIGN = ("python", "java", "rust")
 DEFAULT_COMMANDS = {
     "go": "go run ./compat/go",
     "python": "python3 compat/python/compat.py",
-    "java": "java -jar compat/java/target/lance-compat-java.jar",
+    "java": "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar compat/java/target/lance-compat-java.jar",
     "rust": "cargo run --quiet --manifest-path compat/rust/Cargo.toml --",
 }
 STORAGE_VERSION = "2.1"

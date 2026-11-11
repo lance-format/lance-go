@@ -759,14 +759,14 @@ fn base_batch() -> Result<RecordBatch, Box<dyn Error>> {
     let payloads = Arc::new(payloads.finish()) as ArrayRef;
 
     let mut tags = ListBuilder::new(StringBuilder::new());
-    tags.append(true);
     tags.values().append_value("a");
     tags.values().append_value("b");
     tags.append(true);
-    tags.append_null();
     tags.append(true);
+    tags.append_null();
     tags.values().append_value("");
     tags.values().append_value("x");
+    tags.append(true);
     let tags = Arc::new(tags.finish()) as ArrayRef;
 
     let profile_fields = Fields::from(vec![
@@ -804,9 +804,9 @@ fn base_batch() -> Result<RecordBatch, Box<dyn Error>> {
     let attrs = profiles
         .field_builder::<ListBuilder<Int32Builder>>(2)
         .unwrap();
-    attrs.append(true);
     attrs.values().append_value(1);
     attrs.values().append_value(2);
+    attrs.append(true);
     profiles.append(true);
     profiles
         .field_builder::<StringBuilder>(0)
@@ -943,8 +943,8 @@ fn append_batch() -> Result<RecordBatch, Box<dyn Error>> {
     }) as ArrayRef;
     let tags = Arc::new({
         let mut builder = ListBuilder::new(StringBuilder::new());
-        builder.append(true);
         builder.values().append_value("x1");
+        builder.append(true);
         builder.append_null();
         builder.finish()
     }) as ArrayRef;
@@ -984,8 +984,8 @@ fn append_batch() -> Result<RecordBatch, Box<dyn Error>> {
         let attrs = builder
             .field_builder::<ListBuilder<Int32Builder>>(2)
             .unwrap();
-        attrs.append(true);
         attrs.values().append_value(3);
+        attrs.append(true);
         builder.append_null();
         builder
             .field_builder::<StringBuilder>(0)
@@ -1106,4 +1106,33 @@ async fn append(path: &str, storage_version: &str) -> Result<(), Box<dyn Error>>
     lines.sort();
     println!("{}", lines.join("\n"));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fixture_reports_match_literal_goldens() -> Result<(), Box<dyn Error>> {
+        let mut values = BTreeMap::new();
+        let base = base_batch()?;
+        validate_schema(base.schema().as_ref())?;
+        for row in 0..base.num_rows() {
+            canonical_row(&base, row, &mut values)?;
+        }
+        assert_eq!(
+            report_lines(&values, 1, 4),
+            include_str!("../../expected/base.report")
+        );
+        let appended = append_batch()?;
+        validate_schema(appended.schema().as_ref())?;
+        for row in 0..appended.num_rows() {
+            canonical_row(&appended, row, &mut values)?;
+        }
+        assert_eq!(
+            report_lines(&values, 2, 6),
+            include_str!("../../expected/latest.report")
+        );
+        Ok(())
+    }
 }

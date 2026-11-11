@@ -39,7 +39,8 @@ static-inspection host.
 
 - Go 1.23 or newer, with the repository's existing Arrow v18.4.1 dependency.
 - Python 3.10 or newer.
-- Java 11 or newer and Maven.
+- Java 11 or newer and Maven. Pass `--add-opens=java.base/java.nio=ALL-UNNAMED`
+  to the JVM as shown below; Arrow requires access to direct buffers on JDK 17.
 - Rust 1.96.1 (the acceptance toolchain), with the lance core git revision above
   available to Cargo. The committed lockfile requires at least Rust 1.95;
   the core crate's lower MSRV alone does not satisfy this dependency graph.
@@ -81,7 +82,7 @@ python3 compat/run.py \
   --storage-version 2.1 \
   --go-cmd "/tmp/lance-compat-go" \
   --python-cmd "compat/.venv/bin/python compat/python/compat.py" \
-  --java-cmd "java -jar compat/java/target/lance-compat-java.jar" \
+  --java-cmd "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar compat/java/target/lance-compat-java.jar" \
   --rust-cmd "cargo run --locked --quiet --release --manifest-path compat/rust/Cargo.toml --"
 ```
 
