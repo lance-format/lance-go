@@ -83,6 +83,18 @@ snapshot and return a new committed `Dataset`. The receiver keeps its version
 and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
 The caller retains ownership and releases the reader after the call.
 
+`AddColumnsSQL`, `AddColumnsNulls`, `AddColumnsStream`, `AddColumnsBatchUDF`,
+`AlterColumns` and `DropColumns` return independent dataset snapshots. Metadata
+and config updates use the same snapshot contract, with explicit merge/replace
+modes; a nil metadata value deletes a key, while an empty string is stored.
+
+`BatchUDF` supports batch and fragment checkpoints. The mapper borrows a Go-owned
+copy of its native input and returns an owned batch reference. Call `Retain`
+before keeping the input or returning a reference owned elsewhere. Checkpoint
+`GetBatch` also returns an owned reference; `InsertBatch` lends its batch for
+the callback, so retaining it is required to keep it. These operations run
+synchronously and check context cancellation before entering native work.
+
 A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
 snapshot, and `WithSession` shares a `Session`'s native caches across datasets.

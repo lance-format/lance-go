@@ -73,6 +73,12 @@ type Error struct {
 	Message string
 }
 
+// ErrorCode returns the native Lance error code. It lets callback adapters
+// preserve a typed callback failure without depending on this package.
+func (e *Error) ErrorCode() int32 {
+	return int32(e.Code)
+}
+
 func (e *Error) Error() string {
 	message := e.Message
 	if message == "" {
