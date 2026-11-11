@@ -228,7 +228,7 @@ func batchUDFMapperCallback(ctx uintptr, input *cdata.ArrowArray, inputSchema *c
 func batchUDFGetBatchCallback(ctx uintptr, info *batchInfo, output *cdata.ArrowArray, cbErr *callbackError) (ret uintptr) {
 	if output == nil {
 		setCallbackError(cbErr, errors.New("batch UDF get_batch received a nil output slot"))
-		return 1
+		return ^uintptr(0)
 	}
 	*output = cdata.ArrowArray{}
 	clearCallbackError(cbErr)
@@ -239,34 +239,34 @@ func batchUDFGetBatchCallback(ctx uintptr, info *batchInfo, output *cdata.ArrowA
 			}
 			*output = cdata.ArrowArray{}
 			setCallbackError(cbErr, fmt.Errorf("batch UDF get_batch panic: %v", r))
-			ret = 1
+			ret = ^uintptr(0)
 		}
 	}()
 	adapter, ok := lookupBatchUDFAdapter(ctx)
 	if !ok {
 		setCallbackError(cbErr, errors.New("batch UDF adapter is no longer available"))
-		return 1
+		return ^uintptr(0)
 	}
 	if info == nil {
 		setCallbackError(cbErr, errors.New("batch UDF get_batch received nil info"))
-		return 1
+		return ^uintptr(0)
 	}
 	batch, found, err := adapter.store.GetBatch(BatchInfo{FragmentID: info.FragmentID, BatchIndex: info.BatchIndex})
 	if err != nil {
 		setCallbackError(cbErr, err)
-		return 1
+		return ^uintptr(0)
 	}
 	if !found {
 		return 0
 	}
 	if batch == nil {
 		setCallbackError(cbErr, errors.New("batch UDF store returned a nil batch with found=true"))
-		return 1
+		return ^uintptr(0)
 	}
 	defer batch.Release()
 	if err := cdata.ExportRecordBatch(batch, output); err != nil {
 		setCallbackError(cbErr, err)
-		return 1
+		return ^uintptr(0)
 	}
 	return 1
 }
@@ -309,7 +309,7 @@ func batchUDFInsertBatchCallback(ctx uintptr, info *batchInfo, batch *cdata.Arro
 func batchUDFGetFragmentCallback(ctx uintptr, fragmentID uint32, out *ownedString, cbErr *callbackError) (ret uintptr) {
 	if out == nil {
 		setCallbackError(cbErr, errors.New("batch UDF get_fragment received a nil output slot"))
-		return 1
+		return ^uintptr(0)
 	}
 	*out = ownedString{}
 	clearCallbackError(cbErr)
@@ -317,18 +317,18 @@ func batchUDFGetFragmentCallback(ctx uintptr, fragmentID uint32, out *ownedStrin
 		if r := recover(); r != nil {
 			*out = ownedString{}
 			setCallbackError(cbErr, fmt.Errorf("batch UDF get_fragment panic: %v", r))
-			ret = 1
+			ret = ^uintptr(0)
 		}
 	}()
 	adapter, ok := lookupBatchUDFAdapter(ctx)
 	if !ok {
 		setCallbackError(cbErr, errors.New("batch UDF adapter is no longer available"))
-		return 1
+		return ^uintptr(0)
 	}
 	fragmentJSON, found, err := adapter.store.GetFragment(fragmentID)
 	if err != nil {
 		setCallbackError(cbErr, err)
-		return 1
+		return ^uintptr(0)
 	}
 	if !found {
 		return 0
@@ -410,13 +410,15 @@ func callbackErrorCode(err error) int32 {
 var ownedStrings sync.Map // map[uintptr]*ownedStringBox
 
 type ownedStringBox struct {
-	value ownedString
-	data  []byte
+	value  ownedString
+	data   []byte
+	pinner runtime.Pinner
 }
 
 func newOwnedString(value string) ownedString {
 	data := append([]byte(value), 0)
 	box := &ownedStringBox{data: data}
+	box.pinner.Pin(&data[0])
 	box.value.Data = &data[0]
 	box.value.Release = callbackOwnedRelease
 	ownedStrings.Store(uintptr(unsafe.Pointer(&data[0])), box)
@@ -431,6 +433,7 @@ func ownedStringReleaseCallback(s *ownedString) (ret uintptr) {
 	s.Release = 0
 	if value, ok := ownedStrings.LoadAndDelete(key); ok {
 		box, _ := value.(*ownedStringBox)
+		box.pinner.Unpin()
 		runtime.KeepAlive(box)
 	}
 	return

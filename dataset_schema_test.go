@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -471,6 +472,7 @@ func TestBatchUDFCheckpointCallbacksAndBorrowedInput(t *testing.T) {
 	}
 	defer dataset.Close()
 
+	outputMetadata := arrow.NewMetadata([]string{"producer"}, []string{"callback-test"})
 	outputSchema := arrow.NewSchema([]arrow.Field{
 		{
 			Name:     "doubled",
@@ -478,7 +480,7 @@ func TestBatchUDFCheckpointCallbacksAndBorrowedInput(t *testing.T) {
 			Nullable: true,
 			Metadata: arrow.NewMetadata([]string{"unit"}, []string{"native"}),
 		},
-	}, arrow.NewMetadata([]string{"producer"}, []string{"callback-test"}))
+	}, &outputMetadata)
 
 	store := &batchUDFRecordingStore{}
 	var mapperInputSchema *arrow.Schema
@@ -623,28 +625,43 @@ func TestBatchUDFErrorsAndPanicsKeepSourceUsable(t *testing.T) {
 	record := makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})
 	outputSchema := arrow.NewSchema([]arrow.Field{{Name: "derived", Type: arrow.PrimitiveTypes.Int64, Nullable: true}}, nil)
 
-	t.Run("store error", func(t *testing.T) {
-		uri := filepath.Join(t.TempDir(), "store-error.lance")
-		dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record))
-		if err != nil {
-			t.Fatalf("Create: %v", err)
-		}
-		defer dataset.Close()
-		store := &failingBatchUDFStore{}
-		_, err = dataset.AddColumnsBatchUDF(ctx, lance.BatchUDF{
-			Mapper: func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
-				return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows())
-			},
-			OutputSchema: outputSchema,
-			Store:        store,
+	for _, tc := range []struct {
+		operation  string
+		panicValue bool
+	}{
+		{"insert_batch", false},
+		{"get_batch", false},
+		{"get_fragment", false},
+		{"get_batch", true},
+		{"get_fragment", true},
+	} {
+		t.Run(fmt.Sprintf("%s/panic=%t", tc.operation, tc.panicValue), func(t *testing.T) {
+			uri := filepath.Join(t.TempDir(), "store-error.lance")
+			dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record))
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			defer dataset.Close()
+			store := &failingBatchUDFStore{operation: tc.operation, panicValue: tc.panicValue}
+			_, err = dataset.AddColumnsBatchUDF(ctx, lance.BatchUDF{
+				Mapper: func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
+					return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows())
+				},
+				OutputSchema: outputSchema,
+				Store:        store,
+			})
+			want := lance.ErrInvalidArgument
+			if tc.panicValue {
+				want = lance.ErrInternal
+			}
+			if !errors.Is(err, want) || !strings.Contains(err.Error(), "checkpoint "+tc.operation+" rejected") {
+				t.Fatalf("store error = %v, want %v and original checkpoint message", err, want)
+			}
+			if count, err := dataset.CountRows(ctx); err != nil || count != 2 {
+				t.Fatalf("source after checkpoint error: rows=%d, err=%v", count, err)
+			}
 		})
-		if !errors.Is(err, lance.ErrInvalidArgument) {
-			t.Fatalf("store error = %v, want ErrInvalidArgument", err)
-		}
-		if _, err := dataset.CountRows(ctx); err != nil {
-			t.Fatalf("source unusable after store error: %v", err)
-		}
-	})
+	}
 
 	t.Run("mapper panic", func(t *testing.T) {
 		uri := filepath.Join(t.TempDir(), "panic.lance")
@@ -669,17 +686,33 @@ func TestBatchUDFErrorsAndPanicsKeepSourceUsable(t *testing.T) {
 	})
 }
 
-type failingBatchUDFStore struct{}
-
-func (failingBatchUDFStore) GetBatch(lance.BatchInfo) (arrow.RecordBatch, bool, error) {
-	return nil, false, nil
+type failingBatchUDFStore struct {
+	operation  string
+	panicValue bool
 }
 
-func (failingBatchUDFStore) InsertBatch(lance.BatchInfo, arrow.RecordBatch) error {
-	return &lance.Error{Code: lance.CodeInvalidArgument, Message: "store rejected batch"}
+func (s failingBatchUDFStore) failure(operation string) error {
+	if s.operation != operation {
+		return nil
+	}
+	message := "checkpoint " + operation + " rejected"
+	if s.panicValue {
+		panic(message)
+	}
+	return &lance.Error{Code: lance.CodeInvalidArgument, Message: message}
 }
 
-func (failingBatchUDFStore) GetFragment(uint32) (string, bool, error) { return "", false, nil }
+func (s failingBatchUDFStore) GetBatch(lance.BatchInfo) (arrow.RecordBatch, bool, error) {
+	return nil, false, s.failure("get_batch")
+}
+
+func (s failingBatchUDFStore) InsertBatch(lance.BatchInfo, arrow.RecordBatch) error {
+	return s.failure("insert_batch")
+}
+
+func (s failingBatchUDFStore) GetFragment(uint32) (string, bool, error) {
+	return "", false, s.failure("get_fragment")
+}
 
 func (failingBatchUDFStore) InsertFragment(uint64, string) error { return nil }
 
