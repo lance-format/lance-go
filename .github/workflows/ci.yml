@@ -76,6 +76,24 @@ jobs:
           go test ./... -count=1
           go test -tags lance_external_lib ./... -count=1
 
+      - name: Test bundled linux/amd64 public path
+        run: |
+          set -euo pipefail
+          cache_dir="$(mktemp -d)"
+          log="$RUNNER_TEMP/bundled-public-path.log"
+          env -u LANCE_LIB_PATH XDG_CACHE_HOME="$cache_dir" \
+            go test . -count=1 -run '^TestCreateReopenMetadataAndScan$' -v 2>&1 | tee "$log"
+          if ! grep -Fq -- '--- PASS: TestCreateReopenMetadataAndScan' "$log"; then
+            echo "bundled public path test did not pass; it must not skip or use another library" >&2
+            exit 1
+          fi
+          cache_file="$cache_dir/lance-go/1de1e4bdb6a71a5bd7b14ddb3d18b5d79776abe30efebabc6f40e67b2ace7ba8/liblance_c.so"
+          if [[ ! -f "$cache_file" ]]; then
+            echo "bundled library was not extracted to $cache_file" >&2
+            exit 1
+          fi
+          echo "1de1e4bdb6a71a5bd7b14ddb3d18b5d79776abe30efebabc6f40e67b2ace7ba8  $cache_file" | sha256sum -c -
+
   native:
     name: Native Linux amd64
     runs-on: ubuntu-24.04

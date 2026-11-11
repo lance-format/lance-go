@@ -22,9 +22,11 @@
 // Builds tagged lance_external_lib omit bundle, cache, and decompression code
 // entirely and use only the environment and system-loader steps.
 //
-// The loader does not ship an artifact bundle itself: generated per-platform
-// artifact modules and the selector files that register them are added by the
-// packaging process. Without one, the default build uses the system loader.
+// The loader package does not embed a bundle itself: generated per-platform
+// artifact modules and the selector files that register them are supplied by
+// the module that imports this package. The root module ships a selector for
+// linux/amd64; without a selector for the running target, the default build
+// uses the system loader.
 //
 // The library is loaded at most once per process and is never unloaded.
 // lance-c owns a Tokio runtime, thread-local error state and handles that may
