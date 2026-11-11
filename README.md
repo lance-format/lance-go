@@ -11,13 +11,13 @@ does not bundle native artifacts, and does not provide zero-config operation.
 
 | Area | State |
 | --- | --- |
-| `internal/loader`: discover and load `liblance_c` on Linux/macOS | Implemented, unvalidated |
-| `internal/ffi`: dataset open/close, native error extraction | Implemented, unvalidated, minimal |
+| `internal/loader`: discover and load `liblance_c` on Linux/macOS | Linux runtime verified; macOS cross-build only |
+| `internal/ffi`: dataset open/close, native error extraction | Minimal bindings; Linux native tests verified |
 | `internal/cdata`: Arrow C Data Interface | Not started |
 | Public Go API | Not started |
 | Embedded per-platform artifacts, zero-config operation | Not implemented; later slice |
 | Windows | Not implemented (needs `LoadLibrary`; purego's `Dlopen` is Unix-only) |
-| CI matrix | Not configured |
+| CI matrix | Go 1.23/current, Linux native/race, Linux/macOS cross-builds |
 
 Until the public API exists, the packages in `internal/` are for contributors
 and for the next slices of issue
@@ -102,8 +102,8 @@ types beyond `int32`/`uint32`/`uint64`.
 
 ## Native error contract
 
-`lance-c` reports failures through Rust thread-local storage, not return
-values:
+`lance-c` signals failures through return values and stores error details in
+Rust thread-local storage:
 
 1. The failing call runs while the goroutine is locked to its OS thread.
 2. `lance_last_error_code()` is read first.
@@ -142,10 +142,17 @@ thread-local error semantics on one locked OS thread, and failed
 `lance_dataset_open` calls. They do not yet open a valid dataset: `lance-c`
 has no in-memory dataset fixture, and the write path belongs to a later slice.
 
-Validation status: the commands above have not been run on the authoring host;
-it intentionally does not compile Go code. They are the acceptance commands for
-the remote validation worker. Do not treat this slice as verified until their
-output is recorded.
+The foundation was verified on Linux amd64 with Go 1.27.3 and a native library
+built from the exact pinned commit. Default and external builds each passed all
+13 tests without skips, and the race and ABI checks passed. Darwin amd64/arm64
+were cross-compiled; their native runtime behavior has not been tested. The
+minimum supported Go version is checked separately by CI.
+
+The CI workflow runs on pull requests and pushes to `main`. It builds the
+pinned native library on Linux and requires the native tests to run rather
+than skip. A separate job uses that library with Go's race detector. The
+cross-build matrix checks Linux and macOS on amd64 and arm64; it does not
+establish native runtime support on those other platforms.
 
 ## Layout
 
