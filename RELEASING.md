@@ -10,10 +10,11 @@ support, and real S3 acceptance, remain pending. Release notes may claim only
 the evidence recorded for the claimed target; they must not claim that issue #1
 is complete.
 
-The optional native Unix workflow in the pending PR #40 is not merged. It
-builds and tests four native runners and uploads staging modules as CI
-evidence. Treat it as optional pending evidence, not as an accepted release
-gate. The checker and verifier it adds are called out as pending below.
+The Unix workflow proposed in PR #40 builds and tests four native runners and
+uploads staging modules as CI evidence. A successful staging run does not
+publish a production module or activate a selector. Use the current workflow
+and support status in [artifacts/README.md](artifacts/README.md); record results
+for the exact release candidate rather than copying an earlier status table.
 
 ## Release units and order
 
@@ -33,6 +34,16 @@ an authorized readiness decision create the root tag and release.
 Never activate an `artifacts/staging/...` selector. Staging modules are
 validation uploads, not published targets.
 
+Run the examples in one Bash shell from the repository root. The examples use
+GNU `sha256sum`; on macOS install that tool or use `shasum -a 256`. Values
+marked as required must come from the release record.
+
+```bash
+set -euo pipefail
+unset GOFLAGS GORACE
+REPO_ROOT=$(pwd)
+```
+
 ## 1. Choose and verify the native input
 
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
@@ -48,17 +59,22 @@ archive for the pinned commit.
 
 ```sh
 : "${NATIVE_SRC:?path to the lance-c checkout}"
-: "${NATIVE_TAG:?native release tag to verify}"
 : "${NATIVE_COMMIT:?full 40-hex native commit}"
 : "${HEADER_SHA256:?value from internal/ffi/upstream.go}"
 
-git -C "$NATIVE_SRC" fetch --tags --prune origin
-test "$(git -C "$NATIVE_SRC" rev-parse --verify "$NATIVE_TAG^{commit}")" = "$NATIVE_COMMIT"
+git -C "$NATIVE_SRC" fetch origin "$NATIVE_COMMIT"
+if [ -n "${NATIVE_TAG:-}" ]; then
+  git -C "$NATIVE_SRC" fetch origin "refs/tags/$NATIVE_TAG:refs/tags/$NATIVE_TAG"
+  test "$(git -C "$NATIVE_SRC" rev-parse --verify "$NATIVE_TAG^{commit}")" = "$NATIVE_COMMIT"
+fi
 test "$(git -C "$NATIVE_SRC" show "$NATIVE_COMMIT:include/lance/lance.h" | sha256sum | awk '{print $1}')" = "$HEADER_SHA256"
 ```
 
-If the tag does not peel to the commit, or the header hash differs, stop. Record
-the native repository, tag, commit, and header hash for the release evidence.
+If a claimed tag does not peel to the commit, or the header hash differs, stop.
+A preview may use an exact unreleased native commit. In that case leave
+`NATIVE_TAG` unset and record the absence of a matching release tag explicitly;
+do not label the binary with an older native release. Record the native
+repository, commit, optional tag, and header hash.
 
 Root and artifact versions are independent module versions. The root module
 path has no `/vN` suffix, so root tags must remain `v0` or `v1`. A companion
@@ -79,10 +95,10 @@ A companion module tag is always `<module-path-suffix>/<version>`. For a
 module published as `$ROOT_MODULE/artifacts/$SLUG`, that suffix is
 `artifacts/$SLUG`; the root tag has no prefix.
 
-A pseudo-version is resolved from a pushed commit, not created as a tag, for
-example `v0.0.0-20261111213734-a779f4a15524`. The current `linux/amd64`
-requirement is that pin, and the current native `88c07cf8ccafebf579e769416251be370b45180e`
-pin is the same kind of integration example. Neither is a released preview.
+A pseudo-version is resolved from a pushed commit, not created as a tag. Use
+the exact `Version` returned by `go mod download -json`; do not construct one
+from a timestamp or copy an old example. Read the currently selected companion
+module version from `go.mod`.
 
 ```sh
 ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
@@ -94,7 +110,8 @@ module declares no requirements and contains only `embed` data.
 
 ## 2. Build, check, and record native acceptance
 
-Build from the pinned commit, outside the checkout:
+For Linux and macOS, build from the pinned commit into an output directory
+outside the checkout:
 
 ```sh
 : "${NATIVE_OUT:?new output directory}"
@@ -105,10 +122,15 @@ NATIVE_HEADER="$NATIVE_OUT/include/lance/lance.h"
 
 `build-lance-c.sh` checks out `upstreamCommit`, verifies the source and
 installed header hashes, builds, and installs. It does not strip the library.
-If a maintainer deliberately strips the installed library before packaging,
-package and hash that exact stripped file and record that the payload
-decompresses byte-for-byte to it. Do not add a strip step to
-`sync-lance-c.sh`; the generator packages the library it is given.
+Keep the original build for diagnostics. Prepare a separate stripped packaging
+copy using the target toolchain, verify that its exported bindings and runtime
+dependencies are unchanged, and run a consumer against that copy. Set
+`NATIVE_LIB` to this verified packaging copy. Record both hashes and prove that
+the payload decompresses byte-for-byte to the packaging input. The generator
+packages the library it is given; it does not strip it.
+
+Windows needs its own native DLL build and runtime evidence. The Unix build and
+ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 
 Check the bindings against the installed header:
 
@@ -116,17 +138,17 @@ Check the bindings against the installed header:
 LANCE_C_HEADER="$NATIVE_HEADER" go run ./scripts/check-abi-symbols.go
 ```
 
-The pending PR #40 checker is an optional static check:
+When the PR #40 checker is available on the release branch, run:
 
 ```sh
 scripts/check-native-library.sh \
   --library "$NATIVE_LIB" --header "$NATIVE_HEADER" --target "$TARGET"
 ```
 
-When it lands, it checks the pinned header hash, ELF or Mach-O object format and
+It checks the pinned header hash, ELF or Mach-O object format and
 architecture, RPATH/RUNPATH, direct dependencies, the libc or macOS deployment
 floor, and exported binding symbols. Until then, those checks are manual and
-must be recorded if a release claims them.
+must be recorded before accepting a platform.
 
 Record acceptance per claimed platform. The table records the state to capture
 for a release, not a claim that a future release already has every cell. Keep
@@ -134,11 +156,18 @@ these states separate; one does not imply another:
 
 | Target | Native ABI | Default runtime | External runtime | Race/checkptr | Cross-compile | Public archive |
 | --- | --- | --- | --- | --- | --- | --- |
-| `linux/amd64` | current bundle: 876 bound symbols exported | active bundle, cache hash checked | external tag with `LANCE_LIB_PATH` | CI default lane; external pending | n/a | compare published zip |
-| `linux/arm64` | pending | pending | pending | pending | compile only | none |
-| `darwin/amd64`, `darwin/arm64` | pending | pending | pending | pending | compile only | none |
-| `windows/amd64` | pending DLL; loader/cache/callback unit tests only | pending | pending | n/a | compile | none |
-| `windows/arm64` | pending | pending | pending | n/a | compile only | none |
+| `linux/amd64` | record | record | record | record | record | record |
+| `linux/arm64` | record | record | record | record | record | record |
+| `darwin/amd64` | record | record | record | record | record | record |
+| `darwin/arm64` | record | record | record | record | record | record |
+| `windows/amd64` | record | record | record | record | record | record |
+| `windows/arm64` | record | record | record | record or toolchain limitation | record | record |
+
+Fill each cell with its tested object, result, and evidence, or an explicit
+pending/unsupported state. This is an evidence template, not a support claim.
+Native88 exports 876 `lance_*` symbols; the Go candidate `9912e80` binds 603 of
+them. Record both counts separately. The ABI checker validates the bound subset;
+it does not establish runtime coverage of every native export.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s, and the dynamic loader. Older glibc, musl,
@@ -148,8 +177,9 @@ understanding of the native change, but it is not ABI or runtime acceptance.
 
 A race run must use a supplied library; record whether it used the default
 selector or the external tag. For the external contract, run
-`CGO_ENABLED=1 go test -race -tags lance_external_lib ./...`. Go's race mode
-enables pointer checks; native Rust internals are outside Go's race detector.
+`CGO_ENABLED=1 go test -race -gcflags=all=-d=checkptr=1 -tags lance_external_lib ./...`
+with the matching `LANCE_LIB_PATH`. Native Rust internals are outside Go's race
+detector.
 The default lane must run with `LANCE_LIB_PATH` unset, a fresh
 `XDG_CACHE_HOME`, and the expected uncompressed hash. See
 [README Testing](README.md#testing) for the existing commands rather than
@@ -172,7 +202,7 @@ scripts/sync-lance-c.sh \
 The output contains a data-only `module/` (with `go.mod`, `artifact.go`, and the
 compressed payload) and a `selector/` file for `internal/bundled`.
 
-The pending workflow uses `--module-path "$ROOT_MODULE/artifacts/staging/$SLUG"`
+The Unix workflow uses `--module-path "$ROOT_MODULE/artifacts/staging/$SLUG"`
 and uploads the result with seven-day retention. That module is evidence, not a
 published target. If a staging module was produced, discard its selector and
 regenerate `artifacts/$SLUG` from the verified library and header with the
@@ -193,9 +223,10 @@ sizes and hashes, native commit, and header hash match the build record. The
 commit and header hash are packaging claims: `lance-c` has no runtime version
 symbol, so the loader cannot prove them from the shared library.
 
-The pending PR #40 verifier checks the payload hash and size, decompresses it,
+The PR #40 verifier checks the payload hash and size, decompresses it,
 compares it byte-for-byte with the library, and checks the uncompressed hash,
-pin, and module path:
+pin, and module path. It also checks that `Payload []byte` embeds that exact
+archive and that the module contains only the allowed data files:
 
 ```sh
 go run ./scripts/verify-lance-c-artifact \
@@ -205,8 +236,9 @@ go run ./scripts/verify-lance-c-artifact \
   -module-path "$ARTIFACT_MODULE"
 ```
 
-Until that verifier is merged, the release record must contain the equivalent
-size, hash, decompression, and byte-comparison evidence from the packaging run.
+If the verifier is not present on the release branch, preserve equivalent
+module-layout, embed, size, hash, decompression, and byte-comparison evidence
+from the packaging run.
 
 The tracked payload is the compressed archive. The current `linux/amd64`
 payload is 85,642,384 bytes (81.7 MiB) compressed and 322,169,936 bytes
@@ -222,20 +254,24 @@ published module archive. Preserve and record both sizes and both hashes.
 ## 4. Publish the artifact and resolve its exact version
 
 Commit the generated `artifacts/$SLUG` module on the task branch and push the
-branch. Publish the companion module with its nested tag, or resolve a
-pseudo-version from the pushed commit:
+branch. Record that full SHA as `ARTIFACT_COMMIT`. Publish the companion module
+with a nested tag, or resolve a pseudo-version from that pushed commit. For the
+tagged path:
 
 ```sh
 : "${ARTIFACT_VERSION:?version chosen for this release}"
 : "${SLUG:?target slug}"
-git tag -a "artifacts/$SLUG/$ARTIFACT_VERSION" -m "artifacts/$SLUG $ARTIFACT_VERSION"
+: "${ARTIFACT_COMMIT:?verified pushed artifact commit}"
+git tag -a "artifacts/$SLUG/$ARTIFACT_VERSION" -m "artifacts/$SLUG $ARTIFACT_VERSION" "$ARTIFACT_COMMIT"
 git push origin "refs/tags/artifacts/$SLUG/$ARTIFACT_VERSION"
 ```
 
 The tag and release commands in this guide are examples. Run them only as the
 authorized publication step, with the expanded values checked first. For a
 pseudo-version, skip the nested tag and resolve `$ARTIFACT_MODULE@$ARTIFACT_COMMIT`
-from the pushed commit, then use the resulting version in the root requirement.
+from the pushed commit, then use the returned `Version` as `ARTIFACT_VERSION`
+in the archive path and root requirement. The companion module tag must resolve
+to `ARTIFACT_COMMIT`; verify the remote tag after pushing it.
 
 Resolve the exact version through the public proxy and checksum database before
 touching the selector or root requirement:
@@ -245,7 +281,7 @@ WORK=$(mktemp -d)
 mkdir -p "$WORK/probe" && cd "$WORK/probe"
 go mod init release-probe
 env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
-  GOWORK=off GOMODCACHE="$WORK/modcache" \
+  GOENV=off GOWORK=off GOMODCACHE="$WORK/modcache" \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
   go mod download -json "$ARTIFACT_MODULE@$ARTIFACT_VERSION" | tee "$WORK/artifact.json"
 cd "$REPO_ROOT"
@@ -277,7 +313,6 @@ update `go.sum`:
 
 ```bash
 cd "$REPO_ROOT"
-: "${ROOT_COMMIT:?root activation commit before the tag}"
 SELECTOR="lance_bundle_$(printf '%s' "$TARGET" | tr / _).go"
 cp "$ARTIFACT_OUT/selector/$SELECTOR" internal/bundled/
 GOWORK=off go mod edit -require="$ARTIFACT_MODULE@$ARTIFACT_VERSION"
@@ -302,7 +337,8 @@ target, payload sizes and hashes, native commit, header hash, and published
 requirement.
 
 Commit and push the activation commit before running the consumer. The public
-proxy cannot fetch an unpublished commit.
+proxy cannot fetch an unpublished commit. Set `ROOT_COMMIT` to the full pushed
+activation commit, then verify that the consumer resolves exactly that object.
 
 Test with fresh module, build, and runtime caches, `GOWORK=off`, and no
 `replace` directive. Default consumers must not set `LANCE_LIB_PATH`:
@@ -314,7 +350,7 @@ CONSUMER="$WORK/consumer"
 mkdir -p "$CONSUMER" && cd "$CONSUMER"
 go mod init release-consumer
 env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
-  GOWORK=off GOMODCACHE="$CONSUMER_MODCACHE" \
+  GOENV=off GOWORK=off GOMODCACHE="$CONSUMER_MODCACHE" \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
   go get "$ROOT_MODULE@$ROOT_COMMIT"
 env -u LANCE_LIB_PATH CGO_ENABLED=0 GOWORK=off \
@@ -352,7 +388,7 @@ artifact module, and no extraction directory should appear.
 
 ## 6. Evidence, notes, and authorized release
 
-CI uploads native and race evidence with seven-day retention, and the pending
+CI uploads native and race evidence with seven-day retention, and the Unix
 workflow uploads staged modules with the same retention. Those files are not
 the release record. Before tagging, preserve durable evidence in the existing
 report location; after creating the release, attach the evidence files. Record
@@ -365,7 +401,7 @@ The evidence record must identify the exact objects:
 ```text
 root:             commit, tag, module path
 artifact:         commit, tag or pseudo-version, module path, go.sum entries
-native:           repository, tag, commit, header SHA-256
+native:           repository, commit, tag or explicit absence, header SHA-256
 library:          bytes, SHA-256, packaging source
 payload:          compressed and uncompressed bytes and SHA-256
 public archive:   proxy zip comparison and checksum-database result
@@ -395,11 +431,14 @@ archive verification is unresolved.
 ```sh
 cd "$REPO_ROOT"
 : "${ROOT_VERSION:?authorized root version}"
+: "${ROOT_COMMIT:?verified release commit}"
 test -z "$(git status --porcelain)"
-git tag -a "$ROOT_VERSION" -m "release $ROOT_VERSION"
+test "$(git rev-parse HEAD)" = "$ROOT_COMMIT"
+git tag -a "$ROOT_VERSION" -m "release $ROOT_VERSION" "$ROOT_COMMIT"
 git push origin "refs/tags/$ROOT_VERSION"
 ```
 
+Read back the remote tag and verify that it peels to `ROOT_COMMIT`.
 Create the release for that pushed root tag, mark it as a pre-release when
 appropriate, and attach the evidence. Do not move or reuse a published version
 to hide a mismatch; document the failure and fix forward.
