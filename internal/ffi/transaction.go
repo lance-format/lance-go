@@ -207,17 +207,17 @@ func (o *Operation) BasePathAt(index uint64) (BasePath, error) {
 		}
 		return BasePath{}, fmt.Errorf("ffi: lance_operation_update_bases_at failed without setting an error")
 	}
-	if view.Path == 0 {
+	if view.Path == nil {
 		runtime.UnlockOSThread()
 		return BasePath{}, fmt.Errorf("ffi: lance_operation_update_bases_at returned a NULL path")
 	}
 	result := BasePath{
 		ID:            view.ID,
-		Path:          goString((*byte)(unsafe.Pointer(view.Path))),
+		Path:          goString(view.Path),
 		IsDatasetRoot: view.IsDatasetRoot,
 	}
-	if view.Name != 0 {
-		name := goString((*byte)(unsafe.Pointer(view.Name)))
+	if view.Name != nil {
+		name := goString(view.Name)
 		result.Name = &name
 	}
 	runtime.UnlockOSThread()
@@ -1526,8 +1526,8 @@ type basePath struct {
 
 type basePathView struct {
 	ID            uint32
-	Path          uintptr
-	Name          uintptr
+	Path          *byte
+	Name          *byte
 	IsDatasetRoot bool
 }
 

@@ -57,6 +57,13 @@ func (t *Transaction) Close() error {
 	return nil
 }
 
+func (t *Transaction) uriOrEmpty() string {
+	if t == nil {
+		return ""
+	}
+	return t.uri
+}
+
 // ReadVersion returns the transaction's read version. Zero is valid for an
 // uncommitted create.
 func (t *Transaction) ReadVersion() (uint64, error) {
