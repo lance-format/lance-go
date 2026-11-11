@@ -17,7 +17,7 @@ does not bundle native artifacts, and does not provide zero-config operation.
 | Public Go API | Not started |
 | Embedded per-platform artifacts, zero-config operation | Not implemented; later slice |
 | Windows | Not implemented (needs `LoadLibrary`; purego's `Dlopen` is Unix-only) |
-| CI matrix | Not configured |
+| CI matrix | Go 1.23/current, Linux native/race, Linux/macOS cross-builds |
 
 Until the public API exists, the packages in `internal/` are for contributors
 and for the next slices of issue
@@ -147,6 +147,12 @@ built from the exact pinned commit. Default and external builds each passed all
 13 tests without skips, and the race and ABI checks passed. Darwin amd64/arm64
 were cross-compiled; their native runtime behavior has not been tested. The
 minimum supported Go version is checked separately by CI.
+
+The CI workflow runs on pull requests and pushes to `main`. It builds the
+pinned native library on Linux and requires the native tests to run rather
+than skip. A separate job uses that library with Go's race detector. The
+cross-build matrix checks Linux and macOS on amd64 and arm64; it does not
+establish native runtime support on those other platforms.
 
 ## Layout
 
