@@ -151,18 +151,21 @@ type bindings struct {
 	datasetMerge         func(dataset uintptr, leftOn, rightOn string, source *cdata.ArrowArrayStream) int32
 	datasetTruncateTable func(dataset uintptr) int32
 
-	datasetCreateVectorIndexWithOptions func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, replace bool) int32
-	datasetCreateScalarIndexWithOptions func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, replace bool) int32
-	datasetDropIndex                    func(dataset uintptr, name string) int32
-	datasetIndexCount                   func(dataset uintptr) uint64
-	datasetIndexListJSON                func(dataset uintptr) *byte
-	datasetDescribeIndicesJSON          func(dataset uintptr) *byte
-	datasetIndexStatisticsJSON          func(dataset uintptr, name string) *byte
-	datasetIndexSegmentsJSON            func(dataset uintptr) *byte
-	datasetIndexSegmentCount            func(dataset uintptr, name string) uint64
-	datasetIndexSegments                func(dataset uintptr, name string, outUUIDs []byte, capacity uint64, outCount *uint64) int32
-	datasetPrewarmIndex                 func(dataset uintptr, name string) int32
-	datasetPrewarmIndexWithOptions      func(dataset uintptr, name string, options *indexPrewarmOptions) int32
+	datasetCreateVectorIndexWithOptions            func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, replace bool) int32
+	datasetCreateVectorIndexWithOptionsAndProgress func(dataset uintptr, column string, name uintptr, options *vectorIndexOptions, callback uintptr, ctx uintptr, replace bool) int32
+	datasetCreateScalarIndexWithOptions            func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, replace bool) int32
+	datasetCreateScalarIndexWithProgress           func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, callback uintptr, ctx uintptr, replace bool) int32
+	datasetCreateScalarIndexWithOptionsAndProgress func(dataset uintptr, column string, name uintptr, indexType int32, paramsJSON uintptr, options *scalarIndexOptions, callback uintptr, ctx uintptr, replace bool) int32
+	datasetDropIndex                               func(dataset uintptr, name string) int32
+	datasetIndexCount                              func(dataset uintptr) uint64
+	datasetIndexListJSON                           func(dataset uintptr) *byte
+	datasetDescribeIndicesJSON                     func(dataset uintptr) *byte
+	datasetIndexStatisticsJSON                     func(dataset uintptr, name string) *byte
+	datasetIndexSegmentsJSON                       func(dataset uintptr) *byte
+	datasetIndexSegmentCount                       func(dataset uintptr, name string) uint64
+	datasetIndexSegments                           func(dataset uintptr, name string, outUUIDs []byte, capacity uint64, outCount *uint64) int32
+	datasetPrewarmIndex                            func(dataset uintptr, name string) int32
+	datasetPrewarmIndexWithOptions                 func(dataset uintptr, name string, options *indexPrewarmOptions) int32
 
 	segmentBuilderNewScalar            func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, options *segmentBuildOptions) uintptr
 	segmentBuilderNewScalarWithOptions func(dataset uintptr, column string, indexName uintptr, indexType int32, paramsJSON uintptr, scalarOptions *scalarIndexOptions, options *segmentBuildOptions) uintptr
@@ -759,7 +762,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_dataset_merge", &b.datasetMerge},
 		{"lance_dataset_truncate_table", &b.datasetTruncateTable},
 		{"lance_dataset_create_vector_index_with_options", &b.datasetCreateVectorIndexWithOptions},
+		{"lance_dataset_create_vector_index_with_options_and_progress", &b.datasetCreateVectorIndexWithOptionsAndProgress},
 		{"lance_dataset_create_scalar_index_with_options", &b.datasetCreateScalarIndexWithOptions},
+		{"lance_dataset_create_scalar_index_with_progress", &b.datasetCreateScalarIndexWithProgress},
+		{"lance_dataset_create_scalar_index_with_options_and_progress", &b.datasetCreateScalarIndexWithOptionsAndProgress},
 		{"lance_dataset_drop_index", &b.datasetDropIndex},
 		{"lance_dataset_index_count", &b.datasetIndexCount},
 		{"lance_dataset_index_list_json", &b.datasetIndexListJSON},
