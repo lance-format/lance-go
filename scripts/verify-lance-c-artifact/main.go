@@ -22,6 +22,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -64,6 +67,9 @@ func main() {
 
 	md, err := readMetadata(filepath.Join(*moduleDir, "artifact.go"))
 	if err != nil {
+		fail(err)
+	}
+	if err := verifyModuleLayout(*moduleDir, md.libraryName+".zst"); err != nil {
 		fail(err)
 	}
 	if md.target != *target {
@@ -180,6 +186,95 @@ func main() {
 	fmt.Printf("upstream_commit=%s\n", md.upstreamCommit)
 	fmt.Printf("header_sha256=%s\n", md.headerSHA256)
 	fmt.Printf("artifact_verification=ok\n")
+}
+
+// verifyModuleLayout connects the verified bytes to the loader's Payload
+// variable. Only the generated module files and an optional license belong in
+// a data-only companion module.
+func verifyModuleLayout(dir, payloadName string) error {
+	required := map[string]bool{"artifact.go": false, "go.mod": false, payloadName: false}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if _, ok := required[name]; !ok && name != "LICENSE" {
+			return fmt.Errorf("unexpected artifact module entry %q", name)
+		}
+		if _, err := regularFile(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+		required[name] = true
+	}
+	for name, present := range required {
+		if !present {
+			return fmt.Errorf("artifact module is missing %q", name)
+		}
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, "artifact.go"), nil, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("parse artifact source: %w", err)
+	}
+	if file.Name.Name != "artifact" || len(file.Imports) != 1 {
+		return errors.New("artifact module must use package artifact and import only embed")
+	}
+	imp := file.Imports[0]
+	imported, err := strconv.Unquote(imp.Path.Value)
+	if err != nil || imported != "embed" || imp.Name == nil || imp.Name.Name != "_" {
+		return errors.New("artifact module must blank-import embed")
+	}
+	payloads := 0
+	for _, declaration := range file.Decls {
+		decl, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			return errors.New("artifact module must contain only data declarations")
+		}
+		if decl.Tok == token.IMPORT || decl.Tok == token.CONST {
+			continue
+		}
+		if decl.Tok != token.VAR || len(decl.Specs) != 1 {
+			return errors.New("artifact module must declare only the Payload variable")
+		}
+		spec, ok := decl.Specs[0].(*ast.ValueSpec)
+		if !ok || len(spec.Names) != 1 || spec.Names[0].Name != "Payload" || len(spec.Values) != 0 {
+			return errors.New("artifact module must declare var Payload []byte")
+		}
+		slice, ok := spec.Type.(*ast.ArrayType)
+		if !ok || slice.Len != nil {
+			return errors.New("artifact Payload must have type []byte")
+		}
+		element, ok := slice.Elt.(*ast.Ident)
+		if !ok || element.Name != "byte" {
+			return errors.New("artifact Payload must have type []byte")
+		}
+		doc := spec.Doc
+		if doc == nil {
+			doc = decl.Doc
+		}
+		directives := 0
+		if doc != nil {
+			for _, comment := range doc.List {
+				if !strings.HasPrefix(comment.Text, "//go:embed ") {
+					continue
+				}
+				// The generator emits one quoted filename, never a glob or directory.
+				name, err := strconv.Unquote(strings.TrimSpace(strings.TrimPrefix(comment.Text, "//go:embed ")))
+				if err != nil || name != payloadName {
+					return errors.New("artifact Payload must embed the verified payload file")
+				}
+				directives++
+			}
+		}
+		if directives != 1 {
+			return errors.New("artifact Payload must have exactly one embed directive")
+		}
+		payloads++
+	}
+	if payloads != 1 {
+		return errors.New("artifact module must declare exactly one Payload variable")
+	}
+	return nil
 }
 
 func readMetadata(path string) (metadata, error) {

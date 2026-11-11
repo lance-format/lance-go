@@ -151,7 +151,7 @@ printf 'upstream_commit=%s\n' "$(read_pin upstreamCommit)"
 printf 'upstream_header_sha256=%s\n' "$expected_header_sha"
 
 bound_symbols=$(sed -n '/^func (b \*bindings) symbols() \[\]symbol {/,/^}$/p' "$bindings_go" |
-	sed -n 's/.*{"\(lance_[a-z0-9_]*\)".*/\1/p' |
+	sed -n 's/.*{"\(lance_[A-Za-z0-9_]*\)".*/\1/p' |
 	LC_ALL=C sort -u)
 bound_count=$(printf '%s\n' "$bound_symbols" | count_names)
 [[ $bound_count -ge 500 ]] ||
@@ -293,28 +293,18 @@ else
 	printf 'macos_sdk=%s\n' "${macos_sdk:-unknown}"
 	printf 'macos_runtime=%s\n' "$macos_runtime"
 
-	export_check=unavailable
-	if command -v nm >/dev/null 2>&1; then
-		nm_output=$(nm -gU -j "$library" 2>/dev/null || true)
-		if [[ -n $nm_output ]]; then
-			defined=$(printf '%s\n' "$nm_output" | sed 's/^_//' | LC_ALL=C sort -u)
-			lance_exports=$(printf '%s\n' "$defined" | grep -E '^lance_' || true)
-			lance_count=$(printf '%s\n' "$lance_exports" | count_names)
-			if [[ $lance_count -eq 0 ]]; then
-				die "library symbol table has no lance_ exports"
-			fi
-			printf 'exported_defined_symbols=%s\n' "$(printf '%s\n' "$defined" | count_names)"
-			printf 'exported_lance_symbols=%s\n' "$lance_count"
-			missing_bound_symbols "$lance_exports"
-			export_check=verified
-		fi
-	fi
-	if [[ $export_check == unavailable ]]; then
-		printf 'export_check=unavailable\n'
-		printf '%s\n' \
-			'# nm reported no defined symbol table entries (the dylib may be stripped).' \
-			'# Native loader tests bind every symbol and are the ABI evidence for this run.'
-	fi
+	command -v nm >/dev/null 2>&1 || die "nm is required for darwin export verification"
+	nm_output=$(nm -gU -j "$library") || die "nm could not inspect the Mach-O exports"
+	[[ -n $nm_output ]] || die "library has no defined external symbols"
+	# Mach-O's external C symbol names carry one ABI underscore prefix.
+	defined=$(printf '%s\n' "$nm_output" | sed 's/^_//' | LC_ALL=C sort -u)
+	lance_exports=$(printf '%s\n' "$defined" | grep -E '^lance_' || true)
+	lance_count=$(printf '%s\n' "$lance_exports" | count_names)
+	[[ $lance_count -gt 0 ]] || die "library symbol table has no lance_ exports"
+	printf 'exported_defined_symbols=%s\n' "$(printf '%s\n' "$defined" | count_names)"
+	printf 'exported_lance_symbols=%s\n' "$lance_count"
+	missing_bound_symbols "$lance_exports"
+	printf 'export_check=verified\n'
 fi
 
 printf 'check_native_library=ok\n'

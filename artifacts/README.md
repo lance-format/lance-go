@@ -238,8 +238,11 @@ companion module under an `artifacts/staging/<goos>-<goarch>` module path. The
 module directory is created outside the checkout, and
 `scripts/verify-lance-c-artifact` checks the compressed payload hash and size,
 decompresses it, compares it byte for byte with the library, and checks the
-uncompressed hash, size, pin, and module path. The staged module and evidence
-are uploaded with seven-day retention. The workflow asserts that the checkout
+uncompressed hash, size, pin, and module path. It also requires `Payload []byte`
+to embed that exact payload, rejects executable declarations and extra module
+files, and permits an optional `LICENSE`. Darwin export inspection must produce
+a symbol table; unavailable export evidence fails verification. The staged
+module and evidence are uploaded with seven-day retention. The workflow asserts that the checkout
 is unchanged, so it cannot activate a selector.
 
 These uploads are validation evidence, not a published target. The workflow
