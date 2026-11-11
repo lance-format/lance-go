@@ -24,7 +24,7 @@ func fieldWithID(name string, typ arrow.DataType, id string, nullable bool) arro
 	}
 }
 
-func projectTestSchema() (*arrow.Schema, *arrow.DictionaryType) {
+func projectTestSchema() *arrow.Schema {
 	nested := arrow.StructOf(
 		fieldWithID("child", arrow.PrimitiveTypes.Int64, "12", true),
 		fieldWithID("label", arrow.BinaryTypes.String, "13", true),
@@ -36,10 +36,10 @@ func projectTestSchema() (*arrow.Schema, *arrow.DictionaryType) {
 		fieldWithID("tags", dictionary, "11", true),
 		fieldWithID("scratch", arrow.PrimitiveTypes.Int64, "20", true),
 	}, nil)
-	return schema, dictionary
+	return schema
 }
 
-func projectTestRecord(t *testing.T, schema *arrow.Schema, dictionary *arrow.DictionaryType) arrow.RecordBatch {
+func projectTestRecord(t *testing.T, schema *arrow.Schema) arrow.RecordBatch {
 	t.Helper()
 	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
 	t.Cleanup(builder.Release)
@@ -56,21 +56,11 @@ func projectTestRecord(t *testing.T, schema *arrow.Schema, dictionary *arrow.Dic
 		label.Append([]string{"x", "y", "z"}[i])
 	}
 
-	tags := builder.Field(2).(array.DictionaryBuilder)
-	values := array.NewStringBuilder(memory.DefaultAllocator)
-	t.Cleanup(values.Release)
-	values.AppendValues([]string{"red", "blue"}, nil)
-	valueArray := values.NewArray()
-	t.Cleanup(valueArray.Release)
-	indices := array.NewInt32Builder(memory.DefaultAllocator)
-	t.Cleanup(indices.Release)
-	indices.AppendValues([]int32{0, 1, 0}, nil)
-	indexArray := indices.NewArray()
-	t.Cleanup(indexArray.Release)
-	dictionaryArray := array.NewDictionaryArray(dictionary, indexArray, valueArray)
-	t.Cleanup(dictionaryArray.Release)
-	if err := tags.AppendArray(dictionaryArray); err != nil {
-		t.Fatalf("append dictionary: %v", err)
+	tags := builder.Field(2).(*array.BinaryDictionaryBuilder)
+	for _, value := range []string{"red", "blue", "red"} {
+		if err := tags.AppendString(value); err != nil {
+			t.Fatalf("append dictionary value: %v", err)
+		}
 	}
 
 	scratch := builder.Field(3).(*array.Int64Builder)
@@ -85,8 +75,8 @@ func TestNativeProjectPreservesFieldIDsAndTypes(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
 	uri := filepath.Join(t.TempDir(), "project.lance")
-	schema, dictionary := projectTestSchema()
-	record := projectTestRecord(t, schema, dictionary)
+	schema := projectTestSchema()
+	record := projectTestRecord(t, schema)
 	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -208,8 +198,8 @@ func TestNativeProjectPreservesFieldIDsAndTypes(t *testing.T) {
 			t.Fatalf("reopened FieldID(%q) = %d, %v; want %d", column, got, err, want)
 		}
 	}
-	if ids := scanIDs(t, mustScanColumns(t, reopened, "id")); len(ids) != 3 {
-		t.Fatalf("projected ids = %v, want 3 rows", ids)
+	if ids := scanIDs(t, mustScanColumns(t, reopened, "id")); len(ids) != 3 || ids[0] != 1 || ids[1] != 2 || ids[2] != 3 {
+		t.Fatalf("projected ids = %v, want [1 2 3]", ids)
 	}
 }
 
