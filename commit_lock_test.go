@@ -356,7 +356,7 @@ func TestCommitLockCloseWaitsForInflightWrite(t *testing.T) {
 	entered := make(chan struct{})
 	allow := make(chan struct{})
 	var enteredOnce sync.Once
-	var closeDone sync.WaitGroup
+	closeDone := make(chan struct{})
 	lock, err := lance.NewCommitLock(lance.CommitLockCallbacks{
 		Acquire: func(uint64) (lance.CommitLease, error) {
 			enteredOnce.Do(func() { close(entered) })
@@ -388,9 +388,8 @@ func TestCommitLockCloseWaitsForInflightWrite(t *testing.T) {
 		t.Fatal("write did not enter acquire")
 	}
 
-	closeDone.Add(1)
 	go func() {
-		defer closeDone.Done()
+		defer close(closeDone)
 		if err := lock.Close(); err != nil {
 			t.Errorf("Close: %v", err)
 		}
