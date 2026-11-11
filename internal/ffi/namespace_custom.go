@@ -162,5 +162,3 @@ func NewCustomNamespace(dispatcher CustomNamespaceDispatcher, namespaceID string
 	runtime.UnlockOSThread()
 	return &Namespace{b: b, handle: handle}, nil
 }
-
-var _ CustomNamespaceDispatcher = (*namespaceCustomAdapter)(nil)

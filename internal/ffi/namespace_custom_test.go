@@ -24,7 +24,7 @@ func TestNamespaceCustomReleaseCallbackReleasesOnce(t *testing.T) {
 	ctx := handle.New(adapter)
 
 	namespaceContextReleaseCallback(uintptr(ctx))
-	if adapter.client != nil {
+	if adapter.dispatcher() != nil {
 		t.Fatal("release callback did not drop the dispatcher")
 	}
 	if _, ok := handle.Get(ctx); ok {
@@ -69,7 +69,7 @@ func TestNamespaceCustomFinalOwnerReleasesContext(t *testing.T) {
 	}
 
 	b.namespaceClose(nativeHandle)
-	if adapter.client != nil {
+	if adapter.dispatcher() != nil {
 		t.Fatal("final native owner did not release the dispatcher context")
 	}
 	if _, ok := handle.Get(uint64(spec.ClientCtx)); ok {
@@ -117,7 +117,7 @@ func TestNamespaceCustomConstructorFailureReleasesContext(t *testing.T) {
 	if !strings.Contains(nativeErr.Error(), "dispatch must not be NULL") {
 		t.Fatalf("constructor error = %q, want NULL dispatch validation", nativeErr)
 	}
-	if adapter.client != nil {
+	if adapter.dispatcher() != nil {
 		t.Fatal("constructor failure did not release the dispatcher context")
 	}
 	if _, ok := handle.Get(uint64(spec.ClientCtx)); ok {
