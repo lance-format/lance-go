@@ -3,6 +3,7 @@ package lance_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -29,7 +30,7 @@ func TestFragmentAddColumnsVariantsPublish(t *testing.T) {
 			t.Fatal("SQL output fragment is bound, want detached metadata")
 		}
 		requireFieldID(t, schema, "sql_value", 2)
-		if got := mustPhysicalRows(t, updated); got != 4 {
+		if got := detachedFragmentPhysicalRows(t, updated); got != 4 {
 			t.Fatalf("staged sql physical rows = %d, want 4", got)
 		}
 		requireMutationRows(t, dataset, []int64{1, 2, 3, 4}, []string{"a", "b", "c", "d"})
@@ -66,7 +67,7 @@ func TestFragmentAddColumnsVariantsPublish(t *testing.T) {
 			t.Fatalf("AddColumnsNulls: %v", err)
 		}
 		requireFieldID(t, schema, "null_value", 2)
-		if got := mustPhysicalRows(t, updated); got != 4 {
+		if got := detachedFragmentPhysicalRows(t, updated); got != 4 {
 			t.Fatalf("staged null physical rows = %d, want 4", got)
 		}
 
@@ -104,7 +105,19 @@ func TestFragmentAddColumnsVariantsPublish(t *testing.T) {
 		updated.Close()
 		schema.Close()
 		reopened := openDataset(t, ctx, uri)
-		if got := mustScanInt64(t, reopened, "stream_value"); !equalInt64(got, []int64{7, 8, 9, 10}) {
+		scanner, err := reopened.Scan()
+		if err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		defer scanner.Close()
+		var got []int32
+		for batch, err := range scanner.Records(ctx) {
+			if err != nil {
+				t.Fatalf("Records: %v", err)
+			}
+			got = append(got, collectInt32(t, batch, "stream_value")...)
+		}
+		if !slices.Equal(got, []int32{7, 8, 9, 10}) {
 			t.Fatalf("published stream values = %v, want [7 8 9 10]", got)
 		}
 	})
@@ -152,7 +165,7 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 		t.Fatalf("MergeColumns: %v", err)
 	}
 	requireFieldID(t, mergedSchema, "score", 2)
-	if got := mustPhysicalRows(t, merged); got != 4 {
+	if got := detachedFragmentPhysicalRows(t, merged); got != 4 {
 		t.Fatalf("staged merged physical rows = %d, want 4", got)
 	}
 	commitMerge(t, ctx, uri, baseVersion, mergedSchema, []*lance.Fragment{merged})
@@ -193,7 +206,7 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateColumnsResult.Fragment: %v", err)
 	}
-	if got := mustPhysicalRows(t, updatedFragment); got != 4 {
+	if got := detachedFragmentPhysicalRows(t, updatedFragment); got != 4 {
 		t.Fatalf("updated physical rows = %d, want 4", got)
 	}
 
