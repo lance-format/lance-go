@@ -517,9 +517,9 @@ func TestMovedChildStructuresAreReleasedByParent(t *testing.T) {
 	movedArray := *childArray
 	childArray.Release = 0
 	ReleaseArray(&dst)
-	// The moved list array still owns its values array, so two handles remain.
-	if got := handle.Len(); got != before+2 {
-		t.Fatalf("moved child array handle was released by the parent: got %d, want %d", got, before+2)
+	// The moved child is the list values array; one handle remains.
+	if got := handle.Len(); got != before+1 {
+		t.Fatalf("moved child array handle was released by the parent: got %d, want %d", got, before+1)
 	}
 	if movedArray.Length != 2 || (*[2]int32)(cBuffer(&movedArray, 1))[0] != 1 {
 		t.Fatal("moved child array data was freed with the parent")
