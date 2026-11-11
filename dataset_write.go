@@ -56,10 +56,21 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	if config.branch != "" {
 		return nil, invalidError("write", uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
+	releaseLock, err := config.commitLock.pin("write", uri)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseLock()
 	if config.params.hasNativeOptions() || config.session != nil || config.hasTransactionProperties {
 		return writeNativeDataset(uri, reader, config)
 	}
-	storageAccessor, releaseStorage, err := resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	var storageAccessor *ffi.StorageOptionsAccessor
+	var releaseStorage func()
+	if config.commitLock != nil {
+		storageAccessor, releaseStorage, err = resolveLockStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	} else {
+		storageAccessor, releaseStorage, err = resolveStorageOptions("write", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +79,11 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	nativeOptions := nativeWriteOptions(config)
 
 	var native *ffi.Dataset
-	if storageAccessor != nil {
+	if config.commitLock != nil {
+		// Sessions always take the native-options path above, so this
+		// accessor-only overload receives the session through that handle.
+		native, err = ffi.WriteWithAccessorAndCommitLock(uri, reader, nativeOptions, storageAccessor, nil, config.commitLock.native)
+	} else if storageAccessor != nil {
 		native, err = ffi.WriteWithAccessor(uri, reader, nativeOptions, storageAccessor)
 	} else {
 		native, err = ffi.Write(uri, reader, nativeOptions, config.storageOptions)

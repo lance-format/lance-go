@@ -189,6 +189,9 @@ func parseFragmentCreateConfig(op, uri string, opts []WriteOption) (writeConfig,
 	if config.storageOptionsAccessor != nil {
 		return config, invalidError(op, uri, "WithWriteStorageOptionsAccessor is not supported by fragment creation; use static storage options")
 	}
+	if config.commitLock != nil {
+		return config, invalidError(op, uri, "WithWriteCommitLock is not supported by fragment creation")
+	}
 	if config.branch != "" {
 		return config, invalidError(op, uri, "WithWriteBranch is valid only for WriteToNamespace")
 	}
