@@ -1068,3 +1068,137 @@ func TestPublicReleaseHelpers(t *testing.T) {
 	ReleaseStream(&movedStream)
 	ReleaseStream(nil)
 }
+
+func TestCopyBorrowedRecordBatchOwnsNestedData(t *testing.T) {
+	mem := memory.NewGoAllocator()
+	dictType := &arrow.DictionaryType{
+		IndexType: arrow.PrimitiveTypes.Int32,
+		ValueType: arrow.BinaryTypes.String,
+	}
+	structType := arrow.StructOf(arrow.Field{Name: "x", Type: arrow.PrimitiveTypes.Int32})
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
+		{Name: "dict", Type: dictType, Nullable: true},
+		{Name: "list", Type: arrow.ListOf(arrow.PrimitiveTypes.Int32), Nullable: true},
+		{Name: "struct", Type: structType, Nullable: true},
+	}, nil)
+
+	idBuilder := array.NewInt64Builder(mem)
+	idBuilder.AppendValues([]int64{10, 11, 12, 13}, nil)
+	idArray := idBuilder.NewArray()
+	idBuilder.Release()
+
+	dictBuilder := array.NewDictionaryBuilder(mem, dictType).(*array.BinaryDictionaryBuilder)
+	for _, value := range []string{"a", "b", "a", "c"} {
+		if err := dictBuilder.AppendString(value); err != nil {
+			t.Fatalf("append dictionary: %v", err)
+		}
+	}
+	dictArray := dictBuilder.NewArray()
+	dictBuilder.Release()
+
+	listBuilder := array.NewListBuilder(mem, arrow.PrimitiveTypes.Int32)
+	listValues := listBuilder.ValueBuilder().(*array.Int32Builder)
+	for _, values := range [][]int32{{1}, {2, 3}, {4}, {5, 6}} {
+		listBuilder.Append(true)
+		for _, value := range values {
+			listValues.Append(value)
+		}
+	}
+	listArray := listBuilder.NewArray()
+	listBuilder.Release()
+
+	structBuilder := array.NewStructBuilder(mem, structType)
+	structValues := structBuilder.FieldBuilder(0).(*array.Int32Builder)
+	for _, value := range []int32{21, 22, 23, 24} {
+		structBuilder.Append(true)
+		structValues.Append(value)
+	}
+	structArray := structBuilder.NewArray()
+	structBuilder.Release()
+
+	columns := []arrow.Array{
+		array.NewSlice(idArray, 1, 3),
+		array.NewSlice(dictArray, 1, 3),
+		array.NewSlice(listArray, 1, 3),
+		array.NewSlice(structArray, 1, 3),
+	}
+	batch := array.NewRecordBatch(schema, columns, 2)
+	for _, column := range columns {
+		column.Release()
+	}
+	idArray.Release()
+	dictArray.Release()
+	listArray.Release()
+	structArray.Release()
+	defer batch.Release()
+
+	var exported ArrowArray
+	if err := ExportRecordBatch(batch, &exported); err != nil {
+		t.Fatalf("ExportRecordBatch: %v", err)
+	}
+	if exported.Release == 0 {
+		t.Fatal("exported batch has no release callback")
+	}
+	var exportedSchema ArrowSchema
+	if err := ExportSchema(schema, &exportedSchema); err != nil {
+		callArrayRelease(t, &exported)
+		t.Fatalf("ExportSchema: %v", err)
+	}
+	copied, err := CopyBorrowedRecordBatch(&exported, &exportedSchema)
+	callSchemaRelease(t, &exportedSchema)
+	if err != nil {
+		callArrayRelease(t, &exported)
+		t.Fatalf("CopyBorrowedRecordBatch: %v", err)
+	}
+	defer copied.Release()
+	if exported.Release == 0 {
+		t.Fatal("CopyBorrowedRecordBatch consumed the producer's release callback")
+	}
+	callArrayRelease(t, &exported)
+	if exported.Release != 0 {
+		t.Fatal("producer release did not run")
+	}
+
+	if got := copied.Column(0).(*array.Int64).Value(0); got != 11 {
+		t.Errorf("copied id = %d, want 11", got)
+	}
+	if got := copied.Column(1).(*array.Dictionary).ValueStr(0); got != "b" {
+		t.Errorf("copied dictionary = %q, want b", got)
+	}
+	start, end := copied.Column(2).(*array.List).ValueOffsets(0)
+	if got := copied.Column(2).(*array.List).ListValues().(*array.Int32).Value(int(start)); got != 2 {
+		t.Errorf("copied list first value = %d, want 2", got)
+	}
+	if end-start != 2 {
+		t.Errorf("copied list length = %d, want 2", end-start)
+	}
+	if got := copied.Column(3).(*array.Struct).Field(0).(*array.Int32).Value(0); got != 22 {
+		t.Errorf("copied struct value = %d, want 22", got)
+	}
+}
+
+func TestCopyBorrowedRecordBatchZeroColumns(t *testing.T) {
+	schema := arrow.NewSchema(nil, nil)
+	batch := array.NewRecordBatch(schema, nil, 3)
+	defer batch.Release()
+
+	var exported ArrowArray
+	if err := ExportRecordBatch(batch, &exported); err != nil {
+		t.Fatalf("ExportRecordBatch: %v", err)
+	}
+	defer callArrayRelease(t, &exported)
+	var exportedSchema ArrowSchema
+	if err := ExportSchema(schema, &exportedSchema); err != nil {
+		t.Fatalf("ExportSchema: %v", err)
+	}
+	copied, err := CopyBorrowedRecordBatch(&exported, &exportedSchema)
+	callSchemaRelease(t, &exportedSchema)
+	if err != nil {
+		t.Fatalf("CopyBorrowedRecordBatch: %v", err)
+	}
+	defer copied.Release()
+	if copied.NumRows() != 3 || copied.NumCols() != 0 {
+		t.Errorf("copied shape = %d rows, %d columns", copied.NumRows(), copied.NumCols())
+	}
+}
