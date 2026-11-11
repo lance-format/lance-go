@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"runtime"
 	"strconv"
-	"unsafe"
 )
 
 // BasePath is one native base-path registration.
@@ -22,8 +21,8 @@ type BasePath struct {
 // basePath is the C layout of LanceBasePath.
 type basePath struct {
 	ID            uint32
-	Path          uintptr
-	Name          uintptr
+	Path          *byte
+	Name          *byte
 	IsDatasetRoot bool
 }
 
@@ -55,14 +54,14 @@ func newBasePathList(bases []BasePath) (*basePathList, error) {
 		list.raw[i].IsDatasetRoot = base.IsDatasetRoot
 		pathBuf := append([]byte(base.Path), 0)
 		list.bufs = append(list.bufs, pathBuf)
-		list.raw[i].Path = uintptr(unsafe.Pointer(&pathBuf[0]))
+		list.raw[i].Path = &pathBuf[0]
 		if base.Name != nil {
 			if err := validateCString(*base.Name); err != nil {
 				return nil, fmt.Errorf("bases[%d].name: %w", i, err)
 			}
 			nameBuf := append([]byte(*base.Name), 0)
 			list.bufs = append(list.bufs, nameBuf)
-			list.raw[i].Name = uintptr(unsafe.Pointer(&nameBuf[0]))
+			list.raw[i].Name = &nameBuf[0]
 		}
 	}
 	return list, nil
@@ -77,8 +76,7 @@ func (l *basePathList) ptr() *basePath {
 	return &l.raw[0]
 }
 
-// keepAlive must run after the native call: raw holds integer addresses into
-// bufs, which do not keep the backing buffers live on their own.
+// keepAlive must run after the native call to retain every copied input buffer.
 func (l *basePathList) keepAlive() {
 	runtime.KeepAlive(l.raw)
 	runtime.KeepAlive(l.bufs)

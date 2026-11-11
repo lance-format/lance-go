@@ -27,6 +27,12 @@ func TestAddBasesMarshalsBasePaths(t *testing.T) {
 			wantNilProps: true,
 		},
 		{
+			name:       "explicit empty properties",
+			bases:      []BasePath{},
+			properties: map[string]string{},
+			wantProps:  map[string]string{},
+		},
+		{
 			name: "explicit empty name and sorted present properties",
 			bases: []BasePath{
 				{ID: 7, Path: "s3://bucket/empty", Name: &emptyName},
@@ -55,13 +61,13 @@ func TestAddBasesMarshalsBasePaths(t *testing.T) {
 					for i, raw := range bases {
 						gotBases[i].ID = raw.ID
 						gotBases[i].IsDatasetRoot = raw.IsDatasetRoot
-						if raw.Path == 0 {
+						if raw.Path == nil {
 							t.Errorf("bases[%d].path is NULL", i)
 						} else {
-							gotBases[i].Path = goString((*byte)(unsafe.Pointer(raw.Path)))
+							gotBases[i].Path = goString(raw.Path)
 						}
-						if raw.Name != 0 {
-							name := goString((*byte)(unsafe.Pointer(raw.Name)))
+						if raw.Name != nil {
+							name := goString(raw.Name)
 							gotBases[i].Name = &name
 						}
 					}

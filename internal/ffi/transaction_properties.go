@@ -8,8 +8,8 @@ import (
 
 // transactionProperties mirrors LanceTransactionProperties.
 //
-// Native code reads keys and values as parallel NUL-terminated arrays of
-// length Count. A nil map is passed as a NULL pointer and means native None;
+// Native code reads keys and values as parallel arrays of NUL-terminated
+// strings, with Count entries. A nil map is passed as a NULL pointer and means native None;
 // a non-nil map, including an empty one, is passed as a present map.
 type transactionProperties struct {
 	Keys   **byte
@@ -23,7 +23,7 @@ type transactionProperties struct {
 // as None. A non-nil map returns a present struct with keys sorted for
 // deterministic wire order; an empty map keeps NULL key and value arrays with
 // Count zero. keepAlive must run after the native call: the struct holds
-// integer addresses that do not keep the copied strings live.
+// pointers to arrays of integer addresses that do not keep copied strings live.
 func newTransactionProperties(properties map[string]string) (*transactionProperties, func(), error) {
 	if properties == nil {
 		return nil, func() {}, nil

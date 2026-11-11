@@ -50,8 +50,9 @@ func (d *Dataset) BasePaths() (map[uint32]BasePath, error) {
 // with an unchanged registry.
 //
 // A nil transactionProperties map passes native None. A non-nil map, including
-// an empty one, passes an explicitly present property map that is visible from
-// ReadTransactionByVersion.
+// an empty one, passes an explicitly present property map to native code.
+// Native protobuf persistence normalizes empty maps to absent, so
+// ReadTransactionByVersion does not preserve that input distinction.
 //
 // AddBases records and lists bases; it does not route new writes to a base.
 // Write placement is a separate capability that the pinned C API does not

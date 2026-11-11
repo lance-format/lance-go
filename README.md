@@ -622,6 +622,7 @@ Lance to allocate one, conflicting paths or names fail with
 nil `Name` means no name, while a pointer to an empty string records an empty
 name. Transaction properties belong to the commit: a nil map passes native
 None, and a non-nil map, including an empty one, passes a present map.
+Native protobuf persistence normalizes empty property maps to absent on readback.
 
 Registering bases does not route new writes to them. The pinned C API does not
 expose write placement, so `AddBases` only records and lists the registry.

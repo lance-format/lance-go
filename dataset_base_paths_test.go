@@ -212,8 +212,8 @@ func TestAddBasesPreservesNilAndEmptyInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Transaction.Properties empty map: %v", err)
 	}
-	if !present || len(properties) != 0 {
-		t.Fatalf("explicit empty properties = %v, present %v; want present empty map", properties, present)
+	if present || len(properties) != 0 {
+		t.Fatalf("persisted empty properties = %v, present %v; want absent after native protobuf normalization", properties, present)
 	}
 }
 
