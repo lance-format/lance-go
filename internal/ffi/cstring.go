@@ -89,6 +89,15 @@ func newPresentCStringList(values []string) (*cStringList, error) {
 	return list, nil
 }
 
+// ptr returns the address of the first pointer entry for use in a C struct.
+// A nil pointer array is passed as NULL to C.
+func (l *cStringList) ptr() *uintptr {
+	if l == nil || len(l.ptrs) == 0 {
+		return nil
+	}
+	return &l.ptrs[0]
+}
+
 // keepAlive must run after the native call, directly or through defer: ptrs
 // contains integer addresses that do not keep the backing string buffers live.
 func (l *cStringList) keepAlive() {

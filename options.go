@@ -112,6 +112,7 @@ type AutoCleanupParams struct {
 type writeConfig struct {
 	mode                     WriteMode
 	params                   WriteParams
+	schema                   *NativeSchema
 	autoCleanup              *AutoCleanupParams
 	skipAutoCleanup          bool
 	storageOptions           map[string]string
@@ -166,7 +167,7 @@ func WithSkipAutoCleanup(skip bool) WriteOption {
 }
 
 // WithWriteSession pins the write to a session. It is valid only for
-// WriteUncommitted.
+// WriteUncommitted, CreateFragment and WriteFragments.
 func WithWriteSession(session *Session) WriteOption {
 	return func(config *writeConfig) error {
 		if session == nil {
@@ -193,6 +194,20 @@ func WithWriteTransactionProperties(properties map[string]string) WriteOption {
 		}
 		config.transactionProperties = copied
 		config.hasTransactionProperties = true
+		return nil
+	}
+}
+
+// WithFragmentSchema sets the schema used by CreateFragment and WriteFragments.
+// The native schema preserves field IDs that are not represented in an Arrow
+// schema. It is invalid for Write, Create, Append, Overwrite and
+// WriteUncommitted.
+func WithFragmentSchema(schema *NativeSchema) WriteOption {
+	return func(config *writeConfig) error {
+		if schema == nil {
+			return fmt.Errorf("schema must not be nil")
+		}
+		config.schema = schema
 		return nil
 	}
 }

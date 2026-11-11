@@ -381,6 +381,10 @@ type bindings struct {
 	fragmentTake             func(fragment uintptr, indices []uint32, count uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	fragmentCountRows        func(fragment uintptr, filter uintptr, out *uint64) int32
 	fragmentDelete           func(fragment uintptr, predicate string, out *uintptr) int32
+	fragmentCreate           func(uri string, fragmentID uint64, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragment *uintptr) int32
+	fragmentCreateMany       func(uri string, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragments **uintptr, outCount *uint64) int32
+	fragmentArrayFree        func(fragments *uintptr, count uint64)
+	fragmentCreateFromFile   func(dataset uintptr, filename string, fragmentID uint64, physicalRows *uint64, outFragment *uintptr) int32
 
 	datasetCreateDataFile    func(dataset uintptr, path string, baseID *uint32, out *uintptr) int32
 	dataFileClose            func(file uintptr)
@@ -816,6 +820,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_fragment_take", &b.fragmentTake},
 		{"lance_fragment_count_rows", &b.fragmentCountRows},
 		{"lance_fragment_delete", &b.fragmentDelete},
+		{"lance_fragment_create", &b.fragmentCreate},
+		{"lance_fragment_create_many", &b.fragmentCreateMany},
+		{"lance_fragment_array_free", &b.fragmentArrayFree},
+		{"lance_fragment_create_from_file", &b.fragmentCreateFromFile},
 
 		{"lance_dataset_create_data_file", &b.datasetCreateDataFile},
 		{"lance_data_file_close", &b.dataFileClose},

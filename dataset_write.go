@@ -47,8 +47,11 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		}
 	}
 
+	if config.schema != nil {
+		return nil, invalidError("write", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	if config.session != nil {
-		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted")
+		return nil, invalidError("write", uri, "WithWriteSession is valid only for WriteUncommitted, CreateFragment and WriteFragments")
 	}
 	if config.hasTransactionProperties {
 		return nil, invalidError("write", uri, "WithWriteTransactionProperties is valid only for WriteUncommitted")

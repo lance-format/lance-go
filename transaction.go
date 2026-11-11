@@ -1016,6 +1016,9 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}
+	if config.schema != nil {
+		return nil, invalidError("write uncommitted", uri, "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
+	}
 	session, releaseSession, err := acquireSession("write uncommitted", uri, config.session)
 	if err != nil {
 		return nil, err

@@ -88,44 +88,14 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	if err := validateCString(uri); err != nil {
 		return nil, err
 	}
-	if opts.Params.DataStorageVersion != "" {
-		if err := validateCString(opts.Params.DataStorageVersion); err != nil {
-			return nil, err
-		}
+	rawOptions, versionList, err := buildWriteOptions(opts.Params, opts.AutoCleanup, opts.SkipAutoCleanup)
+	if err != nil {
+		return nil, err
 	}
 	storageList, err := storageOptionList(storageOptions)
 	if err != nil {
 		return nil, err
 	}
-
-	versionList := &cStringList{}
-	if opts.Params.DataStorageVersion != "" {
-		versionList, err = newCStringList([]string{opts.Params.DataStorageVersion})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	var rawOptions writeOptions
-	rawOptions.Params.MaxRowsPerFile = opts.Params.MaxRowsPerFile
-	rawOptions.Params.MaxRowsPerGroup = opts.Params.MaxRowsPerGroup
-	rawOptions.Params.MaxBytesPerFile = opts.Params.MaxBytesPerFile
-	rawOptions.Params.EnableStableRowIDs = opts.Params.EnableStableRowIDs
-	if len(versionList.ptrs) > 0 {
-		rawOptions.Params.DataStorageVersion = &versionList.bufs[0][0]
-	}
-	if opts.AutoCleanup != nil {
-		if opts.AutoCleanup.OlderThanNanos < -999999999 || opts.AutoCleanup.OlderThanNanos > 999999999 {
-			return nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
-		}
-		cleanup := &autoCleanupParams{
-			Interval:         opts.AutoCleanup.Interval,
-			OlderThanSeconds: opts.AutoCleanup.OlderThanSeconds,
-			OlderThanNanos:   opts.AutoCleanup.OlderThanNanos,
-		}
-		rawOptions.AutoCleanup = cleanup
-	}
-	rawOptions.SkipAutoCleanup = opts.SkipAutoCleanup
 
 	var rawSchema cdata.ArrowSchema
 	if err := cdata.ExportSchema(schema, &rawSchema); err != nil {
@@ -167,4 +137,44 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	ds := &Dataset{b: b}
 	ds.handle.Store(handle)
 	return ds, nil
+}
+
+// buildWriteOptions converts Go write parameters to the native C layout. The
+// returned version list must stay alive until after the native call.
+func buildWriteOptions(params WriteParams, autoCleanup *AutoCleanupParams, skipAutoCleanup bool) (writeOptions, *cStringList, error) {
+	versionList := &cStringList{}
+	if params.DataStorageVersion != "" {
+		if err := validateCString(params.DataStorageVersion); err != nil {
+			return writeOptions{}, nil, err
+		}
+		list, err := newCStringList([]string{params.DataStorageVersion})
+		if err != nil {
+			return writeOptions{}, nil, err
+		}
+		versionList = list
+	}
+
+	rawOptions := writeOptions{
+		Params: writeParams{
+			MaxRowsPerFile:     params.MaxRowsPerFile,
+			MaxRowsPerGroup:    params.MaxRowsPerGroup,
+			MaxBytesPerFile:    params.MaxBytesPerFile,
+			EnableStableRowIDs: params.EnableStableRowIDs,
+		},
+		SkipAutoCleanup: skipAutoCleanup,
+	}
+	if len(versionList.ptrs) > 0 {
+		rawOptions.Params.DataStorageVersion = &versionList.bufs[0][0]
+	}
+	if autoCleanup != nil {
+		if autoCleanup.OlderThanNanos < -999999999 || autoCleanup.OlderThanNanos > 999999999 {
+			return writeOptions{}, nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
+		}
+		rawOptions.AutoCleanup = &autoCleanupParams{
+			Interval:         autoCleanup.Interval,
+			OlderThanSeconds: autoCleanup.OlderThanSeconds,
+			OlderThanNanos:   autoCleanup.OlderThanNanos,
+		}
+	}
+	return rawOptions, versionList, nil
 }
