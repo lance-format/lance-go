@@ -293,8 +293,9 @@ func (w *PackedBlobWriter) Write(data []byte) error {
 }
 
 // WriteBlobs appends one borrowed Arrow array of Binary, LargeBinary, or
-// FixedSizeBinary payloads. The Arrow bridge rejects BinaryView. Native code consumes the exported array on every
-// return, while payloads itself remains owned by the caller.
+// FixedSizeBinary payloads. The Arrow bridge rejects BinaryView. Native code
+// consumes the exported array on every return, while payloads itself remains
+// owned by the caller.
 func (w *PackedBlobWriter) WriteBlobs(payloads arrow.Array) error {
 	if w == nil || w.handle == 0 {
 		return ErrClosed
