@@ -284,7 +284,8 @@ func WithNearestBatch(column string, queries Vector, dimension int, k uint32) Sc
 //
 // At most 128 subvectors are accepted, and numVectors*k and k*refineFactor
 // must each not exceed 100000. The result contains the nearest rows for the
-// combined query.
+// combined query. WithLimit and WithOffset apply to these combined results
+// through the native result window.
 func WithNearestMultiVector(column string, vectors Vector, dimension int, k uint32) ScanOption {
 	return func(config *scanConfig) error {
 		if err := validateVectorColumn(column); err != nil {

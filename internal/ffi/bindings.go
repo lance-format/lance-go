@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 
