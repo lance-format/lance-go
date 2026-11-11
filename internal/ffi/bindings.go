@@ -35,6 +35,13 @@ type bindings struct {
 	datasetTake              func(dataset uintptr, indices []uint64, numIndices uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 	datasetTakeRows          func(dataset uintptr, rowIDs []uint64, numRowIDs uint64, columns []uintptr, out *cdata.ArrowArrayStream) int32
 
+	datasetCloneHandle   func(dataset uintptr) uintptr
+	datasetDelete        func(dataset uintptr, predicate string, outNumDeleted *uint64) int32
+	datasetUpdate        func(dataset uintptr, predicate uintptr, columns []uintptr, values []uintptr, numUpdates uint64, outNumUpdated *uint64) int32
+	datasetMergeInsert   func(dataset uintptr, onColumns []uintptr, numOnColumns uint64, source *cdata.ArrowArrayStream, params *mergeInsertParams, outResult *mergeInsertResult) int32
+	datasetMerge         func(dataset uintptr, leftOn, rightOn string, source *cdata.ArrowArrayStream) int32
+	datasetTruncateTable func(dataset uintptr) int32
+
 	sessionNew               func(indexCacheSize, metadataCacheSize uint64) uintptr
 	sessionNewWithCacheSpecs func(indexCache, metadataCache *sessionCacheSpec) uintptr
 	sessionClose             func(session uintptr)
@@ -95,6 +102,13 @@ func (b *bindings) symbols() []symbol {
 		{"lance_data_statistics_close", &b.dataStatsClose},
 		{"lance_dataset_take", &b.datasetTake},
 		{"lance_dataset_take_rows", &b.datasetTakeRows},
+
+		{"lance_dataset_clone_handle", &b.datasetCloneHandle},
+		{"lance_dataset_delete", &b.datasetDelete},
+		{"lance_dataset_update", &b.datasetUpdate},
+		{"lance_dataset_merge_insert", &b.datasetMergeInsert},
+		{"lance_dataset_merge", &b.datasetMerge},
+		{"lance_dataset_truncate_table", &b.datasetTruncateTable},
 
 		{"lance_session_new", &b.sessionNew},
 		{"lance_session_new_with_cache_specs", &b.sessionNewWithCacheSpecs},
