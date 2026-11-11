@@ -221,7 +221,7 @@ func TestFTSMultiMatchAndConstructionErrors(t *testing.T) {
 		t.Fatalf("NewFTSBooleanQuery empty: %v", err)
 	}
 	defer emptyBoolean.Close()
-	assertFTSPlanningError(t, withBody, "boolean query must have at least one", lance.WithFTSQuery(emptyBoolean))
+	assertFTSQueryError(t, withBody, "FTS query must contain at least one leaf query", lance.WithFTSQuery(emptyBoolean))
 }
 
 func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {
@@ -365,27 +365,27 @@ func TestMinHashLSHScan(t *testing.T) {
 		t.Fatalf("MinHash empty text ids = %v, want no rows", ids)
 	}
 
-	assertFTSPlanningError(t, indexed, "MinHash search requires a limit", lance.WithMinHashQuery("name", "hello world"))
+	assertFTSQueryError(t, indexed, "MinHash search requires a limit", lance.WithMinHashQuery("name", "hello world"))
 	if _, err := indexed.Scan(lance.WithMinHashQuery("", "hello world"), lance.WithLimit(1)); err == nil {
 		t.Fatalf("MinHash scan with empty column succeeded")
 	}
 }
 
-// Planning errors must be observed by consuming the lazy native stream.
-func assertFTSPlanningError(t *testing.T, dataset *lance.Dataset, message string, opts ...lance.ScanOption) {
+// Native validates some queries during schema resolution and others when the
+// lazy stream is consumed. Both paths must preserve the intended diagnostic.
+func assertFTSQueryError(t *testing.T, dataset *lance.Dataset, message string, opts ...lance.ScanOption) {
 	t.Helper()
 	scanner, err := dataset.Scan(opts...)
-	if err != nil {
-		t.Fatalf("Scan failed before planning: %v", err)
-	}
-	defer scanner.Close()
-	for _, err := range scanner.Records(context.Background()) {
-		if err != nil {
-			if !strings.Contains(err.Error(), message) {
-				t.Fatalf("planning error = %v, want %q", err, message)
+	if err == nil {
+		defer scanner.Close()
+		for _, nextErr := range scanner.Records(context.Background()) {
+			if nextErr != nil {
+				err = nextErr
+				break
 			}
-			return
 		}
 	}
-	t.Fatalf("planning succeeded, want %q", message)
+	if err == nil || !strings.Contains(err.Error(), message) {
+		t.Fatalf("query error = %v, want %q", err, message)
+	}
 }

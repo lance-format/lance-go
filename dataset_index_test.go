@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -199,8 +200,10 @@ func TestIndexNameReplaceAndInvalidScalarParams(t *testing.T) {
 	replaced.Close()
 
 	badParams := json.RawMessage(`{"with_position":"not-a-bool"}`)
-	if _, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, badParams, index.ScalarOptions{}); !errors.Is(err, lance.ErrInvalidArgument) {
-		t.Fatalf("invalid plugin params = %v, want ErrInvalidArgument", err)
+	// Native wraps plugin deserialization failures as Arrow errors, which the
+	// pinned C ABI maps to Internal. Preserve that category and its diagnostic.
+	if _, err := dataset.CreateScalarIndex(ctx, "name", index.ScalarInverted, badParams, index.ScalarOptions{}); !errors.Is(err, lance.ErrInternal) || !strings.Contains(err.Error(), "expected a boolean") {
+		t.Fatalf("invalid plugin params = %v, want native internal error for boolean type", err)
 	}
 	if _, err := first.CreateScalarIndex(ctx, "name", index.ScalarInverted, json.RawMessage(`{"broken"`), index.ScalarOptions{}); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("malformed JSON params = %v, want ErrInvalidArgument", err)

@@ -224,7 +224,7 @@ type SegmentInfo struct {
 	CreatedAt                  *string  `json:"created_at"`
 	SizeBytes                  *uint64  `json:"size_bytes"`
 	BaseID                     *uint64  `json:"base_id"`
-	CoveringFields             bool     `json:"covering_fields"`
+	CoveringFields             []int32  `json:"covering_fields"`
 }
 
 // SegmentListing is one physical index segment from the native segment list.
