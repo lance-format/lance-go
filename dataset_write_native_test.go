@@ -176,6 +176,29 @@ func TestNativeWriteOptionsBasePlacement(t *testing.T) {
 	dataset.Close()
 }
 
+func TestNativeWriteOptionsTargetAllBases(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	uri := filepath.Join(root, "data.lance")
+	base := filepath.Join(root, "base")
+	schema := testSchema()
+	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})),
+		lance.WithWriteParams(lance.WriteParams{
+			InitialBases:   []lance.BasePath{{ID: 7, Path: base, IsDatasetRoot: true}},
+			TargetAllBases: ptr(true),
+			MaxRowsPerFile: 1,
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Create targeting all bases: %v", err)
+	}
+	defer dataset.Close()
+	if !datasetHasDataFileBaseID(t, dataset, 7) {
+		t.Fatalf("no data file assigned to the only registered base")
+	}
+}
+
 func TestNativeWriteOptionsBaseStoreParams(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
@@ -275,6 +298,17 @@ func TestNativeWriteOptionsExternalBlobModes(t *testing.T) {
 		t.Fatalf("CountRows = %d, %v; want 1", rows, err)
 	}
 	dataset.Close()
+
+	_, err = lance.Create(ctx, filepath.Join(root, "no-allow.lance"), makeReader(t, schema, record),
+		lance.WithWriteParams(lance.WriteParams{
+			InitialBases:     []lance.BasePath{{ID: 1, Path: base, IsDatasetRoot: true}},
+			TargetBases:      []uint32{1},
+			ExternalBlobMode: lance.ExternalBlobModeReference,
+		}),
+	)
+	if err == nil {
+		t.Fatal("external reference outside the bases was accepted without the allow-outside policy")
+	}
 
 	_, err = lance.Create(ctx, filepath.Join(root, "ingest.lance"), makeReader(t, schema, record),
 		lance.WithWriteParams(lance.WriteParams{
