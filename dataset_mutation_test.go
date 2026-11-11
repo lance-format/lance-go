@@ -513,6 +513,7 @@ func (r *blockingSchemaReader) Schema() *arrow.Schema {
 
 func TestMutationCloseWaitsForInFlightOperation(t *testing.T) {
 	dataset, _, schema := newMutationDataset(t)
+	closeWaiting := lance.ObserveDatasetCloseWait(dataset)
 	source := &blockingSchemaReader{
 		RecordReader: makeReader(t, schema,
 			makeRecord(t, schema, []int64{5}, []string{"e"}, []bool{true}),
@@ -532,17 +533,16 @@ func TestMutationCloseWaitsForInFlightOperation(t *testing.T) {
 	}()
 	<-source.entered
 
-	closeStarted := make(chan struct{})
 	closeDone := make(chan error, 1)
 	go func() {
-		close(closeStarted)
 		closeDone <- dataset.Close()
 	}()
-	<-closeStarted
+	closeReturned := false
 	select {
+	case <-closeWaiting:
 	case err := <-closeDone:
-		t.Fatalf("Close returned while mutation was in flight: %v", err)
-	default:
+		t.Errorf("Close returned while mutation was in flight: %v", err)
+		closeReturned = true
 	}
 
 	close(source.unblock)
@@ -551,8 +551,10 @@ func TestMutationCloseWaitsForInFlightOperation(t *testing.T) {
 		t.Fatalf("MergeInsert: %v", result.err)
 	}
 	defer result.dataset.Close()
-	if err := <-closeDone; err != nil {
-		t.Fatalf("Close: %v", err)
+	if !closeReturned {
+		if err := <-closeDone; err != nil {
+			t.Fatalf("Close: %v", err)
+		}
 	}
 	if result.stats != (lance.MergeInsertResult{InsertedRows: 1}) {
 		t.Fatalf("stats = %+v, want inserted 1", result.stats)
