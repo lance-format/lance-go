@@ -1,0 +1,80 @@
+name: Windows native
+
+# Manual and path-specific evidence lane for the pinned lance-c DLL. This is
+# deliberately separate from windows.yml: that workflow tests the pure-Go
+# loader/callback layer and cross-compiles, but does not load a real DLL.
+# This lane builds only amd64 on windows-2022. It does not publish a Go module
+# or a release artifact, and it makes no arm64 claim.
+# GitHub only offers workflow_dispatch for a workflow that exists on the default
+# branch; until this file is there, the pull_request path filter is the review
+# trigger. No push trigger is added, so pushing a topic branch does not start a
+# native build before the parent reviews and triggers it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/windows-native.yml"
+      - "scripts/windows-native-build.ps1"
+      - "scripts/windows-native/**"
+      - "scripts/check-abi-symbols.go"
+      - "internal/ffi/**"
+      - "internal/loader/**"
+      - "internal/cdata/**"
+      - "namespace*.go"
+      - "dataset*.go"
+      - "file/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CGO_ENABLED: "0"
+  GOTOOLCHAIN: local
+  PROTOC_VERSION: "21.12"
+  PROTOC_SHA256: "71852a30cf62975358edfcbbff93086e8857a079c8e4d6904881aa968d65c7f9"
+
+jobs:
+  windows-native-amd64:
+    name: windows-native-amd64
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-16
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build, verify, and run native Windows evidence
+        shell: pwsh
+        timeout-minutes: 110
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-build.ps1
+
+      - name: Upload native Windows evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-native-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/windows-amd64
+            dist/windows-amd64-evidence
+          if-no-files-found: warn
+          retention-days: 14

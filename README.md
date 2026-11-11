@@ -23,11 +23,23 @@ and requires libc, libm, libgcc_s and the dynamic loader. Older glibc, musl,
 and other targets have no compatible bundle. Linux amd64 has native test
 coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
-cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
-and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Remaining API parity and
-platform distribution work is tracked in
+cache and Arrow callback unit tests on `windows-2022`. The separate
+`.github/workflows/windows-native.yml` lane is a manual, path-specific amd64
+evidence build: it compiles the pinned upstream source with MSVC, stages the
+DLL, MSVC import library and public headers, checks the PE machine and exported
+`lance_*` symbols, and runs a native C consumer plus Go external-library tests.
+It does not publish a Go module or release artifact and does not cover arm64.
+macOS runtime behavior and Windows release packaging remain pending; acceptance
+of a packaged Windows DLL belongs to the lance-c release process. Remaining API
+parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
+
+To produce Windows amd64 evidence, dispatch the **Windows native** workflow
+manually from the Actions tab once it is present on the default branch; the
+workflow also runs for pull requests that touch its listed paths. It uploads the
+staged DLL/import library/headers and its verification logs as CI artifacts.
+Those artifacts are evidence for review, not a supported release or a published
+module.
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:
