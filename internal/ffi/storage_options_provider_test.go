@@ -45,7 +45,7 @@ func TestStorageOptionsProviderConstructorFailureReclaimsContext(t *testing.T) {
 	before := handle.Len()
 	b := &bindings{
 		storageProviderNew: func(*storageOptionsProviderSpec) uintptr { return 0 },
-		lastErrorCode:      func() int32 { return int32(CodeInvalidInput) },
+		lastErrorCode:      func() int32 { return int32(CodeInvalidArgument) },
 		lastErrorMessage:   func() *byte { return nil },
 	}
 	_, err := newStorageOptionsProvider(b, "provider/failure", func(context.Context, bool) (map[string]string, error) {
@@ -265,17 +265,17 @@ func TestStorageOptionsFetchCallbackForceFallbackAndPanic(t *testing.T) {
 }
 
 func TestStorageOptionsFetchCallbackTypedErrorAndValidation(t *testing.T) {
-	typed := &testCallbackCodeError{code: CodeInvalidInput}
+	typed := &testCallbackCodeError{code: CodeInvalidArgument}
 	for _, tc := range []struct {
 		name string
 		err  error
 		opts map[string]string
 		want Code
 	}{
-		{name: "typed", err: typed, want: CodeInvalidInput},
+		{name: "typed", err: typed, want: CodeInvalidArgument},
 		{name: "plain", err: errors.New("no credentials"), want: CodeInternal},
-		{name: "nul key", opts: map[string]string{"bad\x00key": "v"}, want: CodeInvalidInput},
-		{name: "nul value", opts: map[string]string{"key": "bad\x00value"}, want: CodeInvalidInput},
+		{name: "nul key", opts: map[string]string{"bad\x00key": "v"}, want: CodeInvalidArgument},
+		{name: "nul value", opts: map[string]string{"key": "bad\x00value"}, want: CodeInvalidArgument},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			adapter := &storageOptionsProviderAdapter{fetch: func(context.Context, bool) (map[string]string, error) {
@@ -323,7 +323,7 @@ func TestStorageOptionsAccessorSnapshotPartialErrorClosesSnapshot(t *testing.T) 
 		storageAccessorSnapshot:   func(uintptr) uintptr { return 7 },
 		storageSnapshotHasOptions: func(uintptr) int32 { return -1 },
 		storageSnapshotClose:      func(uintptr) { closes++ },
-		lastErrorCode:             func() int32 { return int32(CodeInvalidInput) },
+		lastErrorCode:             func() int32 { return int32(CodeInvalidArgument) },
 		lastErrorMessage:          func() *byte { return nil },
 	}
 	accessor := &StorageOptionsAccessor{b: b, handle: 1}

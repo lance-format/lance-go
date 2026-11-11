@@ -2,7 +2,6 @@ package ffi
 
 import (
 	"fmt"
-	"runtime"
 	"unsafe"
 )
 
