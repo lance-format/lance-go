@@ -54,7 +54,7 @@ func TestDerivedHandlesOutliveOwners(t *testing.T) {
 		dataset.Close()
 		t.Fatalf("NativeSchema: %v", err)
 	}
-	batches, err := dataset.Take(ctx, []uint32{0, 1})
+	batches, err := dataset.Take(ctx, []uint64{0, 1})
 	if err != nil {
 		schemaClone.Close()
 		dataFileClone.Close()

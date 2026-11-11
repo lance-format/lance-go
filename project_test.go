@@ -119,7 +119,7 @@ func TestNativeProjectPreservesFieldIDsAndTypes(t *testing.T) {
 		dataset.Close()
 		t.Fatalf("selected field IDs = %v, want a nonconsecutive projection", selectedIDs)
 	}
-	projected, err := nativeSchema.Project([]string{"id", "payload", "tags"})
+	projected, err := nativeSchema.Project("id", "payload", "tags")
 	if err != nil {
 		nativeSchema.Close()
 		dataset.Close()
@@ -312,11 +312,11 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		dataset.Close()
 		t.Fatalf("DataReplacement: %v", err)
 	}
-	if got := inspected.FragmentID(); got != fragmentIDs[0] {
+	if got, err := inspected.FragmentID(); err != nil || got != fragmentIDs[0] {
 		inspected.Close()
 		op.Close()
 		dataset.Close()
-		t.Fatalf("replacement fragment ID = %d, want %d", got, fragmentIDs[0])
+		t.Fatalf("replacement fragment ID = %d, %v; want %d", got, err, fragmentIDs[0])
 	}
 	inspectedFile, err := inspected.File()
 	if err != nil {
