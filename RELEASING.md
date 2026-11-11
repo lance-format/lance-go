@@ -116,6 +116,7 @@ outside the checkout:
 ```sh
 : "${NATIVE_OUT:?new output directory}"
 scripts/build-lance-c.sh --out "$NATIVE_OUT"
+NATIVE_OUT=$(cd "$NATIVE_OUT" && pwd -P)
 NATIVE_LIB=$(find "$NATIVE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
 NATIVE_HEADER="$NATIVE_OUT/include/lance/lance.h"
 ```
@@ -128,6 +129,13 @@ dependencies are unchanged, and run a consumer against that copy. Set
 `NATIVE_LIB` to this verified packaging copy. Record both hashes and prove that
 the payload decompresses byte-for-byte to the packaging input. The generator
 packages the library it is given; it does not strip it.
+
+Normalize the selected packaging copy before changing directories for consumers:
+
+```bash
+test -f "$NATIVE_LIB"
+NATIVE_LIB=$(cd "$(dirname "$NATIVE_LIB")" && printf '%s/%s\n' "$(pwd -P)" "$(basename "$NATIVE_LIB")")
+```
 
 Windows needs its own native DLL build and runtime evidence. The Unix build and
 ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
@@ -277,13 +285,13 @@ Resolve the exact version through the public proxy and checksum database before
 touching the selector or root requirement:
 
 ```sh
-WORK=$(mktemp -d)
-mkdir -p "$WORK/probe" && cd "$WORK/probe"
+PROBE_WORK=$(mktemp -d)
+mkdir -p "$PROBE_WORK/probe" && cd "$PROBE_WORK/probe"
 go mod init release-probe
 env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
-  GOENV=off GOWORK=off GOMODCACHE="$WORK/modcache" \
+  GOENV=off GOWORK=off GOMODCACHE="$PROBE_WORK/modcache" \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-  go mod download -json "$ARTIFACT_MODULE@$ARTIFACT_VERSION" | tee "$WORK/artifact.json"
+  go mod download -json "$ARTIFACT_MODULE@$ARTIFACT_VERSION" | tee "$PROBE_WORK/artifact.json"
 cd "$REPO_ROOT"
 ```
 
@@ -294,12 +302,12 @@ payload; the zip entry is under the module and version prefix:
 
 ```sh
 PAYLOAD=$(find "$ARTIFACT_OUT/module" -type f -name '*.zst' -print -quit)
-ZIP=$(sed -n 's/.*"Zip": "\([^"]*\)".*/\1/p' "$WORK/artifact.json")
+ZIP=$(sed -n 's/.*"Zip": "\([^"]*\)".*/\1/p' "$PROBE_WORK/artifact.json")
 PAYLOAD_NAME=$(basename "$PAYLOAD")
 test -n "$ZIP"
-unzip -p "$ZIP" "$ARTIFACT_MODULE@$ARTIFACT_VERSION/$PAYLOAD_NAME" > "$WORK/published.zst"
-cmp "$WORK/published.zst" "artifacts/$SLUG/$PAYLOAD_NAME"
-sha256sum "$WORK/published.zst"
+unzip -p "$ZIP" "$ARTIFACT_MODULE@$ARTIFACT_VERSION/$PAYLOAD_NAME" > "$PROBE_WORK/published.zst"
+cmp "$PROBE_WORK/published.zst" "artifacts/$SLUG/$PAYLOAD_NAME"
+sha256sum "$PROBE_WORK/published.zst"
 ```
 
 The compressed payload hash must match both the module metadata and the
@@ -344,9 +352,9 @@ Test with fresh module, build, and runtime caches, `GOWORK=off`, and no
 `replace` directive. Default consumers must not set `LANCE_LIB_PATH`:
 
 ```sh
-WORK=${WORK:-$(mktemp -d)}
-CONSUMER_MODCACHE="$WORK/consumer-modcache"
-CONSUMER="$WORK/consumer"
+CONSUMER_WORK=$(mktemp -d)
+CONSUMER_MODCACHE="$CONSUMER_WORK/consumer-modcache"
+CONSUMER="$CONSUMER_WORK/consumer"
 mkdir -p "$CONSUMER" && cd "$CONSUMER"
 go mod init release-consumer
 env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
@@ -354,12 +362,13 @@ env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
   go get "$ROOT_MODULE@$ROOT_COMMIT"
 env -u LANCE_LIB_PATH CGO_ENABLED=0 GOWORK=off \
-  GOMODCACHE="$CONSUMER_MODCACHE" GOCACHE="$WORK/buildcache" \
-  XDG_CACHE_HOME="$WORK/runtime" \
+  GOMODCACHE="$CONSUMER_MODCACHE" GOCACHE="$CONSUMER_WORK/buildcache" \
+  XDG_CACHE_HOME="$CONSUMER_WORK/runtime" \
   go run "$ROOT_MODULE/examples/roundtrip"
 ```
 
-Use `@$ROOT_VERSION` instead of `@$ROOT_COMMIT` for the post-tag check. Also
+Each invocation allocates a new `CONSUMER_WORK`, including the post-tag check.
+Use `@$ROOT_VERSION` instead of `@$ROOT_COMMIT` for that check. Also
 build a consumer that imports only `$ROOT_MODULE/namespace`: the standalone
 namespace package must pull in the selector and select the bundle when
 `LANCE_LIB_PATH` is unset. Run one namespace operation, not just a compile.
@@ -369,13 +378,13 @@ External consumers use `-tags lance_external_lib` and a matching
 
 ```sh
 LANCE_LIB_PATH="$NATIVE_LIB" CGO_ENABLED=0 GOWORK=off \
-  GOMODCACHE="$CONSUMER_MODCACHE" GOCACHE="$WORK/buildcache" \
-  XDG_CACHE_HOME="$WORK/runtime-external" \
-  go build -tags lance_external_lib -o "$WORK/consumer-external" \
+  GOMODCACHE="$CONSUMER_MODCACHE" GOCACHE="$CONSUMER_WORK/buildcache" \
+  XDG_CACHE_HOME="$CONSUMER_WORK/runtime-external" \
+  go build -tags lance_external_lib -o "$CONSUMER_WORK/consumer-external" \
   "$ROOT_MODULE/examples/roundtrip"
-LANCE_LIB_PATH="$NATIVE_LIB" XDG_CACHE_HOME="$WORK/runtime-external" \
-  "$WORK/consumer-external"
-go version -m "$WORK/consumer-external"
+LANCE_LIB_PATH="$NATIVE_LIB" XDG_CACHE_HOME="$CONSUMER_WORK/runtime-external" \
+  "$CONSUMER_WORK/consumer-external"
+go version -m "$CONSUMER_WORK/consumer-external"
 ```
 
 The external tag excludes the selector, `bundle.go`, `cache.go`,
@@ -447,7 +456,9 @@ After publication, verify the fresh public path in a new module cache with
 `GOWORK=off` and no `replace`: fetch the tagged root and the exact artifact
 version from the public proxy, run the default example, run the external
 example with the matching library, and re-check the archive payload bytes and
-checksum-database entry. Use the section 5 commands with `@$ROOT_VERSION`.
+checksum-database entry. Run the entire section 5 consumer block again, beginning with a new
+`CONSUMER_WORK=$(mktemp -d)`, and use `@$ROOT_VERSION`. Do not reuse the
+pre-tag module, build or runtime cache.
 Record those post-publication results with the release.
 
 ## 7. Reusing existing evidence
