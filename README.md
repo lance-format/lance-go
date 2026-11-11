@@ -6,8 +6,9 @@ official `lance-c` C ABI without cgo.
 ## Status
 
 The core API supports dataset creation, append/overwrite, metadata, shared
-sessions, projected and filtered scans, row selection, and bounded immutable
-mutations. It uses Arrow Go v18 and requires Go 1.23 or newer.
+sessions, projected and filtered scans, row selection, bounded immutable
+mutations, version history, tags, and branches. It uses Arrow Go v18 and
+requires Go 1.23 or newer.
 
 Default `linux/amd64` builds include a verified compressed `lance-c` payload
 and load it automatically after verifying and unpacking it into the user cache.
@@ -98,6 +99,36 @@ Scan cancellation parks and wakes the goroutine without holding an OS thread
 while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
+
+## Versions, tags and branches
+
+`CurrentVersion` reports the checked-out version with its nanosecond timestamp
+and metadata. `Versions` returns the committed history in ascending version
+order, and `VersionRefs` returns the lightweight attached-version manifest
+reference IDs. Returned values and metadata maps are Go copies and do not need
+to be closed.
+
+`CheckoutVersion`, `CheckoutTag`, `CheckoutBranch` and `CheckoutRef` return
+independent datasets that remain usable after the receiver is closed. Refs are
+Go values built with `VersionRef`, `BranchRef`, `BranchVersionRef` or `TagRef`.
+`VersionRef(0)` addresses native version number zero and is not the same as
+`WithVersion(0)`, which opens the latest version. `BranchRef("main")` is
+normalized by native code.
+
+`Restore` copies an older version into a new commit and returns a dataset at
+that commit. It always commits a new version, even when restoring the current
+version, and leaves the receiver unchanged.
+
+Tags and branches are shared catalog state rather than dataset-local snapshots.
+`Tags`, `Tag`, `CreateTag`, `UpdateTag`, `DeleteTag` and `ReplaceTagMetadata`
+manage tags. `CreateTag` rejects an existing name with `ErrCommitConflict`.
+Updating a tag preserves its creation time. Branch creation returns a dataset on
+the new branch; `Branches` lists explicit catalog entries ordered by name, while
+the implicit `main` branch is not listed and has no `Branch` entry. Deleting a
+branch fails while a child branch or tag still references it;
+`ForceDeleteBranch` additionally tolerates missing branch contents left by an
+interrupted creation. `CurrentBranchIdentifier` reports the version-to-manifest
+lineage of the receiver's branch.
 
 ## How loading works
 
@@ -244,7 +275,8 @@ unit tests, not a packaged DLL.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
-shared sessions, and cancellation/close interactions. Arrow bridge tests check
+shared sessions, version history and restore, tags, branches, and
+cancellation/close interactions. Arrow bridge tests check
 C layouts, producer ownership, release callbacks and stream reader lifetimes.
 The race lane also enables Go's pointer checks; native Rust internals are outside
 Go's race detector.
