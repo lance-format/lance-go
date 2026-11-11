@@ -72,15 +72,15 @@ func cBuffer(a *ArrowArray, i int) unsafe.Pointer {
 	if a.Buffers == nil {
 		return nil
 	}
-	return (*[1 << 20]unsafe.Pointer)(unsafe.Pointer(a.Buffers))[i]
+	return unsafe.Slice(a.Buffers, a.NBuffers)[i]
 }
 
 func cChild(a *ArrowArray, i int) *ArrowArray {
-	return (*[1 << 20]*ArrowArray)(unsafe.Pointer(a.Children))[i]
+	return unsafe.Slice(a.Children, a.NChildren)[i]
 }
 
 func cSchemaChild(s *ArrowSchema, i int) *ArrowSchema {
-	return (*[1 << 20]*ArrowSchema)(unsafe.Pointer(s.Children))[i]
+	return unsafe.Slice(s.Children, s.NChildren)[i]
 }
 
 type fixture struct {
