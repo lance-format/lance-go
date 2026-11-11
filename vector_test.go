@@ -266,7 +266,7 @@ func TestNearestTypedVectors(t *testing.T) {
 		{
 			name:    "float16",
 			data:    lance.VectorDataTypeFloat16,
-			element: arrow.Float16,
+			element: arrow.FixedWidthTypes.Float16,
 			query:   lance.NewFloat16Vector([]uint16{float16Bits(1), float16Bits(2)}),
 			values:  [][]float64{{0, 0}, {1, 2}, {3, 6}},
 			wantIDs: []int64{2, 1, 3},
