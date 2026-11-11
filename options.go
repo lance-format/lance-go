@@ -14,7 +14,15 @@ func validateCString(value string) error {
 }
 
 func cloneStorageOptions(options map[string]string) (map[string]string, error) {
-	if len(options) == 0 {
+	copied, err := copyStorageOptions(options)
+	if err != nil || len(copied) == 0 {
+		return nil, err
+	}
+	return copied, nil
+}
+
+func copyStorageOptions(options map[string]string) (map[string]string, error) {
+	if options == nil {
 		return nil, nil
 	}
 	result := make(map[string]string, len(options))
@@ -207,6 +215,8 @@ type scanConfig struct {
 	substraitAggregate   []byte
 	additionalSQLFilters []string
 	statistics           func(ScanStatistics)
+	fts                  ftsScanConfig
+	vector               vectorConfig
 }
 
 type ffiProjection struct {
