@@ -13,6 +13,6 @@ package ffi
 const (
 	upstreamRepo         = "https://github.com/lance-format/lance-c"
 	upstreamRelease      = "v0.1.9"
-	upstreamCommit       = "ab5c2d39c8b912fff19a05486732dde4b49c3f33"
-	upstreamHeaderSHA256 = "7060ee5d8cdf941990154ae6d735d203a17105f441215fc398c00ef06c650190"
+	upstreamCommit       = "407a751a9cfcaa0e868c005ab7a78ee9be599a31"
+	upstreamHeaderSHA256 = "2bcbf8d121ccae8b20768c4bf3cf3988b653559f47c96831ceb6ea32d66df6ae"
 )

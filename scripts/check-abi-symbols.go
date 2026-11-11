@@ -3,7 +3,7 @@
 //
 // The header is not vendored. Export it from the pinned upstream checkout:
 //
-//	git -C /path/to/lance-c show 875c2569ac3467b56a721db0cf9e4dff9b4b2cc5:include/lance/lance.h > lance.h
+//	git -C /path/to/lance-c show 407a751a9cfcaa0e868c005ab7a78ee9be599a31:include/lance/lance.h > lance.h
 //	LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 //
 // It checks that every bound symbol exists, that Go and C agree on arity and
