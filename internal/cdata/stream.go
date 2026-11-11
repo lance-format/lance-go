@@ -165,7 +165,8 @@ func streamGetNextCallback(stream *ArrowArrayStream, out *ArrowArray) (ret uintp
 		e.setError(errors.New("record reader returned a nil batch"))
 		return uintptr(syscall.EIO)
 	}
-	defer rec.Release()
+	// RecordBatch borrows the reader's current batch. ExportRecordBatch retains
+	// its own reference; the reader releases its reference on Next or Release.
 	if err := ExportRecordBatch(rec, out); err != nil {
 		e.setError(err)
 		*out = ArrowArray{}
