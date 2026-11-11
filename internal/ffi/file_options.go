@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"unsafe"
 )
 
 // FileCacheMode mirrors LanceFileCacheMode.
@@ -30,7 +31,7 @@ type FileReaderOptions struct {
 
 type fileReaderOptions struct {
 	HasColumns              int32
-	Columns                 uintptr
+	Columns                 **byte
 	ColumnCount             uint64
 	CacheMode               int32
 	HasReadChunkSize        int32
@@ -72,7 +73,7 @@ func buildFileReaderOptions(options *FileReaderOptions) (*fileReaderOptions, fil
 		raw.HasColumns = 1
 		raw.ColumnCount = uint64(len(options.Columns))
 		if len(columns.ptrs) > 0 {
-			raw.Columns = columns.ptrs[0]
+			raw.Columns = (**byte)(unsafe.Pointer(&columns.ptrs[0]))
 		}
 	}
 	if options.ReadChunkSize != nil {
@@ -375,8 +376,8 @@ type DelimitedList struct {
 }
 
 type storageOptionsInput struct {
-	Keys   uintptr
-	Values uintptr
+	Keys   **byte
+	Values **byte
 	Count  uint64
 }
 
@@ -424,8 +425,8 @@ func newStorageOptionsAccessor(b *bindings, values map[string]string) (*StorageO
 
 	raw := storageOptionsInput{Count: uint64(len(keys))}
 	if len(keyList.ptrs) > 0 {
-		raw.Keys = keyList.ptrs[0]
-		raw.Values = valueList.ptrs[0]
+		raw.Keys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
+		raw.Values = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
 	}
 
 	runtime.LockOSThread()
