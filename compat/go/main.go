@@ -21,7 +21,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/decimal128"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	lance "github.com/hyhtvyj/lance-go"
+	lance "github.com/lance-format/lance-go"
 )
 
 const (
