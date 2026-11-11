@@ -118,19 +118,6 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install native build dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            build-essential \
-            clang \
-            cmake \
-            libprotobuf-dev \
-            libssl-dev \
-            pkg-config \
-            protobuf-compiler
-
       - name: Record run provenance
         run: |
           set -euo pipefail
@@ -141,8 +128,6 @@ jobs:
             echo "runner: $(uname -srm)"
             echo "rustc: $(rustc --version)"
             echo "cargo: $(cargo --version)"
-            echo "cmake: $(cmake --version | head -n 1)"
-            echo "cc: $(cc --version | head -n 1)"
           } | tee "$facts"
           {
             echo "# current run"
@@ -170,6 +155,23 @@ jobs:
           path: ${{ runner.temp }}/lance-c-install-cache
           key: ${{ steps.lance-c-cache-key.outputs.key }}
 
+      - name: Install native build dependencies
+        if: steps.lance-c-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # Avoid the Azure mirror that intermittently fails DNS on hosted runners.
+          printf '%s\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt
+          printf '%s\n' 'https://security.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors-security.txt
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential \
+            clang \
+            cmake \
+            libprotobuf-dev \
+            libssl-dev \
+            pkg-config \
+            protobuf-compiler
+
       - name: Cache native source and Cargo downloads
         if: steps.lance-c-cache.outputs.cache-hit != 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -183,6 +185,7 @@ jobs:
             lance-c-${{ runner.os }}-${{ runner.arch }}-rust-${{ steps.rust.outputs.cachekey }}-
 
       - name: Verify native build prerequisites
+        if: steps.lance-c-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           rustc --version
@@ -204,6 +207,10 @@ jobs:
           command -v protoc
           test -f /usr/include/google/protobuf/descriptor.proto
           test -f /usr/include/google/protobuf/timestamp.proto
+          {
+            echo "cmake: $(cmake --version | head -n 1)"
+            echo "cc: $(cc --version | head -n 1)"
+          } | tee -a "$RUNNER_TEMP/lance-c-build-provenance.txt"
 
       - name: Build pinned lance-c
         if: steps.lance-c-cache.outputs.cache-hit != 'true'
