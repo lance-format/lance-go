@@ -17,3 +17,19 @@ func ImportField(src *ArrowSchema) (arrow.Field, error) {
 	}
 	return field, nil
 }
+
+// ExportField exports one field, including its metadata, into dst.
+// On success the caller owns dst and must release it exactly once.
+// On error dst is zeroed and no resources are leaked.
+func ExportField(field arrow.Field, dst *ArrowSchema) error {
+	if dst == nil {
+		return invalidf("nil destination ArrowSchema")
+	}
+	*dst = ArrowSchema{}
+	exported, err := exportField(field)
+	if err != nil {
+		return fmt.Errorf("cdata: export field: %w", err)
+	}
+	*dst = exported.value
+	return nil
+}
