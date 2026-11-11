@@ -90,7 +90,7 @@ func wrapNativeError(operation string, err error) error {
 	}
 	var nativeErr *ffi.Error
 	if errors.As(err, &nativeErr) {
-		return &NativeError{Operation: operation, Code: nativeErr.Code, Message: nativeErr.Message}
+		return &NativeError{Operation: operation, Code: int32(nativeErr.Code), Message: nativeErr.Message}
 	}
 	if errors.Is(err, ffi.ErrClosed) {
 		return fmt.Errorf("namespace %s: %w", operation, ErrClosed)

@@ -118,8 +118,9 @@ type config struct {
 // operation. The native implementation calls it synchronously before routing
 // the operation, possibly from multiple namespace operations concurrently. A
 // provider error is logged by native code and the request continues with an
-// empty context. A provider must not call Close on the namespace whose
-// operation invoked it.
+// empty context. A provider must not synchronously close the namespace whose
+// operation invoked it, or call Shutdown or Close on the REST adapter serving
+// that request: those operations wait for the current request to finish.
 type DynamicContextProvider interface {
 	ProvideContext(operation, objectID string) (map[string]string, error)
 }
@@ -298,7 +299,8 @@ func (a *RESTAdapter) Port() (uint16, error) {
 	return port, nil
 }
 
-// Shutdown stops serving and is idempotent.
+// Shutdown stops serving and is idempotent. It waits for active requests and
+// must not be called from a dynamic provider handling one of those requests.
 func (a *RESTAdapter) Shutdown() {
 	if a == nil || a.owner == nil {
 		return
@@ -306,7 +308,8 @@ func (a *RESTAdapter) Shutdown() {
 	a.owner.Shutdown()
 }
 
-// Close waits for in-flight calls and releases the native adapter.
+// Close waits for in-flight calls and releases the native adapter. It must not
+// be called from a dynamic provider handling a request on this adapter.
 func (a *RESTAdapter) Close() error {
 	if a == nil || a.owner == nil {
 		return nil
