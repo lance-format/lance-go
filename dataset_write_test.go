@@ -101,8 +101,21 @@ func TestWriteModesAndParams(t *testing.T) {
 	}
 
 	missing := filepath.Join(t.TempDir(), "missing.lance")
-	if _, err := lance.Append(ctx, missing, makeReader(t, schema, duplicate)); !errors.Is(err, lance.ErrNotFound) {
-		t.Fatalf("Append missing dataset error = %v, want ErrNotFound", err)
+	created, err := lance.Append(ctx, missing, makeReader(t, schema, duplicate))
+	if err != nil {
+		t.Fatalf("Append to missing dataset: %v", err)
+	}
+	created.Close()
+	created, err = lance.Open(ctx, missing)
+	if err != nil {
+		t.Fatalf("reopen dataset created by Append: %v", err)
+	}
+	defer created.Close()
+	if rows, err := created.CountRows(ctx); err != nil || rows != 1 {
+		t.Fatalf("Append-created rows = %d, %v; want 1, nil", rows, err)
+	}
+	if version, err := created.Version(); err != nil || version != 1 {
+		t.Fatalf("Append-created version = %d, %v; want 1, nil", version, err)
 	}
 }
 
@@ -144,7 +157,7 @@ func TestWriteEmptyDatasetAndSlicedNullableBatch(t *testing.T) {
 
 	uri := filepath.Join(t.TempDir(), "sliced.lance")
 	record := makeRecord(t, schema, []int64{1, 2, 3, 4}, []string{"a", "b", "c", "d"}, []bool{true, true, false, true})
-	sliced := record.NewSlice(1, 3)
+	sliced := record.NewSlice(1, 4)
 	t.Cleanup(sliced.Release)
 	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, sliced))
 	if err != nil {

@@ -78,12 +78,13 @@ func Create(ctx context.Context, uri string, reader array.RecordReader, opts ...
 	return Write(ctx, uri, reader, withMode(WriteModeCreate, opts)...)
 }
 
-// Append appends to an existing dataset.
+// Append appends rows to a dataset, creating it if the URI does not exist.
 func Append(ctx context.Context, uri string, reader array.RecordReader, opts ...WriteOption) (*Dataset, error) {
 	return Write(ctx, uri, reader, withMode(WriteModeAppend, opts)...)
 }
 
-// Overwrite replaces the latest dataset version.
+// Overwrite commits a new version containing only the supplied rows. It creates
+// the dataset if the URI does not exist; earlier versions remain readable.
 func Overwrite(ctx context.Context, uri string, reader array.RecordReader, opts ...WriteOption) (*Dataset, error) {
 	return Write(ctx, uri, reader, withMode(WriteModeOverwrite, opts)...)
 }
