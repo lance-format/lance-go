@@ -227,7 +227,7 @@ func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordRea
 	if err != nil {
 		return nil, wrapError("read all", r.uri, err)
 	}
-	return newRecordReader(stream), nil
+	return newRecordReader(ctx, stream), nil
 }
 
 // ReadRange streams numRows rows starting at offset.
@@ -251,7 +251,7 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 	if err != nil {
 		return nil, wrapError("read range", r.uri, err)
 	}
-	return newRecordReader(stream), nil
+	return newRecordReader(ctx, stream), nil
 }
 
 // ReadIndices streams rows in the given order.
@@ -272,7 +272,7 @@ func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOpt
 	if err != nil {
 		return nil, wrapError("read indices", r.uri, err)
 	}
-	return newRecordReader(stream), nil
+	return newRecordReader(ctx, stream), nil
 }
 
 // IOStats returns cumulative native IO counters.
