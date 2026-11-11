@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -271,193 +271,148 @@ func TestFragmentsAcrossDatasetCloseAndStagedDelete(t *testing.T) {
 	uri := filepath.Join(t.TempDir(), "fragments.lance")
 	schema := testSchema()
 	record := makeRecord(t, schema, []int64{1, 2, 3, 4}, []string{"a", "b", "c", "d"}, []bool{true, true, true, true})
-	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{MaxRowsPerFile: 1, MaxRowsPerGroup: 1}))
+	// Each fragment has two rows so deleting one row is a partial deletion.
+	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{MaxRowsPerFile: 2, MaxRowsPerGroup: 2}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	defer dataset.Close()
 	version, err := dataset.Version()
 	if err != nil {
-		dataset.Close()
 		t.Fatalf("Version: %v", err)
-	}
-	fragmentIDs, err := dataset.FragmentIDs()
-	if err != nil {
-		dataset.Close()
-		t.Fatalf("FragmentIDs: %v", err)
-	}
-	if len(fragmentIDs) != 4 {
-		dataset.Close()
-		t.Fatalf("fragment count = %d, want 4", len(fragmentIDs))
 	}
 	fragments, err := dataset.Fragments()
 	if err != nil {
-		dataset.Close()
 		t.Fatalf("Fragments: %v", err)
+	}
+	for _, fragment := range fragments {
+		defer fragment.Close()
+	}
+	if len(fragments) != 2 {
+		t.Fatalf("fragment count = %d, want 2", len(fragments))
 	}
 	if err := dataset.Close(); err != nil {
 		t.Fatalf("Close dataset: %v", err)
 	}
-
-	rowByFragment := make(map[uint64]int64)
+	byFirstRow := make(map[int64]*lance.Fragment)
 	for _, fragment := range fragments {
-		ids := fragmentTakeIDs(t, fragment, []uint32{0})
-		if len(ids) != 1 {
-			t.Fatalf("fragment %d take returned %v", fragment.ID(), ids)
+		ids := fragmentTakeIDs(t, fragment, []uint32{0, 1})
+		if len(ids) != 2 || (ids[0] != 1 && ids[0] != 3) || ids[1] != ids[0]+1 {
+			t.Fatalf("fragment %d take = %v, want [1 2] or [3 4]", fragment.ID(), ids)
 		}
-		rowByFragment[fragment.ID()] = ids[0]
-		if got := scanIDs(t, mustFragmentScan(t, fragment)); len(got) != 1 || got[0] != ids[0] {
+		byFirstRow[ids[0]] = fragment
+		if got := scanIDs(t, mustFragmentScan(t, fragment)); !reflect.DeepEqual(got, ids) {
 			t.Fatalf("fragment %d scan = %v, take = %v", fragment.ID(), got, ids)
 		}
 		filtered, err := fragment.Scan(lance.WithAdditionalSQLFilter("id >= 2"))
 		if err != nil {
-			t.Fatalf("fragment %d additional SQL filter: %v", fragment.ID(), err)
+			t.Fatalf("additional SQL filter: %v", err)
 		}
-		got := scanIDs(t, filtered)
-		if ids[0] < 2 {
-			if len(got) != 0 {
-				t.Fatalf("fragment %d filtered rows = %v, want none", fragment.ID(), got)
-			}
-		} else if len(got) != 1 || got[0] != ids[0] {
-			t.Fatalf("fragment %d filtered rows = %v, want %v", fragment.ID(), got, ids)
+		want := []int64{3, 4}
+		if ids[0] == 1 {
+			want = []int64{2}
 		}
-		if count, err := fragment.CountRows(nil); err != nil || count != 1 {
-			t.Fatalf("fragment %d count = %d, %v; want 1", fragment.ID(), count, err)
+		if got := scanIDs(t, filtered); !reflect.DeepEqual(got, want) {
+			t.Fatalf("filtered fragment = %v, want %v", got, want)
 		}
-		if count, err := fragment.CountRows(ptr("id >= 2")); err != nil || count != boolCount(ids[0] >= 2) {
-			t.Fatalf("fragment %d filtered count = %d, %v; row %d", fragment.ID(), count, err, ids[0])
+		if count, err := fragment.CountRows(nil); err != nil || count != 2 {
+			t.Fatalf("fragment count = %d, %v; want 2", count, err)
 		}
-	}
-
-	var partial *lance.Fragment
-	var partialRow int64
-	for _, fragment := range fragments {
-		if rowByFragment[fragment.ID()] != 4 {
-			partial = fragment
-			partialRow = rowByFragment[fragment.ID()]
-			break
+		if count, err := fragment.CountRows(ptr("id >= 2")); err != nil || count != uint64(len(want)) {
+			t.Fatalf("filtered count = %d, %v; want %d", count, err, len(want))
 		}
 	}
-	if partial == nil {
-		t.Fatalf("no fragment available for partial delete")
+	partial := byFirstRow[1]
+	if partial == nil || byFirstRow[3] == nil {
+		t.Fatal("missing expected fragment row groups")
 	}
-	partialPredicate := fmt.Sprintf("id = %d", partialRow)
-	updated, err := partial.Delete(ctx, partialPredicate)
-	if err != nil {
-		t.Fatalf("partial Delete: %v", err)
+	updated, err := partial.Delete(ctx, "id = 1")
+	if err != nil || updated == nil {
+		t.Fatalf("partial Delete = %v, %v; want a staged fragment", updated, err)
 	}
-	if updated == nil {
-		t.Fatalf("partial Delete returned nil for a partial delete")
+	defer updated.Close()
+	if count, err := partial.CountRows(nil); err != nil || count != 2 {
+		t.Fatalf("source count after staged delete = %d, %v; want 2", count, err)
 	}
-	partialID := partial.ID()
-	if count, err := partial.CountRows(nil); err != nil || count != 1 {
-		t.Fatalf("source fragment count after delete = %d, %v; want 1", count, err)
+	if count, err := updated.CountRows(nil); err != nil || count != 1 {
+		t.Fatalf("staged count = %d, %v; want 1", count, err)
 	}
-	if count, err := updated.CountRows(nil); err != nil || count != 0 {
-		t.Fatalf("updated fragment count = %d, %v; want 0", count, err)
+	if got := scanIDs(t, mustFragmentScan(t, updated)); !reflect.DeepEqual(got, []int64{2}) {
+		t.Fatalf("staged rows = %v, want [2]", got)
 	}
-	op, err := lance.NewDeleteOperation([]*lance.Fragment{updated}, nil, partialPredicate)
+	op, err := lance.NewDeleteOperation([]*lance.Fragment{updated}, nil, "id = 1")
 	if err != nil {
 		t.Fatalf("NewDeleteOperation: %v", err)
 	}
+	defer op.Close()
 	tx, err := lance.NewTransaction(version, op)
 	if err != nil {
-		t.Fatalf("NewTransaction partial delete: %v", err)
+		t.Fatalf("NewTransaction: %v", err)
 	}
+	defer tx.Close()
 	partialCommit, err := lance.CommitTransaction(ctx, uri, tx)
 	if err != nil {
 		t.Fatalf("Commit partial delete: %v", err)
 	}
-	if rows, err := partialCommit.CountRows(ctx); err != nil || rows != 3 {
-		t.Fatalf("rows after partial delete = %d, %v; want 3", rows, err)
+	defer partialCommit.Close()
+	if got := scanIDs(t, mustScan(t, partialCommit)); !reflect.DeepEqual(got, []int64{2, 3, 4}) {
+		t.Fatalf("rows after partial commit = %v, want [2 3 4]", got)
 	}
-	op.Close()
-	tx.Close()
-	partial.Close()
 	partialCommit.Close()
-	for _, fragment := range fragments {
-		fragment.Close()
-	}
-	updated.Close()
-
 	latest, err := lance.Open(ctx, uri)
 	if err != nil {
 		t.Fatalf("Open after partial delete: %v", err)
 	}
-	latestFragments, err := latest.Fragments()
+	defer latest.Close()
+	persisted, err := latest.OpenFragment(partial.ID())
 	if err != nil {
-		latest.Close()
-		t.Fatalf("Fragments after partial delete: %v", err)
+		t.Fatalf("Open partial fragment: %v", err)
 	}
-	var allRowFragment *lance.Fragment
-	for _, fragment := range latestFragments {
-		if fragment.ID() == partialID {
-			if got := scanIDs(t, mustFragmentScan(t, fragment)); len(got) != 0 {
-				t.Fatalf("partially deleted fragment scan = %v, want empty", got)
-			}
-			if rows, err := fragment.DeletedRows(); err != nil || rows != 1 {
-				t.Fatalf("partially deleted fragment deleted rows = %d, %v; want 1", rows, err)
-			}
-		}
-		if rowByFragment[fragment.ID()] == 3 {
-			allRowFragment = fragment
-		} else {
-			fragment.Close()
-		}
+	defer persisted.Close()
+	if count, err := persisted.DeletedRows(); err != nil || count != 1 {
+		t.Fatalf("persisted deleted rows = %d, %v; want 1", count, err)
 	}
-	if allRowFragment == nil {
-		latest.Close()
-		t.Fatalf("fragment for all-row delete not found")
+	if got := scanIDs(t, mustFragmentScan(t, persisted)); !reflect.DeepEqual(got, []int64{2}) {
+		t.Fatalf("persisted partial rows = %v, want [2]", got)
 	}
-	latestVersion, err := latest.Version()
+	allRowID := byFirstRow[3].ID()
+	allRows, err := latest.OpenFragment(allRowID)
 	if err != nil {
-		latest.Close()
-		t.Fatalf("Version after partial delete: %v", err)
+		t.Fatalf("Open remaining fragment: %v", err)
 	}
-	if deleted, err := allRowFragment.Delete(ctx, "id = 3"); err != nil || deleted != nil {
+	defer allRows.Close()
+	if deleted, err := allRows.Delete(ctx, "id >= 3"); err != nil || deleted != nil {
 		if deleted != nil {
 			deleted.Close()
 		}
-		latest.Close()
 		t.Fatalf("all-row Delete = %v, %v; want nil, nil", deleted, err)
 	}
-	allRowID := allRowFragment.ID()
-	allRowFragment.Close()
-	deleteOp, err := lance.NewDeleteOperation(nil, []uint64{allRowID}, "id = 3")
+	latestVersion, err := latest.Version()
 	if err != nil {
-		latest.Close()
+		t.Fatalf("Version: %v", err)
+	}
+	deleteOp, err := lance.NewDeleteOperation(nil, []uint64{allRowID}, "id >= 3")
+	if err != nil {
 		t.Fatalf("NewDeleteOperation all rows: %v", err)
 	}
+	defer deleteOp.Close()
 	deleteTx, err := lance.NewTransaction(latestVersion, deleteOp)
 	if err != nil {
-		latest.Close()
 		t.Fatalf("NewTransaction all rows: %v", err)
 	}
+	defer deleteTx.Close()
 	afterAll, err := lance.CommitTransaction(ctx, uri, deleteTx)
 	if err != nil {
-		latest.Close()
 		t.Fatalf("Commit all-row delete: %v", err)
 	}
-	if rows, err := afterAll.CountRows(ctx); err != nil || rows != 2 {
-		t.Fatalf("rows after all-row delete = %d, %v; want 2", rows, err)
-	}
-	deleteOp.Close()
-	deleteTx.Close()
 	afterAll.Close()
-	for _, fragment := range latestFragments {
-		if fragment.ID() != partialID {
-			continue
-		}
-		_ = fragment.Close()
-	}
-	latest.Close()
-
 	reopened, err := lance.Open(ctx, uri)
 	if err != nil {
 		t.Fatalf("Open after all-row delete: %v", err)
 	}
 	defer reopened.Close()
-	if rows, err := reopened.CountRows(ctx); err != nil || rows != 2 {
-		t.Fatalf("final rows = %d, %v; want 2", rows, err)
+	if got := scanIDs(t, mustScan(t, reopened)); !reflect.DeepEqual(got, []int64{2}) {
+		t.Fatalf("final rows = %v, want [2]", got)
 	}
 	deletedFragment, err := reopened.OpenFragment(allRowID)
 	if deletedFragment != nil {
@@ -479,13 +434,6 @@ func mustFragmentScan(t *testing.T, fragment *lance.Fragment) *lance.Scanner {
 }
 
 func ptr[T any](value T) *T { return &value }
-
-func boolCount(value bool) uint64 {
-	if value {
-		return 1
-	}
-	return 0
-}
 
 func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 	requireNative(t)
@@ -538,8 +486,9 @@ func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 	if fragment.IsBound() {
 		t.Fatalf("uncommitted append fragment is bound")
 	}
-	if fragment.ID() == 0 {
-		t.Fatalf("uncommitted append fragment ID = 0")
+	// Staged fragment IDs are placeholders until commit assigns final IDs.
+	if fragment.ID() != 0 {
+		t.Fatalf("uncommitted append placeholder ID = %d, want 0", fragment.ID())
 	}
 	if metadata, err := fragment.MetadataJSON(); err != nil || !json.Valid(metadata) {
 		t.Fatalf("MetadataJSON = %q, %v", metadata, err)
@@ -641,8 +590,8 @@ func TestTransactionProtoOptionalFieldsAndFailures(t *testing.T) {
 		t.Fatalf("ReadTransaction returned nil for committed dataset")
 	}
 	version, err := readTx.ReadVersion()
-	if err != nil || version == 0 {
-		t.Fatalf("read transaction version = %d, %v", version, err)
+	if err != nil || version != 0 {
+		t.Fatalf("create transaction read version = %d, %v; want 0", version, err)
 	}
 	encoded, err := readTx.MarshalBinary()
 	if err != nil {
@@ -657,10 +606,16 @@ func TestTransactionProtoOptionalFieldsAndFailures(t *testing.T) {
 	}
 	parsed.Close()
 	readTx.Close()
-	byVersion, err := dataset.ReadTransactionByVersion(version)
+	// ReadVersion is the input snapshot; transaction lookup uses the
+	// committed dataset version (1 for the initial Create).
+	committedVersion, err := dataset.Version()
+	if err != nil || committedVersion != 1 {
+		t.Fatalf("created dataset version = %d, %v; want 1", committedVersion, err)
+	}
+	byVersion, err := dataset.ReadTransactionByVersion(committedVersion)
 	if err != nil || byVersion == nil {
 		dataset.Close()
-		t.Fatalf("ReadTransactionByVersion(%d) = %v, %v", version, byVersion, err)
+		t.Fatalf("ReadTransactionByVersion(%d) = %v, %v", committedVersion, byVersion, err)
 	}
 	byVersion.Close()
 	missing, err := dataset.ReadTransactionByVersion(version + 1000)

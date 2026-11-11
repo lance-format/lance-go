@@ -2,6 +2,7 @@ package lance_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -218,7 +219,7 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 	uri := filepath.Join(t.TempDir(), "replacement.lance")
 	schema := testSchema()
 	record := makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})
-	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{MaxRowsPerFile: 1, MaxRowsPerGroup: 1}))
+	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{MaxRowsPerFile: 2, MaxRowsPerGroup: 2}))
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -266,6 +267,43 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		fragment.Close()
 		dataset.Close()
 		t.Fatalf("DataFile.ColumnIndices = %v, %v; want 2", columns, err)
+	}
+	// A replacement must change the stored file. Reusing the existing
+	// metadata is a no-op that native commit correctly rejects. Produce a
+	// real compatible file with different values through the public writer.
+	replacementURI := filepath.Join(t.TempDir(), "source.lance")
+	replacementRecord := makeRecord(t, schema, []int64{101, 102}, []string{"new-a", "new-b"}, []bool{true, true})
+	producer, err := lance.Create(ctx, replacementURI, makeReader(t, schema, replacementRecord))
+	if err != nil {
+		t.Fatalf("Create replacement producer: %v", err)
+	}
+	defer producer.Close()
+	producerFragments, err := producer.Fragments()
+	if err != nil {
+		t.Fatalf("replacement fragments: %v", err)
+	}
+	for _, f := range producerFragments {
+		defer f.Close()
+	}
+	if len(producerFragments) != 1 {
+		t.Fatalf("replacement fragments = %d, want 1", len(producerFragments))
+	}
+	producerFile, err := producerFragments[0].DataFileAt(0)
+	if err != nil {
+		t.Fatalf("replacement data file: %v", err)
+	}
+	defer producerFile.Close()
+	producerPath, err := producerFile.Path()
+	if err != nil {
+		t.Fatalf("replacement data path: %v", err)
+	}
+	payload, err := os.ReadFile(filepath.Join(replacementURI, "data", producerPath))
+	if err != nil {
+		t.Fatalf("read replacement bytes: %v", err)
+	}
+	path = "replacement-file.lance"
+	if err := os.WriteFile(filepath.Join(uri, "data", path), payload, 0o600); err != nil {
+		t.Fatalf("publish replacement bytes: %v", err)
 	}
 	replacementFile, err := dataset.CreateDataFile(path, nil)
 	if err != nil {
@@ -339,14 +377,25 @@ func TestDataReplacementReadAfterCommit(t *testing.T) {
 		t.Fatalf("Commit data replacement: %v", err)
 	}
 	tx.Close()
+	if ids := scanIDs(t, mustScan(t, dataset)); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+		t.Fatalf("source snapshot after replacement = %v, want [1 2]", ids)
+	}
 	dataset.Close()
 	if rows, err := committed.CountRows(ctx); err != nil || rows != 2 {
 		committed.Close()
 		t.Fatalf("rows after replacement = %d, %v; want 2", rows, err)
 	}
-	if ids := scanIDs(t, mustScan(t, committed)); len(ids) != 2 || ids[0] != 1 || ids[1] != 2 {
+	if ids := scanIDs(t, mustScan(t, committed)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
 		committed.Close()
-		t.Fatalf("ids after replacement = %v, want [1 2]", ids)
+		t.Fatalf("ids after replacement = %v, want [101 102]", ids)
 	}
 	committed.Close()
+	reopened, err := lance.Open(ctx, uri)
+	if err != nil {
+		t.Fatalf("reopen after replacement: %v", err)
+	}
+	defer reopened.Close()
+	if ids := scanIDs(t, mustScan(t, reopened)); len(ids) != 2 || ids[0] != 101 || ids[1] != 102 {
+		t.Fatalf("reopened replacement rows = %v, want [101 102]", ids)
+	}
 }
