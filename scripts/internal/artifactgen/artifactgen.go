@@ -450,8 +450,8 @@ var Payload []byte
 
 // Packaging metadata. UpstreamCommit and HeaderSHA256 are provenance claims
 // recorded by the packaging process. lance-c exposes no runtime version
-// symbol, so the loader verifies the target, payload, and header pin, not the
-// library's build commit.
+// symbol, so the loader verifies the target and payload, not the library's
+// build commit or the header's provenance.
 const (
 	Target              = {{printf "%q" .Target}}
 	LibraryName         = {{printf "%q" .LibraryName}}
