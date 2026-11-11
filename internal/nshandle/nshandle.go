@@ -134,6 +134,21 @@ func (l *Lease) CommitNamespaceURI(tableID []string, uri string, tx *ffi.Transac
 	return l.owner.native.CommitNamespaceURI(tableIDJSON, uri, tx, opts, session)
 }
 
+// NewStorageOptionsProvider creates a native namespace-backed storage options
+// provider for tableID. The provider retains the native namespace, so it
+// remains usable after the caller releases this lease or closes the public
+// namespace handle.
+func (l *Lease) NewStorageOptionsProvider(tableID []string) (*ffi.StorageOptionsProvider, error) {
+	if l == nil || l.owner == nil {
+		return nil, ffi.ErrClosed
+	}
+	tableIDJSON, err := encodeTableIDJSON(tableID)
+	if err != nil {
+		return nil, err
+	}
+	return ffi.NewStorageOptionsProviderFromNamespace(l.owner.native, tableIDJSON)
+}
+
 // StartRESTAdapter starts a native REST adapter for this namespace.
 func (l *Lease) StartRESTAdapter(host string, port uint16) (*RESTAdapter, error) {
 	if l == nil || l.owner == nil {

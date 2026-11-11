@@ -1,8 +1,10 @@
 package ffi
 
 import (
-	"github.com/lance-format/lance-go/internal/handle"
 	"testing"
+	"unsafe"
+
+	"github.com/lance-format/lance-go/internal/handle"
 )
 
 type testCustomDispatcher struct {
@@ -20,7 +22,7 @@ func TestNamespaceCustomReleaseCallbackReleasesOnce(t *testing.T) {
 	adapter := &namespaceCustomAdapter{client: &testCustomDispatcher{response: []byte("{}")}}
 	ctx := handle.New(adapter)
 
-	namespaceContextReleaseCallback(uintptr(ctx))
+	contextReleaseCallback(uintptr(ctx))
 	if adapter.dispatcher() != nil {
 		t.Fatal("release callback did not drop the dispatcher")
 	}
@@ -30,5 +32,22 @@ func TestNamespaceCustomReleaseCallbackReleasesOnce(t *testing.T) {
 
 	// A second native release would violate the ownership contract, but it
 	// must not panic or touch a different context.
-	namespaceContextReleaseCallback(uintptr(ctx))
+	contextReleaseCallback(uintptr(ctx))
+}
+
+func TestNamespaceCustomDispatchSpecLayout(t *testing.T) {
+	// LanceNamespaceCustomClientDispatchSpec in the pinned header contains
+	// dispatch, release, client_ctx and namespace_id, in that order.
+	var spec namespaceCustomDispatchSpec
+	pointerSize := unsafe.Sizeof(uintptr(0))
+	offsets := []uintptr{
+		unsafe.Offsetof(spec.Dispatch), unsafe.Offsetof(spec.Release),
+		unsafe.Offsetof(spec.ClientCtx), unsafe.Offsetof(spec.NamespaceID),
+		unsafe.Offsetof(spec.namespaceIDBuffer),
+	}
+	for i, offset := range offsets {
+		if want := uintptr(i) * pointerSize; offset != want {
+			t.Fatalf("dispatch spec field %d offset = %d, want %d", i, offset, want)
+		}
+	}
 }

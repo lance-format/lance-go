@@ -43,7 +43,9 @@ const (
 // CustomClientError reports a typed failure from a CustomClient back to native
 // code. A returned CustomClientError is translated to the matching namespace
 // error code; any other error is reported as an internal error. The error
-// message is preserved in the resulting NamespaceError.
+// message is preserved in the resulting NamespaceError. NamespaceError uses a
+// different code space: forwarding one directly also reports an internal error.
+// A proxy client can translate it into a CustomClientError explicitly.
 type CustomClientError struct {
 	Code    CustomClientErrorCode
 	Message string
@@ -177,8 +179,10 @@ func isNilCustomClient(client CustomClient) bool {
 //
 // The client is called synchronously from the native caller's goroutine.
 // context.Context values are not propagated because the dispatch callback has
-// no context field. A callback must not close the namespace that invoked it,
-// because Close waits for in-flight callbacks.
+// no context field. Use independent namespace or dataset handles for calls
+// made from a callback; a mutating dataset handle is not reentrant. A callback
+// must not close the namespace or REST adapter serving its current request,
+// because their shutdown waits for in-flight callbacks.
 func NewCustom(client CustomClient, namespaceID string) (Namespace, error) {
 	if isNilCustomClient(client) {
 		return nil, fmt.Errorf("namespace: custom client is nil")

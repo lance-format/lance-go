@@ -76,7 +76,7 @@ func newNamespaceCustomDispatchSpec(client CustomNamespaceDispatcher, namespaceI
 	adapter := &namespaceCustomAdapter{client: client}
 	return &namespaceCustomDispatchSpec{
 		Dispatch:          callbackNamespaceCustomDispatch,
-		Release:           callbackNamespaceRelease,
+		Release:           callbackContextRelease,
 		ClientCtx:         uintptr(handle.New(adapter)),
 		NamespaceID:       idPtr,
 		namespaceIDBuffer: idBuffer,

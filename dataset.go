@@ -43,6 +43,12 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		}
 	}
 
+	storageAccessor, releaseStorage, err := resolveStorageOptions("open", uri, config.storageOptions, config.storageOptionsSet, config.storageOptionsAccessor)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseStorage()
+
 	session, releaseSession, err := acquireSession("open", uri, config.session)
 	if err != nil {
 		return nil, err
@@ -50,9 +56,10 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 	defer releaseSession()
 
 	native, err := ffi.OpenDatasetWithOptions(uri, ffi.OpenOptions{
-		StorageOptions: config.storageOptions,
-		Version:        config.version,
-		Session:        session,
+		StorageOptions:         config.storageOptions,
+		StorageOptionsAccessor: storageAccessor,
+		Version:                config.version,
+		Session:                session,
 	})
 	if err != nil {
 		return nil, wrapError("open", uri, err)
