@@ -30,10 +30,12 @@ resolves each requirement through the Go module proxy; the published modules
 are authoritative for builds. The tracked payloads must stay byte-identical to
 the published archives.
 
-`linux/amd64` has prior native, default, external, and race evidence. The three
-companion modules were published and their selectors adopted for validation;
-their hosted native cold public-consumer acceptance is pending. Publication is
-not a companion runtime support claim.
+All four published Unix companions passed default, namespace-only and external
+cold public consumers at root `b8132c7ca5df4237c8c8324af2ec0fa148901926`
+([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)).
+The twelve consumer executions and final cleanup passed on native hosts with
+Go 1.23.0 and `CGO_ENABLED=0`. This accepts those published bytes and the tested
+runtime environments; final release tags require their own public checks.
 
 ### linux/amd64 payload
 
@@ -141,9 +143,9 @@ pending.
 
 Four Unix targets have published bundles. The `linux/amd64` library was built
 on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
-dynamic loader. The companion payloads use the same pin and header, but their
-native ABI floors and cold runtime behavior are not established here. Do not
-assume any payload works on older glibc, musl, Windows, or other architectures;
+dynamic loader. The companion payloads use the same pin and header; their
+cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x hosts. Do not
+assume any payload works on older glibc/macOS, musl, Windows, or other architectures;
 no such runtime support is claimed.
 
 The cross-build matrix in `ci.yml` compiles other targets but does not run them
@@ -349,8 +351,8 @@ The exact published module was resolved through the public Go proxy and sumdb;
 its payload matched the tracked module byte-for-byte. The runtime baseline
 remains Ubuntu 24.04.5 with glibc 2.39. The linux/amd64 paired update has
 accepted default, external, race/checkptr, strip, and roundtrip evidence. The
-companion payloads use the same pin and header; their hosted native cold
-public-consumer acceptance is pending.
+companion payloads use the same pin and header; all four published Unix targets
+have cold public-consumer acceptance at `b8132c7`, as recorded above.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -371,11 +373,12 @@ zero-download contract. Those checks used one target, so they do not establish
 archive selection across a multi-platform release. The public-consumer lane
 records installation and each fresh-cache target build separately; default and
 namespace target builds must fetch only the selected archive, while external
-target downloads are recorded without that assertion. Broad multi-platform
-runtime acceptance still requires hosted results. Broader glibc/musl coverage, Linux arm64 and
-macOS cold runtime acceptance for the published companions, Windows module
+target downloads are recorded without that assertion. Run 43193825133 verified
+this boundary on all four Unix targets: setup fetched four archives, each
+default/namespace target build fetched one, and external target builds fetched
+none in that run. Broader glibc/musl and older-macOS coverage, Windows module
 publication and selector activation, and hosted Windows cold-cache loading
-remain pending.
+remain unaccepted.
 Windows native execution evidence and an unpublished candidate are not a
 supported Windows distribution.
 
@@ -434,8 +437,8 @@ The candidate module and evidence are uploaded as
 `unix-native-candidate-<slug>` and `unix-native-evidence-<slug>` with seven-day
 retention. These workflow candidates remain unpublished. The tracked companion
 modules were published after review and their selectors are active; their cold
-public-consumer acceptance remains pending. The workflow publishes the validated
-install cache only after the
+public-consumer acceptance at `b8132c7` is recorded above. The workflow publishes
+the validated install cache only after the
 stripped candidate is staged and verified and all consumers of the cache
 staging path finish; the cache continues to hold the unstripped
 accepted library, and candidates are never cached. The workflow asserts that
@@ -444,7 +447,8 @@ the checkout is unchanged, so it cannot activate a selector.
 A successful run establishes native build, test, strip, and candidate
 verification results for that commit only. Public proxy and sumdb
 verification, cold default/external/namespace consumers of a published module,
-selector activation, release/tag creation, and acceptance of the candidate
-bundles remain pending and are owned by the release process. macOS runtime
-support, a deployment floor, and completion of the platform roadmap are not
-claimed.
+selector activation, release/tag creation, and acceptance of any newly built
+candidate remain separate release responsibilities. Existing published Unix
+module acceptance does not automatically accept different workflow candidates.
+The tested macOS runtime versions do not establish an older deployment floor
+or completion of the platform roadmap.
