@@ -1,0 +1,121 @@
+# Public-consumer acceptance for the Windows static-CRT artifact.
+#
+# The lane resolves one published root revision from the public Go module
+# proxy, builds standalone default, namespace-only, and explicitly supplied
+# DLL consumers outside the checkout, and inspects the actual loaded module.
+# It does not build native code, publish modules, or activate a selector.
+#
+# A pull request uses the exact head commit. Manual dispatch accepts one exact
+# full commit SHA or checked-out tag. The root module and the matching
+# artifacts/windows-<arch> module must already be published and adopted; a
+# missing module fails the lane and is never skipped.
+name: Windows public consumers
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Exact root revision (full commit SHA or tag) to resolve from proxy.golang.org"
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/windows-public-consumers.yml"
+      - "scripts/public-consumer/**"
+      - "artifacts/**"
+      - "internal/ffi/**"
+      - "internal/loader/**"
+      - "internal/bundled/**"
+      - "namespace/**"
+      - "examples/roundtrip/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CGO_ENABLED: "0"
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+  GOENV: "off"
+  GOPROXY: https://proxy.golang.org
+  GOSUMDB: sum.golang.org
+
+jobs:
+  public-consumer:
+    name: Public consumer ${{ matrix.slug }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: windows-amd64
+            runner: windows-2022
+            goarch: amd64
+            processor_arch: AMD64
+            os_name: Windows Server 2022
+          - slug: windows-arm64
+            runner: windows-11-vs2026-arm
+            goarch: arm64
+            processor_arch: ARM64
+            os_name: Windows 11
+    env:
+      ROOT_MODULE: github.com/lance-format/lance-go
+      TARGET_GOOS: windows
+      TARGET_GOARCH: ${{ matrix.goarch }}
+      TARGET_LABEL: ${{ matrix.slug }}
+      LIBRARY_NAME: lance_c.dll
+      EXPECTED_PROCESSOR_ARCH: ${{ matrix.processor_arch }}
+      EXPECTED_OS_NAME: ${{ matrix.os_name }}
+      ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+      SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+      EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
+    steps:
+      - name: Disable Git line-ending conversion
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
+      - name: Check out exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Go 1.23 from go.mod
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Run harness static checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python scripts/public-consumer/verify_test.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pwsh -NoProfile -File ./scripts/public-consumer/windows-harness-test.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run Windows public-consumer acceptance
+        shell: pwsh
+        run: ./scripts/public-consumer/run-windows.ps1
+
+      - name: Upload public-consumer evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-public-consumer-${{ matrix.slug }}
+          path: ${{ runner.temp }}/public-consumer-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true

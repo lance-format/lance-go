@@ -13,6 +13,7 @@ import json
 import mmap
 import os
 import stat
+import struct
 import subprocess
 import sys
 import zipfile
@@ -408,6 +409,7 @@ def mode_of(path, errors, label):
 def command_cache(args):
     errors = []
     base = Path(args.root) / "lance-go"
+    windows = args.platform == "windows"
     if args.expect == "absent":
         if os.path.lexists(base):
             entries = []
@@ -420,6 +422,7 @@ def command_cache(args):
         report = {
             "kind": "cache",
             "expect": "absent",
+            "platform": args.platform,
             "base": str(base),
             "exists": os.path.lexists(base),
             "errors": errors,
@@ -434,13 +437,17 @@ def command_cache(args):
         if getattr(args, argument) is None:
             errors.append("--%s is required for --expect present" % argument)
     if errors:
-        write_json(args.out, {"kind": "cache", "base": str(base), "errors": errors})
+        write_json(
+            args.out,
+            {"kind": "cache", "platform": args.platform, "base": str(base), "errors": errors},
+        )
         return report_errors("cache", errors)
 
     library_path = base / args.sha / args.library
     report = {
         "kind": "cache",
         "expect": "present",
+        "platform": args.platform,
         "base": str(base),
         "entry": str(base / args.sha),
         "library": str(library_path),
@@ -452,8 +459,15 @@ def command_cache(args):
         errors.append("cache base is not a directory: %s" % base)
     else:
         base_mode = mode_of(base, errors, "cache base")
-        if base_mode != 0o700:
-            errors.append("cache base mode is %03o, want 0700" % base_mode)
+        report["base_mode"] = "%03o" % base_mode
+        if windows:
+            # The Windows loader inherits the LocalAppData ACL and deliberately
+            # leaves the cached DLL writable. POSIX mode bits are not a product
+            # contract there; record them for evidence only.
+            report["base_mode_enforced"] = False
+        else:
+            if base_mode != 0o700:
+                errors.append("cache base mode is %03o, want 0700" % base_mode)
         entries = sorted(os.listdir(base))
         if entries != [args.sha]:
             errors.append("cache entries are %r, want [%s]" % (entries, args.sha))
@@ -462,7 +476,8 @@ def command_cache(args):
             errors.append("cache entry is not a directory: %s" % entry)
         else:
             entry_mode = mode_of(entry, errors, "cache entry")
-            if entry_mode != 0o700:
+            report["entry_mode"] = "%03o" % entry_mode
+            if not windows and entry_mode != 0o700:
                 errors.append("cache entry mode is %03o, want 0700" % entry_mode)
             names = sorted(os.listdir(entry))
             if names != [".lock", args.library]:
@@ -475,7 +490,8 @@ def command_cache(args):
                 errors.append("cache lock is missing: %s" % lock)
             else:
                 lock_mode = mode_of(lock, errors, "cache lock")
-                if lock_mode != 0o600:
+                report["lock_mode"] = "%03o" % lock_mode
+                if not windows and lock_mode != 0o600:
                     errors.append("cache lock mode is %03o, want 0600" % lock_mode)
             if not library_path.is_file():
                 errors.append("cached library is missing: %s" % library_path)
@@ -486,7 +502,17 @@ def command_cache(args):
                 report["actual_size"] = actual_size
                 report["actual_sha256"] = actual_sha256
                 report["library_mode"] = "%03o" % library_mode
-                if library_mode != 0o500:
+                if windows:
+                    info = os.lstat(library_path)
+                    attributes = getattr(info, "st_file_attributes", None)
+                    readonly = getattr(stat, "FILE_ATTRIBUTE_READONLY", 0x1)
+                    report["library_writable"] = os.access(library_path, os.W_OK)
+                    report["library_file_attributes"] = attributes
+                    report["library_readonly_attribute"] = (
+                        None if attributes is None else bool(attributes & readonly)
+                    )
+                    report["library_mode_enforced"] = False
+                elif library_mode != 0o500:
                     errors.append(
                         "cached library mode is %03o, want 0500" % library_mode
                     )
@@ -504,6 +530,66 @@ def command_cache(args):
     if errors:
         return report_errors("cache", errors)
     print("cache matches: %s" % library_path)
+    return 0
+
+
+def command_pe(args):
+    errors = []
+    data = Path(args.binary).read_bytes()
+    machines = {"amd64": 0x8664, "arm64": 0xAA64}
+    machine = None
+    characteristics = None
+    optional_magic = None
+    if len(data) < 0x40 or data[:2] != b"MZ":
+        errors.append("binary is not an MZ/PE image")
+    else:
+        pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
+        if pe_offset + 26 > len(data):
+            errors.append("PE header offset is outside the file")
+        elif data[pe_offset:pe_offset + 4] != b"PE\0\0":
+            errors.append("missing PE signature")
+        else:
+            machine = struct.unpack_from("<H", data, pe_offset + 4)[0]
+            characteristics = struct.unpack_from("<H", data, pe_offset + 22)[0]
+            optional_magic = struct.unpack_from("<H", data, pe_offset + 24)[0]
+            if machine != machines[args.expect_machine]:
+                errors.append(
+                    "PE machine is 0x%04x, want %s (0x%04x)"
+                    % (machine, args.expect_machine, machines[args.expect_machine])
+                )
+            if optional_magic != 0x20B:
+                errors.append(
+                    "PE optional header magic is 0x%04x, want PE32+ 0x20b"
+                    % optional_magic
+                )
+            if args.expect_dll and not characteristics & 0x2000:
+                errors.append(
+                    "PE characteristics 0x%04x do not set IMAGE_FILE_DLL"
+                    % characteristics
+                )
+    report = {
+        "kind": "pe",
+        "binary": args.binary,
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "machine": None if machine is None else "0x%04x" % machine,
+        "characteristics": (
+            None if characteristics is None else "0x%04x" % characteristics
+        ),
+        "optional_magic": (
+            None if optional_magic is None else "0x%04x" % optional_magic
+        ),
+        "expected_machine": args.expect_machine,
+        "expect_dll": args.expect_dll,
+        "errors": errors,
+    }
+    write_json(args.out, report)
+    if errors:
+        return report_errors("pe", errors)
+    print(
+        "PE matches: machine=%s dll=%s"
+        % (args.expect_machine, args.expect_dll)
+    )
     return 0
 
 
@@ -551,16 +637,30 @@ def main(argv=None):
     cache = subparsers.add_parser("cache")
     cache.add_argument("--root", required=True)
     cache.add_argument("--expect", choices=("present", "absent"), required=True)
+    cache.add_argument("--platform", choices=("unix", "windows"), default="unix")
     cache.add_argument("--sha", default=None)
     cache.add_argument("--library", default=None)
     cache.add_argument("--size", type=int, default=None)
     cache.add_argument("--out", required=True)
     cache.set_defaults(func=command_cache)
 
+    pe = subparsers.add_parser("pe")
+    pe.add_argument("--binary", required=True)
+    pe.add_argument("--expect-machine", choices=("amd64", "arm64"), required=True)
+    pe.add_argument("--expect-dll", action="store_true")
+    pe.add_argument("--out", required=True)
+    pe.set_defaults(func=command_pe)
+
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except (OSError, RuntimeError, subprocess.CalledProcessError, zipfile.BadZipFile) as exc:
+    except (
+        OSError,
+        RuntimeError,
+        struct.error,
+        subprocess.CalledProcessError,
+        zipfile.BadZipFile,
+    ) as exc:
         print("verify.py: %s" % exc, file=sys.stderr)
         return 2
 
