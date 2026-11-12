@@ -5,10 +5,13 @@
 `run.sh`: Windows has a different cache contract, needs a PE check, and can
 report the module that the loader actually mapped.
 
+The Windows modules are published at `v0.0.0-20261112113154-9496baf852b1`
+and adopted by this branch. Native candidate acceptance passed at `c8373c9`;
+this public-consumer lane still requires hosted runtime acceptance.
+
 ## Prerequisite
 
-The lane is preparative until the following exist on the public proxy at the
-same root revision:
+The following must exist on the public proxy for the tested root revision:
 
 - the root module version;
 - `artifacts/windows-amd64` or `artifacts/windows-arm64`, published from a

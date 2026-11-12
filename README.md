@@ -17,12 +17,13 @@ Published Unix artifact modules now exist for `linux/amd64`, `linux/arm64`,
 Default builds for these targets load their verified compressed `lance-c`
 payload after unpacking it into the user cache. The payload is a normal Go
 module dependency, so building or testing fetches it through the Go module
-proxy; it is not a download-free installation. `go get` can download all four
+proxy; it is not a download-free installation. `go get` can download all six
 companion archives because it resolves packages for all build tags; a
 fresh-cache default target build is expected to fetch only the selected one.
-Windows companion candidates have passed native validation but are not yet
-published or activated. Windows and other unsupported bundle targets still
-need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
+Windows amd64 and arm64 modules are also published, with selectors activated.
+Their native and packaging validation passed; cold public-consumer acceptance
+is pending. Targets without a selector need an explicit `LANCE_LIB_PATH` or a
+system `liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion
@@ -81,10 +82,12 @@ The amd64 race/checkptr lane also passed; Go does not support Windows arm64
 race builds. Both DLLs have OS-only direct imports, no delay-load imports, and
 passed the loaded-module CRT guard and supplied-library roundtrip.
 
-The verified candidates remain unpublished. No Windows selector is activated
-and no Windows module requirement is added. This evidence does not establish
-cold default, cold external or public consumer acceptance, zero-config
-distribution, or a supported Windows release.
+The exact verified Windows bytes are published at
+`v0.0.0-20261112113154-9496baf852b1`, with paired root requirements and selectors.
+Fresh public proxy and checksum-database verification passed for both modules.
+Hosted cold default, namespace-only and external consumers remain pending;
+publication and native tests do not establish a supported Windows release.
+See [Windows public consumers](scripts/public-consumer/WINDOWS.md).
 The Unix public-consumer lane and its cache boundaries are described in
 [scripts/public-consumer/README.md](scripts/public-consumer/README.md).
 Remaining API parity and platform distribution work is tracked in
@@ -113,7 +116,8 @@ CGO_ENABLED=0 go run ./examples/roundtrip
 ## Read a dataset
 
 On a target with a published selector (`linux/amd64`, `linux/arm64`,
-`darwin/amd64`, or `darwin/arm64`), a default build needs no environment
+`darwin/amd64`, `darwin/arm64`, `windows/amd64`, or `windows/arm64`),
+a default build needs no environment
 variable: the first call loads the bundled artifact. Targets without a selector
 need an explicit `LANCE_LIB_PATH` or a system `liblance_c`. Run your Go program
 with `CGO_ENABLED=0`:
@@ -1005,7 +1009,7 @@ package activates the same platform bundle as the root package.
 1. `LANCE_LIB_PATH`, which must point at an existing regular file. When set,
    it is the only candidate. A bad value fails with the path in the error
    instead of falling back to another library.
-2. Otherwise, in a default `linux/amd64` build, the artifact bundle registered
+2. Otherwise, in a default build with a published selector, the artifact bundle registered
    by the generated selector. The compressed payload is verified, unpacked
    into the private user cache, verified again, and loaded. Once a bundle is
    registered for the running target, cache, extraction, or `dlopen` errors

@@ -17,8 +17,9 @@ macOS 15.x; it does not replace final tag acceptance. Windows amd64 and arm64
 static-CRT candidates passed native C, full SDK, OS-only import closure,
 loaded-module guards, packaging verification and supplied-library roundtrip
 at `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
-amd64 race/checkptr also passed. Windows module publication, selector adoption
-and cold public consumers are still pending. Real AWS S3 refresh passed in both
+amd64 race/checkptr also passed. Those Windows modules are published at
+`v0.0.0-20261112113154-9496baf852b1` and their requirements/selectors are active.
+Windows cold public consumers remain pending. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
@@ -46,7 +47,7 @@ selector             internal/bundled/lance_bundle_linux_amd64.go
 root requirement     $ROOT_MODULE/artifacts/linux-amd64   $ARTIFACT_VERSION
 ```
 
-Repeat the artifact/selector/requirement rows for each published Unix target.
+Repeat the artifact/selector/requirement rows for each published target.
 The current companion versions and payload facts are recorded in
 [artifacts/README.md](artifacts/README.md). Publish in this order: verify the
 native source and header, build and validate the library, generate and verify
