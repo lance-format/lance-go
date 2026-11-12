@@ -4,7 +4,7 @@
 # This test does not run Go or a native consumer. It parses the real driver with
 # PowerShell's parser, checks the command boundary that must not fetch every
 # platform, extracts the real cache-scope helpers for synthetic boundary checks,
-# and exercises the real verify.py PE/cache failure paths with synthetic files.
+# and exercises the real verify.py payload/PE/cache failure paths with synthetic files.
 
 [CmdletBinding()]
 param()
@@ -364,6 +364,60 @@ try {
         if ($line -match '(?i)\brobocopy\b|\bxcopy\b') {
             Fail "driver primes a cache with a copy tool: $line"
         }
+    }
+
+    # Exercise the driver's real payload argv against the Python CLI. These
+    # opaque bytes stand in for compressed data; DLL checks belong to the cache
+    # and loaded-module gates after runtime extraction.
+    $script:Verify = $verify
+    $script:LibraryName = 'lance_c.dll'
+    $path = 'example.com/root/artifacts/windows-amd64'
+    $version = 'v1.2.3'
+    $payloadPath = Join-Path $work 'lance_c.dll.zst'
+    $payloadBytes = [Text.Encoding]::UTF8.GetBytes('synthetic compressed payload')
+    [IO.File]::WriteAllBytes($payloadPath, $payloadBytes)
+    $payload = Get-Item -LiteralPath $payloadPath
+    $meta = [pscustomobject]@{
+        CompressedSize = $payloadBytes.Length
+        CompressedSHA256 = Get-FileSha256 $payloadPath
+        UncompressedSize = 100
+        UncompressedSHA256 = ('0' * 64)
+    }
+    $zip = Join-Path $work 'artifact.zip'
+    $archive = [IO.Compression.ZipFile]::Open($zip, [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        $entry = $archive.CreateEntry("$path@$version/lance_c.dll.zst")
+        $stream = $entry.Open()
+        try { $stream.Write($payloadBytes, 0, $payloadBytes.Length) } finally { $stream.Dispose() }
+    } finally { $archive.Dispose() }
+    $payloadOut = Join-Path $work 'payload-report.json'
+    $payloadFunction = $ast.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Read-ArtifactModule'
+    }, $true)
+    $argvAssignment = @($payloadFunction.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -eq '$arguments'
+    }, $true))
+    if ($argvAssignment.Count -ne 1) { Fail 'expected one payload CLI argument assignment' }
+    $makePayloadArgs = [scriptblock]::Create($argvAssignment[0].Extent.Text)
+    . $makePayloadArgs
+    $payloadCheck = Invoke-Verify $python $verify $arguments[1..($arguments.Count - 1)]
+    if ($payloadCheck.Code -ne 0) { Fail "driver payload CLI rejected matching bytes: $($payloadCheck.Output)" }
+
+    $meta.CompressedSize++
+    . $makePayloadArgs
+    $badSize = Invoke-Verify $python $verify $arguments[1..($arguments.Count - 1)]
+    if ($badSize.Code -ne 1 -or -not $badSize.Output.Contains('payload size is')) {
+        Fail "driver payload CLI did not reject wrong metadata size: $($badSize.Output)"
+    }
+    $meta.CompressedSize--
+    $payloadBytes[0] = $payloadBytes[0] -bxor 1
+    [IO.File]::WriteAllBytes($payloadPath, $payloadBytes)
+    . $makePayloadArgs
+    $badPayload = Invoke-Verify $python $verify $arguments[1..($arguments.Count - 1)]
+    if ($badPayload.Code -ne 1 -or -not $badPayload.Output.Contains('artifact file bytes differ from archive payload')) {
+        Fail "driver payload CLI did not reject tampered module bytes: $($badPayload.Output)"
     }
 
     $pe = Join-Path $work 'lance_c.dll'

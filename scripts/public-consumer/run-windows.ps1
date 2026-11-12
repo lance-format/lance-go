@@ -836,8 +836,6 @@ function Read-ArtifactModule($Json, [string]$Label) {
         '--artifact-file', $payload.FullName,
         '--expect-size', [string]$meta.CompressedSize,
         '--expect-sha256', $meta.CompressedSHA256,
-        '--uncompressed-size', [string]$meta.UncompressedSize,
-        '--uncompressed-sha256', $meta.UncompressedSHA256,
         '--out', $payloadOut
     )
     $null = Invoke-Python $arguments $script:CommandsLog
