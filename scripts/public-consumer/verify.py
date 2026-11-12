@@ -231,6 +231,7 @@ def parse_go_version_m(path):
         "main_module": None,
         "dependencies": [],
         "replacements": [],
+        "parse_errors": [],
         "build": {},
         "tags": None,
     }
@@ -259,6 +260,10 @@ def parse_go_version_m(path):
                             "replacement": metadata_record(fields),
                         }
                     )
+                else:
+                    metadata["parse_errors"].append(
+                        "unpaired replacement record; replacements are not accepted"
+                    )
                 pending = None
             elif kind == "path":
                 metadata["package_path"] = fields[2]
@@ -279,6 +284,7 @@ def parse_go_version_m(path):
 def command_binary(args):
     errors = []
     metadata = parse_go_version_m(args.metadata)
+    errors.extend(metadata["parse_errors"])
     main_module = metadata["main_module"]
     dependencies = metadata["dependencies"]
     build = metadata["build"]
