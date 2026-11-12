@@ -1,6 +1,8 @@
 # Build the pinned lance-c source as a native Windows DLL for the requested
 # architecture, verify the produced PE and C ABI, then run a native C consumer
-# and the Go external-library tests against the staged DLL.
+# and the full Go SDK suite against the staged DLL: the external tag with CGO
+# disabled, the default tag as a supplied-library lane, and on amd64 a CGO 1
+# -race lane when the selected toolchain and host compiler support it.
 #
 # Native evidence is never replaced by packaging. Only after all native gates
 # pass does the script evaluate the actual DLL dependency closure. When every
@@ -97,7 +99,9 @@ $script:DependencyExportCount = "n/a"
 $script:HeaderCount = "n/a"
 $script:DependencySummary = "n/a"
 $script:BundledDependencies = "not run"
-$script:GoTestResult = "not run"
+$script:GoExternalResult = "not run"
+$script:GoDefaultResult = "not run"
+$script:GoRaceResult = "not run"
 $script:ConsumerResult = "not run"
 $script:AbiResult = "not run"
 $script:GoHostTarget = "n/a"
@@ -203,10 +207,12 @@ function Write-Summary {
 		"| Protoc build tool | $script:ProtocMachine |",
 		"| ABI checker | $script:AbiResult |",
 		"| Native C consumer | $script:ConsumerResult |",
-		"| Go external-library tests | $script:GoTestResult |",
+		"| Go full SDK, external tag (CGO 0) | $script:GoExternalResult |",
+		"| Go full SDK, default tag with supplied DLL | $script:GoDefaultResult |",
+		"| Go race, external tag | $script:GoRaceResult |",
 		"",
 		"The pinned protoc win64 executable is a build-time tool only. On arm64 it may run under OS emulation; it is not linked into the DLL and is not part of the C consumer or Go runtime evidence.",
-		"The native C consumer and selected Go tests are evidence for the staged DLL. They do not establish a cold default, cold external, or public consumer, or a supported distribution.",
+		"The native C consumer and the full Go SDK suites are evidence for the staged DLL. The default-tag suite supplies the DLL through LANCE_LIB_PATH and is not a cold default bundle. These runs do not establish a cold external or public consumer, or a supported distribution.",
 		"A generated Windows companion is an unpublished CI candidate only. No selector is activated, no module requirement is added, and no module is published.",
 		"The single-DLL companion requires an OS-only dependency closure. A redistributable or unclassified dependency blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS."
 	)
@@ -247,6 +253,66 @@ function Invoke-Capture {
 		throw "$Label failed with exit code $code"
 	}
 	return @($output)
+}
+
+function Invoke-GoSuite {
+	param(
+		[Parameter(Mandatory = $true)][string]$GoExe,
+		[Parameter(Mandatory = $true)][string]$Label,
+		[Parameter(Mandatory = $true)][string]$LogPath,
+		[Parameter(Mandatory = $true)][string]$WorkingDirectory,
+		[string[]]$Tags = @(),
+		[string[]]$ExtraArguments = @(),
+		[Parameter(Mandatory = $true)][string]$PathValue
+	)
+	$testArguments = @("test", "-buildvcs=false", "-count=1", "-v", "-gcflags=all=-d=checkptr=1")
+	if ($Tags.Count -gt 0) {
+		$testArguments += @("-tags", ($Tags -join ","))
+	}
+	$testArguments += $ExtraArguments
+	$testArguments += "./..."
+	$oldPath = $env:PATH
+	try {
+		$env:PATH = $PathValue
+		Push-Location $WorkingDirectory
+		try {
+			Invoke-Logged -FilePath $GoExe -ArgumentList $testArguments -LogPath $LogPath -Label $Label
+		} finally {
+			Pop-Location
+		}
+	} finally {
+		$env:PATH = $oldPath
+	}
+}
+
+function Assert-GoSuiteLog {
+	param(
+		[Parameter(Mandatory = $true)][string]$LogPath,
+		[Parameter(Mandatory = $true)][string]$Label,
+		[Parameter(Mandatory = $true)][string[]]$RequiredTests
+	)
+	$text = Get-Content -Raw -LiteralPath $LogPath
+	$skipped = @([regex]::Matches($text, '(?m)^\s*--- SKIP: ([^\s(]+) \(') | ForEach-Object { $_.Groups[1].Value })
+	if ($skipped.Count -gt 0) {
+		throw ("{0} reported {1} skipped test(s): {2}; see {3}" -f $Label, $skipped.Count, (($skipped | Sort-Object -Unique) -join ", "), $LogPath)
+	}
+	if ($text -match '(?m)^\s*--- FAIL: ') {
+		throw "$Label reported a failing test; see $LogPath"
+	}
+	$passed = @([regex]::Matches($text, '(?m)^--- PASS: ([^\s(]+) \(') | ForEach-Object { $_.Groups[1].Value })
+	$packages = [regex]::Matches($text, '(?m)^ok\s+\S+').Count
+	if ($passed.Count -eq 0 -or $packages -eq 0) {
+		throw "$Label produced no top-level PASS in any package; refusing a partial success (see $LogPath)"
+	}
+	if ($passed.Count -lt $RequiredTests.Count) {
+		throw "$Label passed $($passed.Count) top-level tests, fewer than its $($RequiredTests.Count) required sentinels; see $LogPath"
+	}
+	foreach ($name in $RequiredTests) {
+		if ($passed -notcontains $name) {
+			throw "$Label did not pass required test: $name; see $LogPath"
+		}
+	}
+	return [pscustomobject]@{ Passed = $passed.Count; Packages = $packages }
 }
 
 function Read-Pin {
@@ -487,7 +553,7 @@ function Write-ProductionEligibility {
 	$blocking = @($script:DependencyRecords | Where-Object { $_.Class -notin @("system", "system-apiset") })
 	$lines = @(
 		"native_evidence=PASS",
-		"native_runtime_scope=staged lance_c.dll with native C consumer and selected Go external-library tests",
+		"native_runtime_scope=staged lance_c.dll with native C consumer and the full Go SDK suites (external tag at CGO 0, default tag with the supplied DLL, and amd64 race when the toolchain supports it)",
 		"contract=single-dll-companion",
 		"os_only_dependency_closure_required=true",
 		"eligible=$($Eligible.ToString().ToLowerInvariant())",
@@ -1323,6 +1389,9 @@ try {
 		Pop-Location
 	}
 
+	# Every sentinel below must report a top-level PASS in each full-suite lane.
+	# The first nine were the historical selected gate; the rest cover the native
+	# namespaces, commit locks, and fragment publication that now run on Windows.
 	$requiredTests = @(
 		"TestLoadRealLibrary",
 		"TestLoadConcurrentSingleInstance",
@@ -1332,41 +1401,134 @@ try {
 		"TestWriteEmptyDatasetAndSlicedNullableBatch",
 		"TestRoundTrip",
 		"TestNamespaceManagedWriteOpenAppendCommit",
-		"TestExportStreamBorrowsReaderBatch"
+		"TestExportStreamBorrowsReaderBatch",
+		"TestNativeDirectoryNamespaceLifecycle",
+		"TestNativeCustomNamespaceDispatchesFourOperations",
+		"TestNamespaceStorageOptionsAccessorSurvivesNamespaceClose",
+		"TestNativeWriteParamsRejectedForNamespace",
+		"TestNativeWriteOptionsCloseIsIdempotent",
+		"TestCommitLockStagedAndBatchCommit",
+		"TestCommitLockReleaseErrorAfterPublication",
+		"TestCreateFragmentPublishesThroughAppend",
+		"TestFragmentAddColumnsVariantsPublish"
 	)
-	# Compile every package, but run only the named native lifecycle tests. This
-	# keeps the evidence lane bounded and prevents unrelated Windows feature gaps
-	# from being reported as DLL-loading failures.
-	$testPattern = "^(" + (($requiredTests | ForEach-Object { [regex]::Escape($_) }) -join "|") + ")$"
-	$goLog = Join-Path $EvidenceDir "go-test.log"
-	$oldPath = $env:PATH
-	try {
-		$env:PATH = "$runtimeDir;$system32;$env:SystemRoot;$goBin"
-		Push-Location $RepoRoot
-		try {
-			Invoke-Logged -FilePath $goExe -ArgumentList @("test", "-buildvcs=false", "-tags", "lance_external_lib", "-run", $testPattern, "-count=1", "-v", "./...") -LogPath $goLog -Label "go test -tags lance_external_lib -run <selected> ./..."
-		} finally {
-			Pop-Location
+	$requiredTests | Set-Content -LiteralPath (Join-Path $EvidenceDir "required-tests.txt")
+
+	# The supplied DLL stays off the default loader search path so the default
+	# discovery tests run instead of skipping; the library is loaded through the
+	# absolute LANCE_LIB_PATH. Bundled dependency copies get their own directory
+	# so their closure is still resolvable without exposing a lance_c.dll.
+	$goDependencyDir = Join-Path $WorkDir "go-test-dependencies"
+	if (Test-Path -LiteralPath $goDependencyDir) {
+		Remove-Item -LiteralPath $goDependencyDir -Recurse -Force
+	}
+	New-Item -ItemType Directory -Force -Path $goDependencyDir | Out-Null
+	foreach ($record in @($script:DependencyRecords | Where-Object { $_.Bundled })) {
+		$dependencySource = Join-Path $runtimeDir $record.Name
+		if (-not (Test-Path -LiteralPath $dependencySource -PathType Leaf)) {
+			throw "bundled dependency is missing from the staged runtime: $dependencySource"
 		}
-	} finally {
-		$env:PATH = $oldPath
+		Copy-Item -LiteralPath $dependencySource -Destination (Join-Path $goDependencyDir $record.Name)
+	}
+	$goTestPath = @($goDependencyDir, $system32, $env:SystemRoot, $goBin) -join ";"
+	$fullSdkRecords = New-Object System.Collections.Generic.List[string]
+
+	$externalFullLog = Join-Path $EvidenceDir "go-test-external-full.log"
+	try {
+		Invoke-GoSuite -GoExe $goExe -Label "go test -tags lance_external_lib ./..." -LogPath $externalFullLog -WorkingDirectory $RepoRoot -Tags @("lance_external_lib") -PathValue $goTestPath
+		$externalFull = Assert-GoSuiteLog -LogPath $externalFullLog -Label "full external-tag suite" -RequiredTests $requiredTests
+	} catch {
+		$script:GoExternalResult = "FAIL: $($_.Exception.Message)"
+		throw
+	}
+	$script:GoExternalResult = "PASS: full ./... at CGO 0 with explicit checkptr ($($externalFull.Passed) top-level tests, $($externalFull.Packages) packages, no skips)"
+	$fullSdkRecords.Add("lane=external-full tags=lance_external_lib cgo=0 gcflags=all=-d=checkptr=1 tests=$($externalFull.Passed) packages=$($externalFull.Packages) skips=0 failures=0")
+	Write-Log "full external-tag SDK suite: PASS ($($externalFull.Passed) top-level tests in $($externalFull.Packages) packages, no skips)"
+
+	# The default tag has no compiled-in Windows selector, so this lane exercises
+	# the loader, cache, and callback paths against the supplied staged DLL. It is
+	# a supplied-library lane, not a cold default bundle.
+	$defaultFullLog = Join-Path $EvidenceDir "go-test-default-supplied-full.log"
+	$defaultSentinels = @($requiredTests) + @(
+		"TestBundleCacheSharedByProcesses",
+		"TestLoadUsesRegisteredBundleBeforeSystemLoader",
+		"TestLoadPrefersEnvOverRegisteredBundle"
+	)
+	try {
+		Invoke-GoSuite -GoExe $goExe -Label "go test ./... with supplied LANCE_LIB_PATH" -LogPath $defaultFullLog -WorkingDirectory $RepoRoot -PathValue $goTestPath
+		$defaultFull = Assert-GoSuiteLog -LogPath $defaultFullLog -Label "full default-tag supplied-library suite" -RequiredTests $defaultSentinels
+	} catch {
+		$script:GoDefaultResult = "FAIL: $($_.Exception.Message)"
+		throw
+	}
+	$script:GoDefaultResult = "PASS: full ./... with supplied LANCE_LIB_PATH at CGO 0 with explicit checkptr ($($defaultFull.Passed) top-level tests, $($defaultFull.Packages) packages, no skips); supplied-library lane, not a cold default bundle"
+	$fullSdkRecords.Add("lane=default-full-supplied tags=none cgo=0 gcflags=all=-d=checkptr=1 tests=$($defaultFull.Passed) packages=$($defaultFull.Packages) skips=0 failures=0 supplied_library=true cold_default_bundle=false")
+	Write-Log "full default-tag SDK suite with the supplied DLL: PASS ($($defaultFull.Passed) top-level tests in $($defaultFull.Packages) packages, no skips)"
+
+	$raceAvailabilityLog = Join-Path $EvidenceDir "go-race-availability.txt"
+	$goVersion = (@(Invoke-Capture -FilePath $goExe -ArgumentList @("version") -Label "go version") | Select-Object -First 1)
+	if ($Architecture -eq "amd64") {
+		$gccCommand = Get-Command gcc -ErrorAction SilentlyContinue
+		if ($null -eq $gccCommand) {
+			throw "no gcc on PATH; the CGO 1 race lane needs a supported host C compiler"
+		}
+		$gccExe = $gccCommand.Source
+		$gccVersion = (@(Invoke-Capture -FilePath $gccExe -ArgumentList @("--version") -Label "gcc --version") | Select-Object -First 1)
+		$gccTarget = ((@(Invoke-Capture -FilePath $gccExe -ArgumentList @("-dumpmachine") -Label "gcc -dumpmachine") | Select-Object -First 1)).Trim()
+		if ($gccTarget -ne "x86_64-w64-mingw32") {
+			throw "gcc -dumpmachine reported $gccTarget, want x86_64-w64-mingw32 for windows/amd64 race evidence"
+		}
+		$gccDir = Split-Path -Parent $gccExe
+		$oldCc = $env:CC
+		try {
+			$env:CGO_ENABLED = "1"
+			$env:CC = "gcc"
+			$cgoSettings = @(Invoke-Capture -FilePath $goExe -ArgumentList @("env", "CGO_ENABLED", "CC") -Label "go env CGO_ENABLED CC")
+			if ($cgoSettings.Count -ne 2 -or $cgoSettings[0].Trim() -ne "1" -or $cgoSettings[1].Trim() -ne "gcc") {
+				throw "go env with the race toolchain reported '$($cgoSettings -join ', ')', want CGO_ENABLED=1 and CC=gcc"
+			}
+			$raceLog = Join-Path $EvidenceDir "go-test-external-race.log"
+			try {
+				Invoke-GoSuite -GoExe $goExe -Label "go test -race -tags lance_external_lib ./..." -LogPath $raceLog -WorkingDirectory $RepoRoot -Tags @("lance_external_lib") -ExtraArguments @("-race") -PathValue ("$gccDir;" + $goTestPath)
+				$raceFull = Assert-GoSuiteLog -LogPath $raceLog -Label "full external-tag race suite" -RequiredTests $requiredTests
+			} catch {
+				$script:GoRaceResult = "FAIL: $($_.Exception.Message)"
+				throw
+			}
+			$script:GoRaceResult = "PASS: full ./... at CGO 1 with -race and gcc ($($raceFull.Passed) top-level tests, $($raceFull.Packages) packages, no skips)"
+			$fullSdkRecords.Add("lane=external-race tags=lance_external_lib cgo=1 race=true gcflags=all=-d=checkptr=1 tests=$($raceFull.Passed) packages=$($raceFull.Packages) skips=0 failures=0")
+			Write-Log "full external-tag race suite: PASS ($($raceFull.Passed) top-level tests in $($raceFull.Packages) packages, no skips)"
+			@(
+				"race_lane=supported",
+				"target=windows/amd64",
+				"go_version=$goVersion",
+				"cgo_enabled=1",
+				"cc=gcc",
+				"compiler_path=$gccExe",
+				"compiler_version=$gccVersion",
+				"compiler_target=$gccTarget",
+				"flags=-race -gcflags=all=-d=checkptr=1 -tags lance_external_lib ./...",
+				"result=$script:GoRaceResult"
+			) | Set-Content -LiteralPath $raceAvailabilityLog
+		} finally {
+			$env:CGO_ENABLED = "0"
+			$env:CC = $oldCc
+		}
+	} else {
+		$raceReason = "Go's race detector supports windows only on amd64 (src/internal/platform/supported.go: RaceDetectorSupported); no windows/arm64 race build exists, so no -race command was run for this target"
+		$script:GoRaceResult = "UNSUPPORTED: $raceReason"
+		$fullSdkRecords.Add("lane=external-race tags=lance_external_lib status=unsupported target=windows/$Architecture command=not_run reason=$raceReason")
+		@(
+			"race_lane=unsupported",
+			"target=windows/$Architecture",
+			"go_version=$goVersion",
+			"command=not_run",
+			"reason=$raceReason"
+		) | Set-Content -LiteralPath $raceAvailabilityLog
+		Write-Log "race lane: unsupported by the Go toolchain on windows/$Architecture; recorded in $raceAvailabilityLog"
 	}
 
-	$goText = Get-Content -Raw -LiteralPath $goLog
-	$requiredTests | Set-Content -LiteralPath (Join-Path $EvidenceDir "required-tests.txt")
-	foreach ($name in $requiredTests) {
-		$escaped = [regex]::Escape($name)
-		if ($goText -notmatch "(?m)^--- PASS: $escaped \(") {
-			throw "required native test did not pass: $name"
-		}
-	}
-	if ($goText -match "(?m)^\s*--- SKIP: ") {
-		throw "go test reported a skipped test in the selected native lane; see $goLog"
-	}
-	if ($goText -match "(?m)^--- FAIL: ") {
-		throw "go test reported a failure; see $goLog"
-	}
-	$script:GoTestResult = "PASS ($($requiredTests.Count) required tests, no skips)"
+	$fullSdkRecords | Set-Content -LiteralPath (Join-Path $EvidenceDir "go-full-sdk.txt")
 
 	$script:Step = "production-eligibility"
 	$eligibility = Get-ProductionEligibility -Records $script:DependencyRecords

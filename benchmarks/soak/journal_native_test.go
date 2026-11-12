@@ -17,6 +17,8 @@ import (
 
 // Exercise the real sampling path: testing journal.write alone cannot catch
 // a runner that computes a summary but never publishes its source samples.
+// The file stays Linux-only because the soak harness measures process RSS and
+// open descriptors from procfs (/proc/self/smaps_rollup, /proc/self/fd).
 func TestSoakJournalContainsSampleTimeline(t *testing.T) {
 	if _, err := loader.Load(); errors.Is(err, loader.ErrNotFound) {
 		t.Skip("lance-c is not available; set LANCE_LIB_PATH")

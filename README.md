@@ -35,8 +35,12 @@ the pinned upstream source with the runner-native MSVC toolchain and target
 (`x86_64-pc-windows-msvc` on `windows-2022`, `aarch64-pc-windows-msvc` on
 `windows-11-vs2026-arm`), stages the DLL, MSVC import library and public
 headers, checks the PE machine, PE32+ format, derived exported `lance_*` symbols
-and staged dependencies, and runs a native C consumer plus the Go
-external-library tests. The public `lance_*` export set must exactly match the
+and staged dependencies, and runs a native C consumer plus the full Go SDK
+suite against the staged DLL: the external tag at `CGO_ENABLED=0`, the default
+tag with the DLL supplied through `LANCE_LIB_PATH`, and, on amd64, a `CGO 1`
+`-race` lane with the host gcc. The full suites enable Go's pointer checks,
+and they fail on any skipped or failing test. The public `lance_*` export set
+must exactly match the
 pinned header. Additional dependency exports are recorded separately; this lane
 does not establish their removal. The pinned `protoc` win64 executable is a build-time
 tool only; on arm64 it may run under OS emulation and is not part of the DLL,
@@ -1121,9 +1125,13 @@ See [`benchmarks/soak/README.md`](benchmarks/soak/README.md) for build and run
 commands, the measurement contract and the limits of RSS evidence.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
-`LANCE_LIB_PATH` to a real `lance_c.dll` to run native loader tests. The
-Windows CI job currently proves compilation and the loader/cache/callback
-unit tests, not a packaged DLL.
+`LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
+workflow builds the pinned DLL on windows/amd64 and windows/arm64 and runs the
+full external-tag and default-tag suites against it, requiring every test to
+pass without skips. On windows/amd64 it also runs the full external-tag suite
+with `-race`; the Go race detector has no windows/arm64 support, so that lane is
+recorded as unsupported rather than skipped. CI still does not publish a Windows
+binary or establish a cold default Windows bundle.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -1143,10 +1151,9 @@ bundle, so the check cannot pass by silently loading a system library. A
 separate job builds the pinned native library, and a race job uses that library
 with Go's race detector. The cross-build matrix checks Linux and macOS on amd64
 and arm64; it does not establish native runtime support on those other
-platforms. A separate Windows workflow tests Windows amd64 and cross-builds
-Windows arm64; the native evidence lane is configured to load a real DLL on
-both Windows amd64 and Windows arm64 hosted runners. The arm64 entry has not run
-yet.
+platforms. A separate Windows workflow tests Windows amd64 and arm64; its
+native evidence lane builds the pinned DLL and runs the full Go SDK suite
+against it on both hosted runners, with a `CGO 1` race lane on amd64.
 
 ## Layout
 

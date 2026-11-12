@@ -149,14 +149,16 @@ run_go_capture() {
   return "$rc"
 }
 
-run_logged() {
-  local logfile=$1 rc
-  shift
+run_runtime() {
+  local logfile=$1 outfile=$2 rc
+  shift 2
   log_cmd "$@"
+  # Assertions read only this invocation's stdout, even when evidence is reused.
   set +e
-  "$@" 2>&1 | tee -a "$logfile"
-  rc=${PIPESTATUS[0]}
+  "$@" > "$outfile" 2>> "$logfile"
+  rc=$?
   set -e
+  cat "$outfile" | tee -a "$logfile"
   return "$rc"
 }
 
@@ -176,7 +178,7 @@ go_env_value() {
 }
 
 snapshot() {
-  local label=$1 root="$GOMODCACHE/cache/download/$ROOT_MODULE"
+  local label=$1 root="$MODCACHE/cache/download/$ROOT_MODULE"
   [[ -d $root ]] || return 0
   find "$root" -type f \( -name '*.zip' -o -name '*.mod' \) -print | LC_ALL=C sort |
     while IFS= read -r path; do
@@ -249,9 +251,9 @@ artifact_field() {
   local file="$dir/artifact.go"
   require_file "$file"
   if [[ $kind == int ]]; then
-    sed -n "s/^[[:space:]]*$name[[:space:]]*int64[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$file" | head -n 1
+    sed -n "s/^[[:space:]]*${name}[[:space:]]*int64[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$file" | head -n 1
   else
-    sed -n "s/^[[:space:]]*$name[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$file" | head -n 1
+    sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$file" | head -n 1
   fi
 }
 
@@ -383,13 +385,14 @@ verify_binary() {
 }
 
 capture_deps() {
-  local mode=$1 pkg=$2 tag=$3 log="$EVIDENCE_DIR/$mode.log" deps="$EVIDENCE_DIR/$mode-deps.txt"
+  local mode=$1 pkg=$2 tag=$3
+  local log="$EVIDENCE_DIR/$mode.log" deps="$EVIDENCE_DIR/$mode-deps.txt"
   if [[ -n $tag ]]; then
-    if ! run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps -tags "$tag" "$pkg"; then
+    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps -tags "$tag" "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   else
-    if ! run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps "$pkg"; then
+    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   fi
@@ -464,7 +467,8 @@ assert_cache_absent() {
 }
 
 move_cache_aside() {
-  local stage=$1 dest="$WORK/state/$stage-sdk-cache"
+  local stage=$1
+  local dest="$WORK/state/$stage-sdk-cache"
   [[ -d $SDK_CACHE ]] || fail "expected an SDK cache after $stage"
   mkdir -p "$WORK/state"
   mv "$SDK_CACHE" "$dest" || fail "could not move the SDK cache produced by $stage"
@@ -547,11 +551,10 @@ func main() {
 }
 EOF
   set +e
-  ( cd "$dir" && log_cmd env "${PUBLIC_GO_ENV[@]}" XDG_CACHE_HOME="$WORK/runtime" \
-      GOMODCACHE="$dir/modcache" GOCACHE="$dir/buildcache" go run . ) > "$out" 2>> "$log"
+  ( cd "$dir" && run_runtime "$log" "$out" env "${PUBLIC_GO_ENV[@]}" XDG_CACHE_HOME="$WORK/runtime" \
+      GOMODCACHE="$dir/modcache" GOCACHE="$dir/buildcache" go run . )
   rc=$?
   set -e
-  cat "$out" >> "$log"
   [[ $rc -eq 0 ]] || fail "os.UserCacheDir probe failed"
   SDK_CACHE_ROOT=$(head -n 1 "$out")
   [[ -n $SDK_CACHE_ROOT && $SDK_CACHE_ROOT == /* ]] || fail "os.UserCacheDir probe returned '$SDK_CACHE_ROOT'"
@@ -841,10 +844,10 @@ verify_binary default "$DEFAULT_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" \
   "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$DEFAULT_ARTIFACT_SUM"
 
 check_cache default absent
-if ! run_logged "$EVIDENCE_DIR/default.log" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" "$DEFAULT_BIN"; then
+if ! run_runtime "$EVIDENCE_DIR/default.log" "$EVIDENCE_DIR/default-runtime.stdout" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" "$DEFAULT_BIN"; then
   fail "default: runtime failed"
 fi
-grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/default.log" ||
+grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/default-runtime.stdout" ||
   fail "default: runtime output did not show [10 20 30]"
 record default_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache default present
@@ -910,11 +913,11 @@ check_cache namespace absent
 NS_ROOT="$MODE_DIR/namespace-root"
 mkdir -p "$NS_ROOT"
 record namespace_root "$NS_ROOT"
-if ! run_logged "$EVIDENCE_DIR/namespace.log" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" \
+if ! run_runtime "$EVIDENCE_DIR/namespace.log" "$EVIDENCE_DIR/namespace-runtime.stdout" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" \
     "$NS_BIN" -root "$NS_ROOT"; then
   fail "namespace: runtime failed"
 fi
-grep -Eq '^namespace id=".+" namespaces=0$' "$EVIDENCE_DIR/namespace.log" ||
+grep -Eq '^namespace id=".+" namespaces=0$' "$EVIDENCE_DIR/namespace-runtime.stdout" ||
   fail "namespace: runtime did not report an id and zero namespaces"
 record namespace_runtime 'namespace id=<nonempty> namespaces=0'
 check_cache namespace present
@@ -947,10 +950,10 @@ assert_root_package "$EVIDENCE_DIR/external-deps.txt" external
 record external_artifact_payload_zips "$(artifact_zips_for external/ | tr '\n' ';')"
 record external_artifact_mod_files "$(artifact_mods_for external/ | tr '\n' ';')"
 check_cache external absent
-if ! run_logged "$EVIDENCE_DIR/external.log" env LANCE_LIB_PATH="$SUPPLIED_LIB" XDG_CACHE_HOME="$WORK/runtime" "$EXT_BIN"; then
+if ! run_runtime "$EVIDENCE_DIR/external.log" "$EVIDENCE_DIR/external-runtime.stdout" env LANCE_LIB_PATH="$SUPPLIED_LIB" XDG_CACHE_HOME="$WORK/runtime" "$EXT_BIN"; then
   fail "external: runtime failed"
 fi
-grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/external.log" ||
+grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/external-runtime.stdout" ||
   fail "external: runtime output did not show [10 20 30]"
 record external_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache external absent

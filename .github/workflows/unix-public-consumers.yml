@@ -85,7 +85,6 @@ jobs:
       LIBRARY_NAME: ${{ matrix.library_name }}
       ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
       SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-      EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
     steps:
       - name: Check out exact source revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -121,6 +120,8 @@ jobs:
           python3 --version
 
       - name: Run public-consumer acceptance
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
         run: bash scripts/public-consumer/run.sh
 
       - name: Upload public-consumer evidence
