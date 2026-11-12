@@ -178,7 +178,8 @@ go_env_value() {
 }
 
 snapshot() {
-  local label=$1 root="$MODCACHE/cache/download/$ROOT_MODULE"
+  local label=$1 modcache=$2
+  local root="$modcache/cache/download/$ROOT_MODULE"
   [[ -d $root ]] || return 0
   find "$root" -type f \( -name '*.zip' -o -name '*.mod' \) -print | LC_ALL=C sort |
     while IFS= read -r path; do
@@ -207,6 +208,12 @@ snapshot() {
     done
 }
 
+assert_empty_dir() {
+  local label=$1 dir=$2
+  [[ -d $dir ]] || fail "$label directory is missing: $dir"
+  [[ -z $(ls -A "$dir") ]] || fail "$label is not empty: $dir"
+}
+
 artifact_zips_for() {
   local prefix=$1
   awk -F'\t' -v p="$prefix" -v r="$ROOT_MODULE/artifacts/" \
@@ -229,21 +236,46 @@ root_zips_for() {
 }
 
 assert_root_zip() {
-  local prefix=$1 expected="$ROOT_MODULE@$ROOT_VERSION" got
-  got=$(root_zips_for "$prefix")
-  [[ $got == "$expected" ]] || fail "expected root zip $expected; found ${got:-<none>}"
-  record "${prefix}_root_zip" "$got"
+  local stage=$1 expected="$ROOT_MODULE@$ROOT_VERSION" got
+  got=$(root_zips_for "$stage")
+  [[ $got == "$expected" ]] || fail "stage $stage: expected root zip $expected; found ${got:-<none>}"
+  record "${stage}_root_zip" "$got"
+}
+
+assert_no_artifact_zips() {
+  local stage=$1 got
+  got=$(artifact_zips_for "$stage")
+  if [[ -n $got ]]; then
+    printf 'artifact payload archives in stage %s:\n%s\n' "$stage" "$got" | tee -a "$SUMMARY"
+    fail "stage $stage downloaded artifact payload archives"
+  fi
+  record "${stage}_artifact_payload_zips" '<none>'
+  record "${stage}_artifact_mod_files" "$(artifact_mods_for "$stage" | tr '\n' ';')"
+}
+
+assert_get_artifact_set() {
+  local stage=$1 expected got
+  # go get loads packages for all build tags, so every companion payload is expected here.
+  expected=$(awk '{print $1 "@" $2}' "$REQUIRED_ARTIFACTS" | LC_ALL=C sort -u)
+  got=$(artifact_zips_for "$stage")
+  if [[ $got != "$expected" ]]; then
+    printf 'artifact payload archives in stage %s:\n%s\nexpected from the root module graph:\n%s\n' \
+      "$stage" "${got:-<none>}" "$expected" | tee -a "$SUMMARY"
+    fail "stage $stage artifact payloads do not match the root module graph"
+  fi
+  record "${stage}_artifact_payload_zips" "$(printf '%s\n' "$got" | tr '\n' ';')"
+  record "${stage}_artifact_mod_files" "$(artifact_mods_for "$stage" | tr '\n' ';')"
 }
 
 assert_only_selected_artifact_zip() {
-  local prefix=$1 expected="$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" got
-  got=$(artifact_zips_for "$prefix")
+  local stage=$1 expected="$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" got
+  got=$(artifact_zips_for "$stage")
   if [[ $got != "$expected" ]]; then
-    printf 'artifact payload archives in stage %s:\n%s\n' "$prefix" "${got:-<none>}" | tee -a "$SUMMARY"
-    fail "expected exactly one downloaded artifact payload zip: $expected"
+    printf 'artifact payload archives in stage %s:\n%s\n' "$stage" "${got:-<none>}" | tee -a "$SUMMARY"
+    fail "stage $stage: expected exactly one downloaded artifact payload zip: $expected"
   fi
-  record "${prefix}_selected_artifact_zip" "$got"
-  record "${prefix}_artifact_mod_files" "$(artifact_mods_for "$prefix" | tr '\n' ';')"
+  record "${stage}_selected_artifact_zip" "$got"
+  record "${stage}_artifact_mod_files" "$(artifact_mods_for "$stage" | tr '\n' ';')"
 }
 
 artifact_field() {
@@ -323,9 +355,9 @@ verify_artifact_module() {
 }
 
 download_artifact() {
-  local mode=$1 path=$2 version=$3 consumer=$4
+  local mode=$1 path=$2 version=$3 consumer=$4 modcache=$5 buildcache=$6
   local out="$EVIDENCE_DIR/$mode-artifact-download.json" log="$EVIDENCE_DIR/$mode.log" err
-  if ! ( cd "$consumer" && run_go_capture "$log" "$out" "$MODCACHE" "$GOCACHE" \
+  if ! ( cd "$consumer" && run_go_capture "$log" "$out" "$modcache" "$buildcache" \
       mod download -json "$path@$version" ); then
     fail "$mode: artifact module download failed"
   fi
@@ -362,8 +394,9 @@ verify_payload() {
 
 verify_binary() {
   local mode=$1 binary=$2 payload=$3 expect_artifact=$4 expect_payload=$5 expect_tag=$6 expect_sum=$7
+  local modcache=$8 buildcache=$9
   local log="$EVIDENCE_DIR/$mode.log" meta="$EVIDENCE_DIR/$mode-go-version-m.txt"
-  if ! run_go_capture "$log" "$meta" "$MODCACHE" "$GOCACHE" version -m "$binary"; then
+  if ! run_go_capture "$log" "$meta" "$modcache" "$buildcache" version -m "$binary"; then
     fail "$mode: go version -m failed"
   fi
   if ! run_python "$log" binary \
@@ -385,14 +418,14 @@ verify_binary() {
 }
 
 capture_deps() {
-  local mode=$1 pkg=$2 tag=$3
+  local mode=$1 pkg=$2 tag=$3 consumer=$4 modcache=$5 buildcache=$6
   local log="$EVIDENCE_DIR/$mode.log" deps="$EVIDENCE_DIR/$mode-deps.txt"
   if [[ -n $tag ]]; then
-    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps -tags "$tag" "$pkg" ); then
+    if ! ( cd "$consumer" && run_go_capture "$log" "$deps" "$modcache" "$buildcache" list -deps -tags "$tag" "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   else
-    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps "$pkg" ); then
+    if ! ( cd "$consumer" && run_go_capture "$log" "$deps" "$modcache" "$buildcache" list -deps "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   fi
@@ -480,25 +513,68 @@ prepare_mode() {
   local mode=$1
   MODE_DIR="$WORK/$mode"
   CONSUMER_DIR="$MODE_DIR/consumer"
-  MODCACHE="$MODE_DIR/modcache"
-  GOCACHE="$MODE_DIR/buildcache"
-  mkdir -p "$CONSUMER_DIR" "$MODCACHE" "$GOCACHE"
-  [[ -z $(ls -A "$MODCACHE") ]] || fail "$mode: module cache is not fresh"
-  [[ -z $(ls -A "$GOCACHE") ]] || fail "$mode: build cache is not fresh"
-  if ! ( cd "$CONSUMER_DIR" && run_go "$EVIDENCE_DIR/$mode.log" "$MODCACHE" "$GOCACHE" \
+  GET_MODCACHE="$MODE_DIR/get-modcache"
+  GET_BUILDCACHE="$MODE_DIR/get-buildcache"
+  TARGET_MODCACHE="$MODE_DIR/target-modcache"
+  TARGET_BUILDCACHE="$MODE_DIR/target-buildcache"
+  mkdir -p "$CONSUMER_DIR" "$GET_MODCACHE" "$GET_BUILDCACHE" "$TARGET_MODCACHE" "$TARGET_BUILDCACHE"
+  # Installation uses the get caches; the target caches stay untouched until the build.
+  assert_empty_dir "$mode get module cache" "$GET_MODCACHE"
+  assert_empty_dir "$mode get build cache" "$GET_BUILDCACHE"
+  assert_empty_dir "$mode target module cache" "$TARGET_MODCACHE"
+  assert_empty_dir "$mode target build cache" "$TARGET_BUILDCACHE"
+  if ! ( cd "$CONSUMER_DIR" && run_go "$EVIDENCE_DIR/$mode.log" "$GET_MODCACHE" "$GET_BUILDCACHE" \
       mod init "example.com/public-consumer-$mode" ); then
     fail "$mode: go mod init failed"
   fi
   [[ -f $CONSUMER_DIR/go.mod ]] || fail "$mode: go.mod is missing"
   record "${mode}_workdir" "$MODE_DIR"
+  record "${mode}_get_modcache" "$GET_MODCACHE"
+  record "${mode}_get_buildcache" "$GET_BUILDCACHE"
+  record "${mode}_target_modcache" "$TARGET_MODCACHE"
+  record "${mode}_target_buildcache" "$TARGET_BUILDCACHE"
+}
+
+start_target_build() {
+  local mode=$1 modcache=$2 buildcache=$3
+  # The target build must not reuse any installation download.
+  assert_empty_dir "$mode target module cache" "$modcache"
+  assert_empty_dir "$mode target build cache" "$buildcache"
+  record "${mode}_target_module_cache_fresh" yes
+  record "${mode}_target_build_cache_fresh" yes
 }
 
 go_get_root() {
-  local mode=$1 consumer=$2
-  if ! ( cd "$consumer" && run_go "$EVIDENCE_DIR/$mode.log" "$MODCACHE" "$GOCACHE" \
+  local mode=$1 consumer=$2 modcache=$3 buildcache=$4
+  if ! ( cd "$consumer" && run_go "$EVIDENCE_DIR/$mode.log" "$modcache" "$buildcache" \
       get "$ROOT_MODULE@$ROOT_VERSION" ); then
     fail "$mode: go get $ROOT_MODULE@$ROOT_VERSION failed"
   fi
+}
+
+capture_consumer_module_hashes() {
+  local mode=$1 consumer=$2 gomod_sha gosum_sha
+  require_file "$consumer/go.mod"
+  require_file "$consumer/go.sum"
+  gomod_sha=$(sha256_file "$consumer/go.mod")
+  gosum_sha=$(sha256_file "$consumer/go.sum")
+  printf '%s  go.mod\n%s  go.sum\n' "$gomod_sha" "$gosum_sha" > "$EVIDENCE_DIR/$mode-consumer-module.sha256"
+  record "${mode}_go_mod_sha256" "$gomod_sha"
+  record "${mode}_go_sum_sha256" "$gosum_sha"
+}
+
+assert_consumer_module_hashes() {
+  local mode=$1 stage=$2 consumer=$3
+  local file="$EVIDENCE_DIR/$mode-consumer-module.sha256"
+  local expected_gomod expected_gosum
+  require_file "$file"
+  expected_gomod=$(awk 'NR == 1 { print $1 }' "$file")
+  expected_gosum=$(awk 'NR == 2 { print $1 }' "$file")
+  [[ $(sha256_file "$consumer/go.mod") == "$expected_gomod" ]] ||
+    fail "$mode: go.mod changed during $stage"
+  [[ $(sha256_file "$consumer/go.sum") == "$expected_gosum" ]] ||
+    fail "$mode: go.sum changed during $stage"
+  record "${mode}_${stage}_consumer_module_unchanged" yes
 }
 
 assert_consumer_module() {
@@ -507,7 +583,7 @@ assert_consumer_module() {
   if grep -Eq '^[[:space:]]*(replace|exclude)[[:space:]]' "$gomod"; then
     fail "$label go.mod contains replace or exclude"
   fi
-  if [[ -n $(find "$WORK" -path '*/modcache' -prune -o -name go.work -print) ]]; then
+  if [[ -n $(find "$WORK" \( -path '*/modcache' -o -path '*-modcache' \) -prune -o -name go.work -print) ]]; then
     fail "$label workspace contains a go.work file"
   fi
 }
@@ -631,8 +707,9 @@ assert_version_identity() {
 }
 
 resolve_root() {
+  local consumer=$1 modcache=$2 buildcache=$3
   local out="$EVIDENCE_DIR/root-download.json" log="$EVIDENCE_DIR/default.log" err
-  if ! ( cd "$DEFAULT_CONSUMER_DIR" && run_go_capture "$log" "$out" "$DEFAULT_MODCACHE" "$DEFAULT_BUILDCACHE" \
+  if ! ( cd "$consumer" && run_go_capture "$log" "$out" "$modcache" "$buildcache" \
       mod download -json "$ROOT_MODULE@$ROOT_REVISION" ); then
     fail "root module resolution failed for $ROOT_MODULE@$ROOT_REVISION"
   fi
@@ -788,28 +865,36 @@ record cache_lifecycle "$CACHE_LIFECYCLE"
 
 prepare_mode default
 DEFAULT_CONSUMER_DIR=$CONSUMER_DIR
-DEFAULT_MODCACHE=$MODCACHE
-DEFAULT_BUILDCACHE=$GOCACHE
+DEFAULT_GET_MODCACHE=$GET_MODCACHE
+DEFAULT_GET_BUILDCACHE=$GET_BUILDCACHE
+DEFAULT_TARGET_MODCACHE=$TARGET_MODCACHE
+DEFAULT_TARGET_BUILDCACHE=$TARGET_BUILDCACHE
 DEFAULT_BIN="$MODE_DIR/examples-roundtrip"
 
-resolve_root
-snapshot default/root-resolve
+resolve_root "$DEFAULT_CONSUMER_DIR" "$DEFAULT_GET_MODCACHE" "$DEFAULT_GET_BUILDCACHE"
+snapshot default/root-resolve "$DEFAULT_GET_MODCACHE"
+assert_root_zip default/root-resolve
+assert_no_artifact_zips default/root-resolve
 verify_root_go_mod
 
-if ! go_get_root default "$DEFAULT_CONSUMER_DIR"; then
-  fail "default: go get failed"
-fi
+go_get_root default "$DEFAULT_CONSUMER_DIR" "$DEFAULT_GET_MODCACHE" "$DEFAULT_GET_BUILDCACHE"
 assert_consumer_module "$DEFAULT_CONSUMER_DIR" default
-snapshot default/go-get
+capture_consumer_module_hashes default "$DEFAULT_CONSUMER_DIR"
+snapshot default/go-get "$DEFAULT_GET_MODCACHE"
+assert_root_zip default/go-get
+assert_get_artifact_set default/go-get
 
-if ! ( cd "$DEFAULT_CONSUMER_DIR" && run_go "$EVIDENCE_DIR/default.log" "$DEFAULT_MODCACHE" "$DEFAULT_BUILDCACHE" \
+start_target_build default "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE"
+if ! ( cd "$DEFAULT_CONSUMER_DIR" && run_go "$EVIDENCE_DIR/default.log" "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE" \
     build -o "$DEFAULT_BIN" "$ROOT_MODULE/examples/roundtrip" ); then
   fail "default: build failed"
 fi
-snapshot default/build
+snapshot default/target-build "$DEFAULT_TARGET_MODCACHE"
+assert_root_zip default/target-build
+assert_consumer_module_hashes default target-build "$DEFAULT_CONSUMER_DIR"
 
 default_meta="$EVIDENCE_DIR/default-go-version-m.txt"
-if ! run_go_capture "$EVIDENCE_DIR/default.log" "$default_meta" "$DEFAULT_MODCACHE" "$DEFAULT_BUILDCACHE" \
+if ! run_go_capture "$EVIDENCE_DIR/default.log" "$default_meta" "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE" \
     version -m "$DEFAULT_BIN"; then
   fail "default: go version -m failed"
 fi
@@ -821,8 +906,11 @@ SELECTED_ARTIFACT_VERSION=${default_selected##*@}
 record selected_artifact_module "$SELECTED_ARTIFACT_PATH"
 record selected_artifact_version "$SELECTED_ARTIFACT_VERSION"
 record selected_artifact_identity "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION"
+assert_only_selected_artifact_zip default/target-build
+assert_selected_required
 
-download_artifact default "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$DEFAULT_CONSUMER_DIR"
+download_artifact default "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$DEFAULT_CONSUMER_DIR" \
+  "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE"
 verify_artifact_module "$ARTIFACT_DIR" default "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$ARTIFACT_SUM"
 DEFAULT_ARTIFACT_SUM=$ARTIFACT_SUM
 DEFAULT_ARTIFACT_PAYLOAD=$META_PAYLOAD
@@ -831,17 +919,20 @@ DEFAULT_META_COMPRESSED_SHA=$META_COMPRESSED_SHA
 DEFAULT_META_UNCOMPRESSED_SIZE=$META_UNCOMPRESSED_SIZE
 DEFAULT_META_UNCOMPRESSED_SHA=$META_UNCOMPRESSED_SHA
 verify_payload default "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$ARTIFACT_ZIP" "$ARTIFACT_DIR"
-snapshot default/artifact
+snapshot default/target-artifact "$DEFAULT_TARGET_MODCACHE"
+assert_only_selected_artifact_zip default/target-artifact
 
-capture_deps default "$ROOT_MODULE/examples/roundtrip" ""
-snapshot default/deps
-assert_root_zip default/
-assert_only_selected_artifact_zip default/
+capture_deps default "$ROOT_MODULE/examples/roundtrip" "" "$DEFAULT_CONSUMER_DIR" \
+  "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE"
+snapshot default/target-deps "$DEFAULT_TARGET_MODCACHE"
+assert_root_zip default/target-deps
+assert_only_selected_artifact_zip default/target-deps
+assert_consumer_module_hashes default target-deps "$DEFAULT_CONSUMER_DIR"
 assert_selected_artifact_package "$EVIDENCE_DIR/default-deps.txt" default
 assert_root_package "$EVIDENCE_DIR/default-deps.txt" default
-assert_selected_required
 verify_binary default "$DEFAULT_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" \
-  "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$DEFAULT_ARTIFACT_SUM"
+  "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$DEFAULT_ARTIFACT_SUM" \
+  "$DEFAULT_TARGET_MODCACHE" "$DEFAULT_TARGET_BUILDCACHE"
 
 check_cache default absent
 if ! run_runtime "$EVIDENCE_DIR/default.log" "$EVIDENCE_DIR/default-runtime.stdout" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" "$DEFAULT_BIN"; then
@@ -867,18 +958,29 @@ record external_supplied_origin "verified default payload cache $DEFAULT_LIB (mo
 # --- namespace-only consumer ---------------------------------------------------
 
 prepare_mode namespace
-cp "$NAMESPACE_SOURCE" "$CONSUMER_DIR/main.go"
-go_get_root namespace "$CONSUMER_DIR"
-assert_consumer_module "$CONSUMER_DIR" namespace
-snapshot namespace/go-get
+NS_CONSUMER_DIR=$CONSUMER_DIR
+NS_GET_MODCACHE=$GET_MODCACHE
+NS_GET_BUILDCACHE=$GET_BUILDCACHE
+NS_TARGET_MODCACHE=$TARGET_MODCACHE
+NS_TARGET_BUILDCACHE=$TARGET_BUILDCACHE
+cp "$NAMESPACE_SOURCE" "$NS_CONSUMER_DIR/main.go"
+go_get_root namespace "$NS_CONSUMER_DIR" "$NS_GET_MODCACHE" "$NS_GET_BUILDCACHE"
+assert_consumer_module "$NS_CONSUMER_DIR" namespace
+capture_consumer_module_hashes namespace "$NS_CONSUMER_DIR"
+snapshot namespace/go-get "$NS_GET_MODCACHE"
+assert_root_zip namespace/go-get
+assert_get_artifact_set namespace/go-get
 NS_BIN="$MODE_DIR/namespace-consumer"
-if ! ( cd "$CONSUMER_DIR" && run_go "$EVIDENCE_DIR/namespace.log" "$MODCACHE" "$GOCACHE" \
+start_target_build namespace "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE"
+if ! ( cd "$NS_CONSUMER_DIR" && run_go "$EVIDENCE_DIR/namespace.log" "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE" \
     build -o "$NS_BIN" . ); then
   fail "namespace: build failed"
 fi
-snapshot namespace/build
+snapshot namespace/target-build "$NS_TARGET_MODCACHE"
+assert_root_zip namespace/target-build
+assert_consumer_module_hashes namespace target-build "$NS_CONSUMER_DIR"
 namespace_meta="$EVIDENCE_DIR/namespace-go-version-m.txt"
-if ! run_go_capture "$EVIDENCE_DIR/namespace.log" "$namespace_meta" "$MODCACHE" "$GOCACHE" \
+if ! run_go_capture "$EVIDENCE_DIR/namespace.log" "$namespace_meta" "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE" \
     version -m "$NS_BIN"; then
   fail "namespace: go version -m failed"
 fi
@@ -887,27 +989,32 @@ namespace_count=$(printf '%s\n' "$namespace_selected" | sed '/^$/d' | wc -l | tr
 [[ $namespace_count -eq 1 ]] || fail "namespace: expected one artifact dependency, found ${namespace_selected:-<none>}"
 [[ $namespace_selected == "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" ]] ||
   fail "namespace selected $namespace_selected, default selected $SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION"
+assert_only_selected_artifact_zip namespace/target-build
 
-download_artifact namespace "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$CONSUMER_DIR"
+download_artifact namespace "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$NS_CONSUMER_DIR" \
+  "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE"
 verify_artifact_module "$ARTIFACT_DIR" namespace "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$ARTIFACT_SUM"
 [[ $META_COMPRESSED_SIZE == "$DEFAULT_META_COMPRESSED_SIZE" ]] || fail "namespace payload size differs from default"
 [[ $META_COMPRESSED_SHA == "$DEFAULT_META_COMPRESSED_SHA" ]] || fail "namespace payload hash differs from default"
 [[ $META_UNCOMPRESSED_SIZE == "$DEFAULT_META_UNCOMPRESSED_SIZE" ]] || fail "namespace library size differs from default"
 [[ $META_UNCOMPRESSED_SHA == "$DEFAULT_META_UNCOMPRESSED_SHA" ]] || fail "namespace library hash differs from default"
 verify_payload namespace "$SELECTED_ARTIFACT_PATH" "$SELECTED_ARTIFACT_VERSION" "$ARTIFACT_ZIP" "$ARTIFACT_DIR"
-snapshot namespace/artifact
+snapshot namespace/target-artifact "$NS_TARGET_MODCACHE"
+assert_only_selected_artifact_zip namespace/target-artifact
 
-capture_deps namespace . ""
-snapshot namespace/deps
-assert_root_zip namespace/
-assert_only_selected_artifact_zip namespace/
+capture_deps namespace . "" "$NS_CONSUMER_DIR" "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE"
+snapshot namespace/target-deps "$NS_TARGET_MODCACHE"
+assert_root_zip namespace/target-deps
+assert_only_selected_artifact_zip namespace/target-deps
+assert_consumer_module_hashes namespace target-deps "$NS_CONSUMER_DIR"
 assert_selected_artifact_package "$EVIDENCE_DIR/namespace-deps.txt" namespace
 assert_no_root_package "$EVIDENCE_DIR/namespace-deps.txt" namespace
 grep -Fxq "$ROOT_MODULE/namespace" "$EVIDENCE_DIR/namespace-deps.txt" ||
   fail "namespace: dependency graph lacks $ROOT_MODULE/namespace"
 record namespace_package present
 verify_binary namespace "$NS_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" \
-  "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$ARTIFACT_SUM"
+  "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$ARTIFACT_SUM" \
+  "$NS_TARGET_MODCACHE" "$NS_TARGET_BUILDCACHE"
 
 check_cache namespace absent
 NS_ROOT="$MODE_DIR/namespace-root"
@@ -926,29 +1033,46 @@ move_cache_aside namespace
 # --- external consumer ---------------------------------------------------------
 
 prepare_mode external
-go_get_root external "$CONSUMER_DIR"
-assert_consumer_module "$CONSUMER_DIR" external
-snapshot external/go-get
+EXT_CONSUMER_DIR=$CONSUMER_DIR
+EXT_GET_MODCACHE=$GET_MODCACHE
+EXT_GET_BUILDCACHE=$GET_BUILDCACHE
+EXT_TARGET_MODCACHE=$TARGET_MODCACHE
+EXT_TARGET_BUILDCACHE=$TARGET_BUILDCACHE
+go_get_root external "$EXT_CONSUMER_DIR" "$EXT_GET_MODCACHE" "$EXT_GET_BUILDCACHE"
+assert_consumer_module "$EXT_CONSUMER_DIR" external
+capture_consumer_module_hashes external "$EXT_CONSUMER_DIR"
+snapshot external/go-get "$EXT_GET_MODCACHE"
+assert_root_zip external/go-get
+assert_get_artifact_set external/go-get
 EXT_BIN="$MODE_DIR/examples-roundtrip-external"
-if ! ( cd "$CONSUMER_DIR" && run_go "$EVIDENCE_DIR/external.log" "$MODCACHE" "$GOCACHE" \
+start_target_build external "$EXT_TARGET_MODCACHE" "$EXT_TARGET_BUILDCACHE"
+if ! ( cd "$EXT_CONSUMER_DIR" && run_go "$EVIDENCE_DIR/external.log" "$EXT_TARGET_MODCACHE" "$EXT_TARGET_BUILDCACHE" \
     build -tags lance_external_lib -o "$EXT_BIN" "$ROOT_MODULE/examples/roundtrip" ); then
   fail "external: build failed"
 fi
-snapshot external/build
+snapshot external/target-build "$EXT_TARGET_MODCACHE"
+assert_root_zip external/target-build
+assert_consumer_module_hashes external target-build "$EXT_CONSUMER_DIR"
+# External target downloads are recorded without a zero-download claim.
+record external_target_build_artifact_payload_zips "$(artifact_zips_for external/target-build | tr '\n' ';')"
+record external_target_build_artifact_mod_files "$(artifact_mods_for external/target-build | tr '\n' ';')"
 external_meta="$EVIDENCE_DIR/external-go-version-m.txt"
-if ! run_go_capture "$EVIDENCE_DIR/external.log" "$external_meta" "$MODCACHE" "$GOCACHE" \
+if ! run_go_capture "$EVIDENCE_DIR/external.log" "$external_meta" "$EXT_TARGET_MODCACHE" "$EXT_TARGET_BUILDCACHE" \
     version -m "$EXT_BIN"; then
   fail "external: go version -m failed"
 fi
 assert_no_artifact_in_meta "$external_meta" external
-verify_binary external "$EXT_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" none absent lance_external_lib ""
-capture_deps external "$ROOT_MODULE/examples/roundtrip" lance_external_lib
-snapshot external/deps
-assert_root_zip external/
+verify_binary external "$EXT_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" none absent lance_external_lib "" \
+  "$EXT_TARGET_MODCACHE" "$EXT_TARGET_BUILDCACHE"
+capture_deps external "$ROOT_MODULE/examples/roundtrip" lance_external_lib "$EXT_CONSUMER_DIR" \
+  "$EXT_TARGET_MODCACHE" "$EXT_TARGET_BUILDCACHE"
+snapshot external/target-deps "$EXT_TARGET_MODCACHE"
+assert_root_zip external/target-deps
+assert_consumer_module_hashes external target-deps "$EXT_CONSUMER_DIR"
+record external_target_deps_artifact_payload_zips "$(artifact_zips_for external/target-deps | tr '\n' ';')"
+record external_target_deps_artifact_mod_files "$(artifact_mods_for external/target-deps | tr '\n' ';')"
 assert_no_artifact_package "$EVIDENCE_DIR/external-deps.txt" external
 assert_root_package "$EVIDENCE_DIR/external-deps.txt" external
-record external_artifact_payload_zips "$(artifact_zips_for external/ | tr '\n' ';')"
-record external_artifact_mod_files "$(artifact_mods_for external/ | tr '\n' ';')"
 check_cache external absent
 if ! run_runtime "$EVIDENCE_DIR/external.log" "$EVIDENCE_DIR/external-runtime.stdout" env LANCE_LIB_PATH="$SUPPLIED_LIB" XDG_CACHE_HOME="$WORK/runtime" "$EXT_BIN"; then
   fail "external: runtime failed"
@@ -957,7 +1081,7 @@ grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/exte
   fail "external: runtime output did not show [10 20 30]"
 record external_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache external absent
-snapshot external/run
+snapshot external/target-final "$EXT_TARGET_MODCACHE"
 
 rm -rf "$WORK"
 record result PASS
