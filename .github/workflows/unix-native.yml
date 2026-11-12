@@ -2,9 +2,9 @@
 #
 # This workflow builds the exact pinned lance-c source on each native runner,
 # tests the Go bindings against the resulting shared library, and stages a
-# companion module outside the checkout. It does not activate a selector,
-# publish a module, or create a release. See artifacts/README.md for the
-# publication gates that remain outside CI.
+# stripped production candidate outside the checkout. It does not publish or
+# accept the candidate, activate a selector, or create a release. See
+# artifacts/README.md for the publication gates that remain outside CI.
 name: Unix native
 
 on:
@@ -20,6 +20,7 @@ on:
       - scripts/build-lance-c.sh
       - scripts/lance-c-cache.sh
       - scripts/check-native-library.sh
+      - scripts/strip-native-library.sh
       - scripts/check-abi-symbols.go
       - scripts/sync-lance-c.sh
       - scripts/sync-lance-c-gen/**
@@ -35,6 +36,7 @@ on:
       - scripts/build-lance-c.sh
       - scripts/lance-c-cache.sh
       - scripts/check-native-library.sh
+      - scripts/strip-native-library.sh
       - scripts/check-abi-symbols.go
       - scripts/sync-lance-c.sh
       - scripts/sync-lance-c-gen/**
@@ -67,6 +69,7 @@ jobs:
             goos: linux
             goarch: amd64
             uname: x86_64
+            library_name: liblance_c.so
             jobs: "4"
             protoc_archive: protoc-21.12-linux-x86_64.zip
             protoc_sha256: 3a4c1e5f2516c639d3079b1586e703fc7bcfa2136d58bda24d1d54f949c315e8
@@ -75,6 +78,7 @@ jobs:
             goos: linux
             goarch: arm64
             uname: aarch64
+            library_name: liblance_c.so
             jobs: "4"
             protoc_archive: protoc-21.12-linux-aarch_64.zip
             protoc_sha256: 2dd17f75d66a682640b136e31848da9fb2eefe68d55303baf8b32617374f6711
@@ -83,6 +87,7 @@ jobs:
             goos: darwin
             goarch: amd64
             uname: x86_64
+            library_name: liblance_c.dylib
             jobs: "3"
             protoc_archive: protoc-21.12-osx-x86_64.zip
             protoc_sha256: 9448ff40278504a7ae5139bb70c962acc78c32d8fc54b4890a55c14c68b9d10a
@@ -91,6 +96,7 @@ jobs:
             goos: darwin
             goarch: arm64
             uname: arm64
+            library_name: liblance_c.dylib
             jobs: "2"
             protoc_archive: protoc-21.12-osx-aarch_64.zip
             protoc_sha256: 96839af0caed64352442fc8236f4bdf7c1cd6efcfaa98fa5db37307a73fc7c70
@@ -467,34 +473,88 @@ jobs:
             exit 1
           fi
 
-      - name: Stage companion module outside the checkout
+      - name: Prepare stripped production library
         env:
           LANCE_LIBRARY: ${{ steps.native.outputs.library }}
           LANCE_HEADER: ${{ steps.native.outputs.header }}
-          STAGING_ROOT: ${{ runner.temp }}/staging/${{ matrix.slug }}
-          MODULE_PATH: github.com/lance-format/lance-go/artifacts/staging/${{ matrix.slug }}
         run: |
           set -euo pipefail
-          ./scripts/sync-lance-c.sh \
+          ./scripts/strip-native-library.sh \
             --library "$LANCE_LIBRARY" \
             --header "$LANCE_HEADER" \
             --target "$TARGET" \
+            --out "$RUNNER_TEMP/production/${{ matrix.slug }}" \
+            | tee "$RUNNER_TEMP/evidence/production-library.txt"
+
+      - name: Validate stripped production library
+        env:
+          LANCE_STRIPPED_LIBRARY: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+        run: |
+          set -euo pipefail
+          test -f "$LANCE_STRIPPED_LIBRARY"
+          ./scripts/check-native-library.sh \
+            --library "$LANCE_STRIPPED_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" \
+            | tee "$RUNNER_TEMP/evidence/production-library-check.txt"
+
+      - name: Round-trip the stripped production library
+        env:
+          CGO_ENABLED: "0"
+          LANCE_LIB_PATH: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+        run: |
+          set -euo pipefail
+          [[ -n ${LANCE_LIB_PATH:-} && -f $LANCE_LIB_PATH ]] || {
+            echo "stripped LANCE_LIB_PATH is missing: ${LANCE_LIB_PATH:-unset}" >&2
+            exit 1
+          }
+          log="$RUNNER_TEMP/evidence/stripped-roundtrip.log"
+          go run -tags lance_external_lib ./examples/roundtrip 2>&1 | tee "$log"
+          grep -Fqx 'Created, reopened and scanned 3 rows: [10 20 30]' "$log"
+
+      - name: Stage production-path candidate companion module
+        env:
+          LANCE_LIBRARY: ${{ steps.native.outputs.library }}
+          LANCE_STRIPPED_LIBRARY: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+          CANDIDATE_ROOT: ${{ runner.temp }}/candidate/${{ matrix.slug }}
+          MODULE_PATH: github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          expected_module_path="github.com/lance-format/lance-go/artifacts/${TARGET//\//-}"
+          [[ $MODULE_PATH == "$expected_module_path" ]] || {
+            echo "candidate module path $MODULE_PATH does not match $expected_module_path" >&2
+            exit 1
+          }
+          test -f "$LANCE_STRIPPED_LIBRARY"
+          ./scripts/sync-lance-c.sh \
+            --library "$LANCE_STRIPPED_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" \
             --module-path "$MODULE_PATH" \
-            --out "$STAGING_ROOT"
-          selector="$STAGING_ROOT/selector/lance_bundle_${TARGET_GOOS}_${TARGET_GOARCH}.go"
+            --out "$CANDIDATE_ROOT"
+          selector="$CANDIDATE_ROOT/selector/lance_bundle_${TARGET_GOOS}_${TARGET_GOARCH}.go"
           test -f "$selector"
-          test -f "$STAGING_ROOT/module/go.mod"
-          test -f "$STAGING_ROOT/module/artifact.go"
+          test -f "$CANDIDATE_ROOT/module/go.mod"
+          test -f "$CANDIDATE_ROOT/module/artifact.go"
           grep -Fq "//go:build !lance_external_lib && $TARGET_GOOS && $TARGET_GOARCH" "$selector"
           grep -Fq "\"$MODULE_PATH\"" "$selector"
           go run ./scripts/verify-lance-c-artifact \
-            -module "$STAGING_ROOT/module" \
-            -library "$LANCE_LIBRARY" \
+            -module "$CANDIDATE_ROOT/module" \
+            -library "$LANCE_STRIPPED_LIBRARY" \
             -target "$TARGET" \
             -module-path "$MODULE_PATH" | tee "$RUNNER_TEMP/evidence/artifact-verification.txt"
+          stripped_sha=$(sed -n 's/^stripped_library_sha256=//p' "$RUNNER_TEMP/evidence/production-library.txt")
+          [[ -n $stripped_sha ]] || {
+            echo "stripped library hash is missing from production evidence" >&2
+            exit 1
+          }
+          grep -Fqx "library_sha256=$stripped_sha" "$RUNNER_TEMP/evidence/production-library-check.txt"
+          grep -Fqx "library_sha256=$stripped_sha" "$RUNNER_TEMP/evidence/artifact-verification.txt"
           if [[ -n "$(git status --porcelain)" ]]; then
             git status --porcelain >&2
-            echo "staging changed the checkout; selectors must not be activated by this workflow" >&2
+            echo "candidate staging changed the checkout; selectors must not be activated by this workflow" >&2
             exit 1
           fi
           if command -v sha256sum >/dev/null 2>&1; then
@@ -503,17 +563,21 @@ jobs:
             selector_sha=$(shasum -a 256 "$selector" | awk '{print $1}')
           fi
           {
-            echo "staging_root: $STAGING_ROOT"
+            echo "candidate_root: $CANDIDATE_ROOT"
             echo "module_path: $MODULE_PATH"
+            echo "candidate_status: unpublished"
+            echo "source_library: $LANCE_LIBRARY"
+            echo "stripped_library: $LANCE_STRIPPED_LIBRARY"
+            echo "stripped_library_sha256: $stripped_sha"
             echo "module_files:"
-            find "$STAGING_ROOT/module" -maxdepth 1 -type f -print | sort |
+            find "$CANDIDATE_ROOT/module" -maxdepth 1 -type f -print | sort |
               while IFS= read -r file; do
                 printf '  %s %s\n' "$(wc -c < "$file" | tr -d ' ')" "$(basename "$file")"
               done
             echo "selector: $(basename "$selector")"
             echo "selector_sha256: $selector_sha"
             echo "selector_activated: false"
-          } | tee "$RUNNER_TEMP/evidence/staging.txt"
+          } | tee "$RUNNER_TEMP/evidence/candidate-staging.txt"
 
       - name: Publish validated native install cache
         if: steps.native.outputs.cache_state == 'miss'
@@ -525,11 +589,11 @@ jobs:
           test -f "$final/manifest.txt"
           echo "published validated native install cache"
 
-      - name: Upload staged companion module
+      - name: Upload production candidate companion module
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: unix-native-staging-${{ matrix.slug }}
-          path: ${{ runner.temp }}/staging/${{ matrix.slug }}
+          name: unix-native-candidate-${{ matrix.slug }}
+          path: ${{ runner.temp }}/candidate/${{ matrix.slug }}
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
