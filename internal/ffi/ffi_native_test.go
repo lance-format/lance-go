@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 package ffi
 
@@ -19,7 +19,7 @@ func requireLibrary(t *testing.T) *bindings {
 
 	b, err := load()
 	if errors.Is(err, loader.ErrNotFound) {
-		t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built liblance_c")
+		t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built lance-c library")
 	}
 	if err != nil {
 		t.Fatalf("load and bind lance-c: %v", err)

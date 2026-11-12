@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || windows
 
 package lance_test
 
@@ -20,7 +20,7 @@ func newManagedDirectory(t *testing.T) (namespace.Namespace, string) {
 	root := t.TempDir()
 	ns, err := namespace.NewDirectory(map[string]string{"root": root})
 	if errors.Is(err, loader.ErrNotFound) {
-		t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built liblance_c")
+		t.Skip("lance-c is not available; set LANCE_LIB_PATH to a built lance-c library")
 	}
 	if err != nil {
 		t.Fatalf("new directory namespace: %v", err)
