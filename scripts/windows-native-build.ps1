@@ -694,7 +694,7 @@ function Assert-DelayImportDirectory {
 
 function Get-NativeImports {
 	param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$LogPath)
-	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/imports", $Path) -LogPath $LogPath -Label "dumpbin /imports"
+	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/imports", $Path) -LogPath $LogPath -Label "dumpbin /imports" | Out-Host
 	return Read-NativeImports -Lines (Get-Content -LiteralPath $LogPath)
 }
 
