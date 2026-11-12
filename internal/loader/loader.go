@@ -24,8 +24,8 @@
 //
 // The loader package does not embed a bundle itself: generated per-platform
 // artifact modules and the selector files that register them are supplied by
-// the module that imports this package. This module ships its linux/amd64
-// selector in internal/bundled, which every public entry point blank-imports;
+// the module that imports this package. This module ships its platform
+// selectors in internal/bundled, which every public entry point blank-imports;
 // without a selector for the running target, the default build uses the system
 // loader.
 //
