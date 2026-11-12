@@ -95,7 +95,7 @@ $script:ExportCount = "n/a"
 $script:PublicExportCount = "n/a"
 $script:DependencyExportCount = "n/a"
 $script:HeaderCount = "n/a"
-$script:Dependencies = "n/a"
+$script:DependencySummary = "n/a"
 $script:BundledDependencies = "not run"
 $script:GoTestResult = "not run"
 $script:ConsumerResult = "not run"
@@ -189,7 +189,7 @@ function Write-Summary {
 		"| PE machine | $script:PeMachine |",
 		"| Header symbols / public exports | $script:HeaderCount / $script:PublicExportCount |",
 		"| Total / dependency exports | $script:ExportCount / $script:DependencyExportCount |",
-		"| DLL dependencies | $script:Dependencies |",
+		"| DLL dependencies | $script:DependencySummary |",
 		"| Bundled dependencies | $script:BundledDependencies |",
 		"| Hosted-only non-OS dependencies | $script:HostedDependencies |",
 		"| Production eligibility | $script:ProductionEligibility |",
@@ -1119,7 +1119,7 @@ try {
 	if ($dependencies.Count -eq 0) {
 		throw "dumpbin /dependents found no dependency list for $stagedDll"
 	}
-	$script:Dependencies = $dependencies -join ", "
+	$script:DependencySummary = $dependencies -join ", "
 	$dependencies | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependencies.txt")
 
 	$script:Step = "runtime-dependencies"
