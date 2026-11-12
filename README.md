@@ -31,7 +31,9 @@ the pinned upstream source with the runner-native MSVC toolchain and target
 `windows-11-vs2026-arm`), stages the DLL, MSVC import library and public
 headers, checks the PE machine, PE32+ format, derived exported `lance_*` symbols
 and staged dependencies, and runs a native C consumer plus the Go
-external-library tests. The pinned `protoc` win64 executable is a build-time
+external-library tests. The public `lance_*` export set must exactly match the
+pinned header. Additional dependency exports are recorded separately; this lane
+does not establish their removal. The pinned `protoc` win64 executable is a build-time
 tool only; on arm64 it may run under OS emulation and is not part of the DLL,
 consumer, or Go runtime evidence. This lane does not publish a Go module or
 release artifact. The arm64 matrix entry was added but has not been executed in

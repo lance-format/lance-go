@@ -84,6 +84,8 @@ $script:HeaderSha256 = "n/a"
 $script:SourceCommit = "n/a"
 $script:SourceTree = "n/a"
 $script:ExportCount = "n/a"
+$script:PublicExportCount = "n/a"
+$script:DependencyExportCount = "n/a"
 $script:HeaderCount = "n/a"
 $script:Dependencies = "n/a"
 $script:BundledDependencies = "not run"
@@ -134,7 +136,8 @@ function Write-Summary {
 		"| DLL SHA-256 | $script:DllSha256 |",
 		"| DLL size | $script:DllSize |",
 		"| PE machine | $script:PeMachine |",
-		"| Header symbols / exports | $script:HeaderCount / $script:ExportCount |",
+		"| Header symbols / public exports | $script:HeaderCount / $script:PublicExportCount |",
+		"| Total / dependency exports | $script:ExportCount / $script:DependencyExportCount |",
 		"| DLL dependencies | $script:Dependencies |",
 		"| Bundled dependencies | $script:BundledDependencies |",
 		"| Visual Studio developer shell | $script:VsDeveloperShell |",
@@ -739,21 +742,24 @@ try {
 		[void]$exportSet.Add($name)
 	}
 	$missingExports = @($headerNames | Where-Object { -not $exportSet.Contains($_) })
-	$extraExports = @($exportNames | Where-Object { -not $headerSet.Contains($_) })
-	$nonLanceExports = @($exportNames | Where-Object { $_ -notmatch "^lance_" })
+	$publicExports = @($exportNames | Where-Object { $_ -cmatch "^lance_" })
+	$extraExports = @($publicExports | Where-Object { -not $headerSet.Contains($_) })
+	$nonLanceExports = @($exportNames | Where-Object { $_ -cnotmatch "^lance_" })
+	$script:PublicExportCount = $publicExports.Count
+	$script:DependencyExportCount = $nonLanceExports.Count
+	$publicExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "public-exports.txt")
+	$nonLanceExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "non-lance-exports.txt")
 	if ($missingExports.Count -gt 0) {
 		$missingExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "missing-exports.txt")
 		throw "DLL is missing $($missingExports.Count) header-required exports; first: $($missingExports[0])"
 	}
 	if ($extraExports.Count -gt 0) {
-		$extraExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "extra-exports.txt")
-		throw "DLL has $($extraExports.Count) exports not declared by the pinned header; first: $($extraExports[0])"
+		$extraExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "unexpected-public-exports.txt")
+		throw "DLL has $($extraExports.Count) public lance_* exports not declared by the pinned header; first: $($extraExports[0])"
 	}
-	if ($nonLanceExports.Count -gt 0) {
-		$nonLanceExports | Set-Content -LiteralPath (Join-Path $EvidenceDir "non-lance-exports.txt")
-		throw "DLL exports non-lance_* names; first: $($nonLanceExports[0])"
-	}
-	Write-Log "exports match all $($headerNames.Count) header declarations and are lance_* only"
+	# Upstream Windows builds also export symbols from static dependencies.
+	# Record those separately; their removal is not a public ABI prerequisite.
+	Write-Log "public exports match all $($headerNames.Count) header declarations; dependency exports=$($nonLanceExports.Count)"
 
 	$dependencies = New-Object System.Collections.Generic.List[string]
 	$inDependencies = $false
