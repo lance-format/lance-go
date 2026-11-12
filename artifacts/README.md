@@ -153,8 +153,11 @@ Windows remains `BLOCKED` and has no published module or selector.
 
 A bundle is fetched through the normal Go module proxy when a default build for
 a published Unix target compiles its artifact package. This is not a
-zero-download installation. Commands that load all modules, including
-`go mod tidy`, may download archives that the final build does not embed.
+zero-download installation. Commands that load all modules, including `go get`
+and `go mod tidy`, may download every companion archive because Go can load
+packages for all build tags. The public-consumer lane records that installation
+set separately, then measures each default and namespace target build from
+fresh empty caches.
 
 ## Public-consumer acceptance
 
@@ -162,10 +165,12 @@ zero-download installation. Commands that load all modules, including
 public proxy and builds standalone default, namespace-only, and external
 consumers on one native runner. It verifies the root archive and source tree,
 the artifact selected by the built binary, payload and extracted-library bytes,
-safe cache modes, and the roundtrip output. It records the ordinary target
-build's module-cache downloads instead of claiming that only one artifact
-archive can ever be fetched. The four hosted matrix entries are Linux and
-macOS on amd64 and arm64. The lane is public-distribution acceptance, not a
+safe cache modes, and the roundtrip output. It records the complete `go get`
+download set against the root module graph, then requires each default and
+namespace target build to fetch only the selected artifact payload archive from
+fresh empty caches. External target downloads are recorded without a
+zero-download claim. The four hosted matrix entries are Linux and macOS on
+amd64 and arm64. The lane is public-distribution acceptance, not a
 native rebuild or a full runtime regression. See
 [scripts/public-consumer/README.md](../scripts/public-consumer/README.md).
 
@@ -359,12 +364,15 @@ Independent default/external consumers were previously accepted with the
 of this updated native payload. The integrated Go native/race/checkptr, fresh-bundle and public consumer gates
 must run against this revision before delivery.
 
-In the earlier consumer checks, `go get` downloaded the artifact archive before
-the target build in both modes. External mode is not a zero-download contract.
-Those checks used one target, so they do not establish archive selection across
-a multi-platform release. The new public-consumer lane records the archive set
-actually downloaded on each runner; broad multi-platform runtime acceptance
-still requires its hosted results. Broader glibc/musl coverage, Linux arm64 and
+In the earlier consumer checks, `go get` downloaded every companion artifact
+archive before the target build; `go get` loads packages for all build tags, so
+that is installation behavior, not target selection. External mode is not a
+zero-download contract. Those checks used one target, so they do not establish
+archive selection across a multi-platform release. The public-consumer lane
+records installation and each fresh-cache target build separately; default and
+namespace target builds must fetch only the selected archive, while external
+target downloads are recorded without that assertion. Broad multi-platform
+runtime acceptance still requires hosted results. Broader glibc/musl coverage, Linux arm64 and
 macOS cold runtime acceptance for the published companions, Windows module
 publication and selector activation, and hosted Windows cold-cache loading
 remain pending.

@@ -399,10 +399,12 @@ go version -m "$CONSUMER_WORK/consumer-external"
 
 The external tag excludes the selector, `bundle.go`, `cache.go`,
 `lock_unix.go`, the decompression path, and the artifact package from the
-compiled dependency graph and embedding. It does not remove the artifact from
-`go.mod` or the module graph; `go get` and module-graph commands may still
-download the archive. This is not a zero-download contract. Confirm the built
-binary and its runtime do not use the bundle: `go version -m` must not list the
+compiled dependency graph and embedding. It does not remove the artifact
+modules from `go.mod` or the module graph; `go get` and module-graph commands
+may still download every companion archive. This is not a zero-download
+contract. A target build with the external tag is measured separately from
+`go get` and is not asserted to fetch zero archives. Confirm the built binary
+and its runtime do not use the bundle: `go version -m` must not list the
 artifact module, and no extraction directory should appear.
 
 ### Public-consumer acceptance
@@ -428,10 +430,13 @@ bash scripts/public-consumer/run.sh
 
 `ROOT_REVISION` is passed through the environment, never interpolated into
 shell code. The driver refuses an existing `<os.UserCacheDir>/lance-go` cache,
-uses separate module/build caches for each consumer mode, and moves aside only
-the SDK cache it produced. It records ordinary target build downloads rather
-than assuming that only one artifact archive can ever be fetched. The evidence
-directory contains compact logs and JSON manifests, not module or build caches.
+uses separate install/get and target-build module and build caches for each
+consumer mode, and moves aside only the SDK cache it produced. It records the
+complete `go get` download set against the root module graph, then requires
+each default and namespace target build to fetch exactly the selected artifact
+payload archive from fresh empty caches. External target downloads are recorded
+without a zero-download claim. The evidence directory contains compact logs and
+JSON manifests, not module or build caches.
 See [scripts/public-consumer/README.md](scripts/public-consumer/README.md) for
 the full checks and limits. This lane is public-distribution acceptance, not a
 full runtime regression.

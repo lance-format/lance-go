@@ -17,8 +17,11 @@ Published Unix artifact modules now exist for `linux/amd64`, `linux/arm64`,
 Default builds for these targets load their verified compressed `lance-c`
 payload after unpacking it into the user cache. The payload is a normal Go
 module dependency, so building or testing fetches it through the Go module
-proxy; it is not a download-free installation. Windows remains `BLOCKED`, and
-other targets still need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
+proxy; it is not a download-free installation. `go get` can download all four
+companion archives because it resolves packages for all build tags; a
+fresh-cache default target build is expected to fetch only the selected one.
+Windows remains `BLOCKED`, and other targets still need an explicit
+`LANCE_LIB_PATH` or a system `liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion

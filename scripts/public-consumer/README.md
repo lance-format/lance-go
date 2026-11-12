@@ -43,23 +43,38 @@ library names are in the workflow.
   and the source pin. The selected artifact is derived from the built binary,
   not hardcoded.
 - Default consumer: no `LANCE_LIB_PATH`, a cold SDK runtime cache, a standalone
-  build from the public module, and the literal roundtrip result
-  `Created, reopened and scanned 3 rows: [10 20 30]`. Exactly one unpacked
+  build from the public module using a fresh empty target module and build
+  cache, and the literal roundtrip result
+  `Created, reopened and scanned 3 rows: [10 20 30]`. The target build must
+  download exactly the selected artifact payload archive. Exactly one unpacked
   library is expected, with the published size, SHA-256, and safe modes.
 - Namespace-only consumer: the root package is absent from `go list -deps`; the
   namespace package is present and runs `ID`, `ListNamespaces`, and `Close`.
-- External consumer: built with `-tags lance_external_lib`, no artifact
-  package, embedded payload, or extraction, using an absolute
-  `LANCE_LIB_PATH` copied from the verified default library. Artifact module
-  downloads that still occur are recorded; external is not a zero-download
-  contract.
+  Its target build also starts from fresh empty caches and must fetch only the
+  selected artifact payload archive.
+- External consumer: built with `-tags lance_external_lib` from its own fresh
+  empty target caches, with no artifact package, embedded payload, or
+  extraction, using an absolute `LANCE_LIB_PATH` copied from the verified
+  default library. Artifact payload downloads observed in its target stage are
+  recorded; external is not a zero-download contract and no zero-archive rule
+  is asserted for it.
+- The ordinary `go get` path is real, not simulated. It runs in a separate
+  install/get cache and may download every companion artifact archive because
+  it loads packages for all build tags. The driver records that complete set
+  and requires it to match the root module graph; those downloads are not
+  attributed to the target build.
 
 All Go commands use `CGO_ENABLED=0`, `GOTOOLCHAIN=local`, `GOENV=off`,
 `GOWORK=off`, `GOPROXY=https://proxy.golang.org`, and
-`GOSUMDB=sum.golang.org`. Default, namespace, and external stages have separate
-module and build caches. The driver records `go.mod` downloads and archive
-availability in `module-cache-inventory.tsv`; it does not run `go mod tidy`
-before observing the ordinary build.
+`GOSUMDB=sum.golang.org`. Each consumer mode has separate install/get and
+target-build module and build caches. Root resolution and `go get` run in the
+get caches. Immediately before the target build, the target module and build
+caches are rechecked empty; the build cannot reuse setup downloads. The
+consumer `go.mod` and `go.sum` produced by `go get` are hashed, then checked
+unchanged after target build and target dependency work. The driver records
+stage-labeled snapshots in `module-cache-inventory.tsv`; it does not run
+`go mod tidy`/`go mod verify`, subtract warm setup downloads, copy module
+bytes, or prime the target caches.
 
 The runtime cache root is obtained by running a small Go program that calls
 `os.UserCacheDir` under `XDG_CACHE_HOME`, because macOS ignores that variable
@@ -79,6 +94,8 @@ A passing run is evidence for one public-consumer path at one exact revision;
 it is not a full runtime regression, a native rebuild, a release, or support
 for an unpublished platform. The native source version remains the packaging
 claim recorded in artifact metadata; no runtime version symbol is invented.
-`go mod tidy` and module-graph commands may download other artifact archives;
-this lane records and checks what the ordinary target paths actually download
-instead of claiming a general only-target download rule.
+`go mod tidy`, `go get`, and other module-graph commands may download every
+companion artifact archive because Go can load packages for all build tags.
+This lane records those installation downloads separately and asserts the
+selected-archive boundary only for the default and namespace target builds. It
+makes no zero-download claim for `go get` or external mode.
