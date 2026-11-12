@@ -1083,6 +1083,9 @@ record external_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache external absent
 snapshot external/target-final "$EXT_TARGET_MODCACHE"
 
+# Extracted Go module directories are read-only. Restore directory write access
+# only after the cache and payload checks, so the owned work tree can be removed.
+find "$WORK" -type d -exec chmod u+w {} +
 rm -rf "$WORK"
 record result PASS
 record completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
