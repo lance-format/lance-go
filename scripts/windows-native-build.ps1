@@ -666,7 +666,7 @@ try {
 
 	$dllPe = Assert-NativePe -Path $stagedDll -Label "staged lance_c.dll"
 	$script:PeMachine = "$($script:PeMachineLabel) (0x{0:X4})" -f $dllPe.Machine
-	$manifestPeMachine = "pe_machine=0x{0:X4}" -f $dllPe.Machine
+	$manifestPeMachine = "0x{0:X4}" -f $dllPe.Machine
 
 	$manifest = @(
 		"architecture=$Architecture",
