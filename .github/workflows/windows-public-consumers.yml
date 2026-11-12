@@ -100,7 +100,10 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python scripts/public-consumer/verify_test.py -v
+          $python = Get-Command python -ErrorAction SilentlyContinue
+          if (-not $python) { $python = Get-Command python3 -ErrorAction SilentlyContinue }
+          if (-not $python) { throw 'python or python3 is required' }
+          & $python.Source scripts/public-consumer/verify_test.py -v
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           pwsh -NoProfile -File ./scripts/public-consumer/windows-harness-test.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
