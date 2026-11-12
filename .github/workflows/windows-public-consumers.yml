@@ -75,7 +75,6 @@ jobs:
       EXPECTED_OS_NAME: ${{ matrix.os_name }}
       ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
       SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-      EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
     steps:
       - name: Disable Git line-ending conversion
         shell: pwsh
@@ -107,6 +106,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Run Windows public-consumer acceptance
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
         shell: pwsh
         run: ./scripts/public-consumer/run-windows.ps1
 
