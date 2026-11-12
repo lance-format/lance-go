@@ -1,0 +1,611 @@
+# Native build and test matrix for the Unix targets lance-c publishes.
+#
+# This workflow builds the exact pinned lance-c source on each native runner,
+# tests the Go bindings against the resulting shared library, and stages a
+# stripped production candidate outside the checkout. It does not publish or
+# accept the candidate, activate a selector, or create a release. See
+# artifacts/README.md for the publication gates that remain outside CI.
+name: Unix native
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - artifacts/**
+      - scripts/build-lance-c.sh
+      - scripts/lance-c-cache.sh
+      - scripts/check-native-library.sh
+      - scripts/strip-native-library.sh
+      - scripts/check-abi-symbols.go
+      - scripts/sync-lance-c.sh
+      - scripts/sync-lance-c-gen/**
+      - scripts/verify-lance-c-artifact/**
+      - scripts/internal/artifactgen/**
+      - .github/workflows/unix-native.yml
+  pull_request:
+    paths:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - artifacts/**
+      - scripts/build-lance-c.sh
+      - scripts/lance-c-cache.sh
+      - scripts/check-native-library.sh
+      - scripts/strip-native-library.sh
+      - scripts/check-abi-symbols.go
+      - scripts/sync-lance-c.sh
+      - scripts/sync-lance-c-gen/**
+      - scripts/verify-lance-c-artifact/**
+      - scripts/internal/artifactgen/**
+      - .github/workflows/unix-native.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  GOTOOLCHAIN: local
+  PROTOC_VERSION: "21.12"
+
+jobs:
+  native:
+    name: Native ${{ matrix.slug }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-amd64
+            runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            uname: x86_64
+            library_name: liblance_c.so
+            jobs: "4"
+            protoc_archive: protoc-21.12-linux-x86_64.zip
+            protoc_sha256: 3a4c1e5f2516c639d3079b1586e703fc7bcfa2136d58bda24d1d54f949c315e8
+          - slug: linux-arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            uname: aarch64
+            library_name: liblance_c.so
+            jobs: "4"
+            protoc_archive: protoc-21.12-linux-aarch_64.zip
+            protoc_sha256: 2dd17f75d66a682640b136e31848da9fb2eefe68d55303baf8b32617374f6711
+          - slug: darwin-amd64
+            runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            uname: x86_64
+            library_name: liblance_c.dylib
+            jobs: "3"
+            protoc_archive: protoc-21.12-osx-x86_64.zip
+            protoc_sha256: 9448ff40278504a7ae5139bb70c962acc78c32d8fc54b4890a55c14c68b9d10a
+          - slug: darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            uname: arm64
+            library_name: liblance_c.dylib
+            jobs: "2"
+            protoc_archive: protoc-21.12-osx-aarch_64.zip
+            protoc_sha256: 96839af0caed64352442fc8236f4bdf7c1cd6efcfaa98fa5db37307a73fc7c70
+    env:
+      CGO_ENABLED: "0"
+      TARGET: ${{ matrix.goos }}/${{ matrix.goarch }}
+      TARGET_GOOS: ${{ matrix.goos }}
+      TARGET_GOARCH: ${{ matrix.goarch }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Rust stable
+        id: rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-16
+        with:
+          toolchain: stable
+
+      - name: Record runner and target
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/evidence"
+          {
+            echo "target: $TARGET"
+            echo "runner_os: $RUNNER_OS"
+            echo "runner_arch: $RUNNER_ARCH"
+            echo "runner_image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+            echo "uname: $(uname -srm)"
+            echo "go_version: $(go version)"
+            echo "repository: $GITHUB_REPOSITORY"
+            echo "repository_commit: $GITHUB_SHA"
+            echo "workflow_run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } | tee "$RUNNER_TEMP/evidence/platform.txt"
+          if [[ $RUNNER_OS == macOS ]]; then
+            sw_vers | sed 's/^/sw_vers: /' | tee -a "$RUNNER_TEMP/evidence/platform.txt"
+          else
+            ldd --version | head -n 1 | sed 's/^/ldd: /' | tee -a "$RUNNER_TEMP/evidence/platform.txt"
+          fi
+
+      - name: Assert the runner matches the matrix target
+        run: |
+          set -euo pipefail
+          actual_uname=$(uname -m)
+          actual_goos=$(go env GOOS)
+          actual_goarch=$(go env GOARCH)
+          if [[ $actual_uname != "${{ matrix.uname }}" ]]; then
+            echo "runner uname -m is $actual_uname, matrix expects ${{ matrix.uname }}" >&2
+            exit 1
+          fi
+          if [[ $actual_goos != "$TARGET_GOOS" || $actual_goarch != "$TARGET_GOARCH" ]]; then
+            echo "Go toolchain is $actual_goos/$actual_goarch, matrix expects $TARGET" >&2
+            exit 1
+          fi
+          echo "native target $TARGET on $actual_uname"
+
+      - name: Record run provenance
+        run: |
+          set -euo pipefail
+          facts="$RUNNER_TEMP/lance-c-build-provenance.txt"
+          {
+            echo "repository_commit: $GITHUB_SHA"
+            echo "workflow_run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "runner: $(uname -srm)"
+            echo "runner_image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+            echo "rustc: $(rustc --version)"
+            echo "cargo: $(cargo --version)"
+          } | tee "$facts"
+
+      - name: Compute native build input digest
+        id: inputs
+        run: |
+          set -euo pipefail
+          rust_cachekey='${{ steps.rust.outputs.cachekey }}'
+          if [[ -z $rust_cachekey ]]; then
+            echo "Rust toolchain cache key is empty" >&2
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            hash_files() { sha256sum "$@"; }
+            hash_stdin() { sha256sum; }
+          else
+            hash_files() { shasum -a 256 "$@"; }
+            hash_stdin() { shasum -a 256; }
+          fi
+          digest=$({
+            hash_files internal/ffi/upstream.go scripts/build-lance-c.sh scripts/lance-c-cache.sh
+            printf 'protoc: %s %s %s\n' "$PROTOC_VERSION" "${{ matrix.protoc_archive }}" "${{ matrix.protoc_sha256 }}"
+            printf 'runner_image: %s %s\n' "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+          } | hash_stdin | awk '{print $1}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "rust_cachekey=$rust_cachekey" >> "$GITHUB_OUTPUT"
+
+      - name: Restore validated native install cache
+        id: install-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Exact key only: a different pin, toolchain, or runner image is never reused.
+          path: ${{ runner.temp }}/lance-c-install-cache
+          key: lance-c-unix-native-install-v1${{ runner.os }}-${{ runner.arch }}-${{ matrix.slug }}-rust-${{ steps.inputs.outputs.rust_cachekey }}-${{ steps.inputs.outputs.digest }}
+
+      - name: Install pinned protoc
+        if: steps.install-cache.outputs.cache-hit != 'true'
+        env:
+          PROTOC_ARCHIVE: ${{ matrix.protoc_archive }}
+          PROTOC_SHA256: ${{ matrix.protoc_sha256 }}
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/$PROTOC_ARCHIVE"
+          protoc_dir="$RUNNER_TEMP/protoc"
+          curl --fail --silent --show-error --location --retry 3 \
+            --connect-timeout 15 --max-time 180 \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v$PROTOC_VERSION/$PROTOC_ARCHIVE" \
+            --output "$archive"
+          if command -v sha256sum >/dev/null 2>&1; then
+            actual_sha=$(sha256sum "$archive" | awk '{print $1}')
+          else
+            actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
+          fi
+          if [[ $actual_sha != "$PROTOC_SHA256" ]]; then
+            echo "protoc archive sha256 is $actual_sha, want $PROTOC_SHA256" >&2
+            exit 1
+          fi
+          unzip -q "$archive" -d "$protoc_dir"
+          echo "$protoc_dir/bin" >> "$GITHUB_PATH"
+          {
+            echo "PROTOC=$protoc_dir/bin/protoc"
+            echo "PROTOC_INCLUDE=$protoc_dir/include"
+          } >> "$GITHUB_ENV"
+          "$protoc_dir/bin/protoc" --version
+
+      - name: Cache native source and Cargo downloads
+        if: steps.install-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/lance-c-build/src
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: lance-c-unix-native-src-v1${{ runner.os }}-${{ matrix.slug }}-${{ steps.inputs.outputs.digest }}
+          restore-keys: |
+            lance-c-unix-native-src-v1${{ runner.os }}-${{ matrix.slug }}-
+
+      - name: Verify native build prerequisites
+        if: steps.install-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          rustc --version
+          cmake --version | head -n 1
+          awk -v version="$(rustc --version | awk '{print $2}')" 'BEGIN {
+            split(version, v, ".")
+            if (v[1] < 1 || (v[1] == 1 && v[2] < 94)) {
+              printf "rustc %s is older than the required 1.94.0\n", version
+              exit 1
+            }
+          }'
+          awk -v version="$(cmake --version | awk 'NR == 1 {print $3}')" 'BEGIN {
+            split(version, v, ".")
+            if (v[1] < 3 || (v[1] == 3 && v[2] < 22)) {
+              printf "cmake %s is older than the required 3.22\n", version
+              exit 1
+            }
+          }'
+          for tool in cc c++ clang make; do
+            command -v "$tool"
+          done
+          if [[ $RUNNER_OS == Linux ]]; then
+            command -v pkg-config
+            pkg-config --modversion openssl
+          else
+            xcrun --show-sdk-path
+            sw_vers
+          fi
+          test "$(protoc --version)" = "libprotoc 3.21.12"
+          test -f "$PROTOC_INCLUDE/google/protobuf/descriptor.proto"
+          test -f "$PROTOC_INCLUDE/google/protobuf/timestamp.proto"
+          {
+            echo "cmake: $(cmake --version | head -n 1)"
+            echo "cc: $(cc --version | head -n 1)"
+            echo "protoc: $(protoc --version)"
+            echo "protoc_archive_sha256: ${{ matrix.protoc_sha256 }}"
+          } | tee -a "$RUNNER_TEMP/lance-c-build-provenance.txt"
+
+      - name: Build pinned lance-c
+        if: steps.install-cache.outputs.cache-hit != 'true'
+        env:
+          LANCE_C_WORK_DIR: ${{ runner.temp }}/lance-c-build
+          JOBS: ${{ matrix.jobs }}
+        run: |
+          set -euo pipefail
+          pinned_commit=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
+          if [[ ! $pinned_commit =~ ^[0-9a-f]{40}$ ]]; then
+            echo "upstreamCommit must identify one exact native commit" >&2
+            exit 1
+          fi
+          ./scripts/build-lance-c.sh --out "$RUNNER_TEMP/lance-c-install"
+          source_commit=$(git -C "$RUNNER_TEMP/lance-c-build/src" rev-parse HEAD)
+          if [[ $source_commit != "$pinned_commit" ]]; then
+            echo "built $source_commit, pin is $pinned_commit" >&2
+            exit 1
+          fi
+          modifications=$(git -C "$RUNNER_TEMP/lance-c-build/src" status --porcelain --untracked-files=no)
+          if [[ -n $modifications ]]; then
+            printf '%s\n' "$modifications" >&2
+            echo "the build modified tracked files in the pinned source tree" >&2
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            cargo_lock_sha=$(sha256sum "$RUNNER_TEMP/lance-c-build/src/Cargo.lock" | awk '{print $1}')
+          else
+            cargo_lock_sha=$(shasum -a 256 "$RUNNER_TEMP/lance-c-build/src/Cargo.lock" | awk '{print $1}')
+          fi
+          {
+            echo "source_commit: $source_commit"
+            echo "cargo_lock_sha256: $cargo_lock_sha"
+          } | tee -a "$RUNNER_TEMP/lance-c-build-provenance.txt"
+
+      - name: Resolve validated native install
+        id: native
+        env:
+          LANCE_C_CACHE_KEY: lance-c-unix-native-install-v1${{ runner.os }}-${{ runner.arch }}-${{ matrix.slug }}-rust-${{ steps.inputs.outputs.rust_cachekey }}-${{ steps.inputs.outputs.digest }}
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/lance-c-install-cache"
+          write_cache="$RUNNER_TEMP/lance-c-cache-staging"
+          cache_hit='${{ steps.install-cache.outputs.cache-hit }}'
+          paths="$RUNNER_TEMP/lance-c-cache-paths.txt"
+          if [[ $cache_hit == true ]]; then
+            cache_state=hit
+            built_in_this_run=false
+            ./scripts/lance-c-cache.sh verify \
+              --cache "$cache" \
+              --cache-key "$LANCE_C_CACHE_KEY" > "$paths"
+          else
+            cache_state=miss
+            built_in_this_run=true
+            ./scripts/lance-c-cache.sh write \
+              --install "$RUNNER_TEMP/lance-c-install" \
+              --cache "$write_cache" \
+              --provenance "$RUNNER_TEMP/lance-c-build-provenance.txt" \
+              --cache-key "$LANCE_C_CACHE_KEY" > "$paths"
+            cache="$write_cache"
+          fi
+          library="$(sed -n 's/^library=//p' "$paths")"
+          header="$(sed -n 's/^header=//p' "$paths")"
+          native_commit="$(sed -n 's/^commit=//p' "$paths")"
+          if [[ -z $library || -z $header || -z $native_commit ]]; then
+            echo "cache validation did not report the library, header, and commit" >&2
+            exit 1
+          fi
+          echo "library=$library" >> "$GITHUB_OUTPUT"
+          echo "header=$header" >> "$GITHUB_OUTPUT"
+          echo "commit=$native_commit" >> "$GITHUB_OUTPUT"
+          echo "cache_state=$cache_state" >> "$GITHUB_OUTPUT"
+          cp "$cache/build-provenance.txt" "$RUNNER_TEMP/evidence/build-provenance.txt"
+          {
+            echo "cache: $cache_state"
+            echo "built_in_this_run: $built_in_this_run"
+            echo "cache_key: $LANCE_C_CACHE_KEY"
+            echo "lance_c_commit: $native_commit"
+            echo "lance_c_library: $library"
+            if command -v sha256sum >/dev/null 2>&1; then
+              echo "lance_c_library_sha256: $(sha256sum "$library" | awk '{print $1}')"
+              echo "lance_c_header_sha256: $(sha256sum "$header" | awk '{print $1}')"
+            else
+              echo "lance_c_library_sha256: $(shasum -a 256 "$library" | awk '{print $1}')"
+              echo "lance_c_header_sha256: $(shasum -a 256 "$header" | awk '{print $1}')"
+            fi
+            echo "manifest:"
+            sed 's/^/  /' "$cache/manifest.txt"
+          } | tee "$RUNNER_TEMP/evidence/native-install.txt"
+
+      - name: Validate native library identity and dependencies
+        env:
+          LANCE_LIBRARY: ${{ steps.native.outputs.library }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+        run: |
+          set -euo pipefail
+          ./scripts/check-native-library.sh \
+            --library "$LANCE_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" | tee "$RUNNER_TEMP/evidence/native-library.txt"
+
+      - name: Check ABI against installed header
+        env:
+          LANCE_C_HEADER: ${{ steps.native.outputs.header }}
+        run: |
+          set -euo pipefail
+          go run ./scripts/check-abi-symbols.go 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
+
+      - name: Test default build against installed library
+        env:
+          LANCE_LIB_PATH: ${{ steps.native.outputs.library }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/evidence/test-default.log"
+          go test ./... -count=1 -v 2>&1 | tee "$log"
+          for test in \
+            TestLoadRealLibrary \
+            TestLoadConcurrentSingleInstance \
+            TestNativeErrorSemantics \
+            TestOpenDatasetReportsNativeErrors \
+            TestCreateReopenMetadataAndScan \
+            TestWriteEmptyDatasetAndSlicedNullableBatch \
+            TestExportStreamBorrowsReaderBatch; do
+            if ! grep -Fq -- "--- PASS: $test " "$log"; then
+              echo "required native test $test did not pass" >&2
+              exit 1
+            fi
+          done
+          if grep -Fq -- '--- SKIP:' "$log"; then
+            grep -F -- '--- SKIP:' "$log" >&2
+            echo "native tests skipped even though the library was supplied" >&2
+            exit 1
+          fi
+
+      - name: Test external bundle against installed library
+        env:
+          LANCE_LIB_PATH: ${{ steps.native.outputs.library }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/evidence/test-external.log"
+          go test -tags lance_external_lib ./... -count=1 -v 2>&1 | tee "$log"
+          for test in \
+            TestLoadRealLibrary \
+            TestLoadConcurrentSingleInstance \
+            TestNativeErrorSemantics \
+            TestOpenDatasetReportsNativeErrors \
+            TestCreateReopenMetadataAndScan \
+            TestWriteEmptyDatasetAndSlicedNullableBatch \
+            TestExportStreamBorrowsReaderBatch; do
+            if ! grep -Fq -- "--- PASS: $test " "$log"; then
+              echo "required native test $test did not pass with lance_external_lib" >&2
+              exit 1
+            fi
+          done
+          if grep -Fq -- '--- SKIP:' "$log"; then
+            grep -F -- '--- SKIP:' "$log" >&2
+            echo "external-tag native tests skipped even though the library was supplied" >&2
+            exit 1
+          fi
+
+      - name: Test external bundle with race detector
+        env:
+          CGO_ENABLED: "1"
+          LANCE_LIB_PATH: ${{ steps.native.outputs.library }}
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/evidence/test-race.log"
+          go test -race -tags lance_external_lib ./... -count=1 -v 2>&1 | tee "$log"
+          for test in \
+            TestLoadRealLibrary \
+            TestLoadConcurrentSingleInstance \
+            TestNativeErrorSemantics \
+            TestOpenDatasetReportsNativeErrors \
+            TestCreateReopenMetadataAndScan \
+            TestWriteEmptyDatasetAndSlicedNullableBatch \
+            TestExportStreamBorrowsReaderBatch; do
+            if ! grep -Fq -- "--- PASS: $test " "$log"; then
+              echo "required native test $test did not pass under the race detector" >&2
+              exit 1
+            fi
+          done
+          if grep -Fq -- '--- SKIP:' "$log"; then
+            grep -F -- '--- SKIP:' "$log" >&2
+            echo "race native tests skipped even though the library was supplied" >&2
+            exit 1
+          fi
+
+      - name: Prepare stripped production library
+        env:
+          LANCE_LIBRARY: ${{ steps.native.outputs.library }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+        run: |
+          set -euo pipefail
+          ./scripts/strip-native-library.sh \
+            --library "$LANCE_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" \
+            --out "$RUNNER_TEMP/production/${{ matrix.slug }}" \
+            | tee "$RUNNER_TEMP/evidence/production-library.txt"
+
+      - name: Validate stripped production library
+        env:
+          LANCE_STRIPPED_LIBRARY: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+        run: |
+          set -euo pipefail
+          test -f "$LANCE_STRIPPED_LIBRARY"
+          ./scripts/check-native-library.sh \
+            --library "$LANCE_STRIPPED_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" \
+            | tee "$RUNNER_TEMP/evidence/production-library-check.txt"
+
+      - name: Round-trip the stripped production library
+        env:
+          CGO_ENABLED: "0"
+          LANCE_LIB_PATH: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+        run: |
+          set -euo pipefail
+          [[ -n ${LANCE_LIB_PATH:-} && -f $LANCE_LIB_PATH ]] || {
+            echo "stripped LANCE_LIB_PATH is missing: ${LANCE_LIB_PATH:-unset}" >&2
+            exit 1
+          }
+          log="$RUNNER_TEMP/evidence/stripped-roundtrip.log"
+          go run -tags lance_external_lib ./examples/roundtrip 2>&1 | tee "$log"
+          grep -Fqx 'Created, reopened and scanned 3 rows: [10 20 30]' "$log"
+
+      - name: Stage production-path candidate companion module
+        env:
+          LANCE_LIBRARY: ${{ steps.native.outputs.library }}
+          LANCE_STRIPPED_LIBRARY: ${{ runner.temp }}/production/${{ matrix.slug }}/library/${{ matrix.library_name }}
+          LANCE_HEADER: ${{ steps.native.outputs.header }}
+          CANDIDATE_ROOT: ${{ runner.temp }}/candidate/${{ matrix.slug }}
+          MODULE_PATH: github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}
+        run: |
+          set -euo pipefail
+          expected_module_path="github.com/lance-format/lance-go/artifacts/${TARGET//\//-}"
+          [[ $MODULE_PATH == "$expected_module_path" ]] || {
+            echo "candidate module path $MODULE_PATH does not match $expected_module_path" >&2
+            exit 1
+          }
+          test -f "$LANCE_STRIPPED_LIBRARY"
+          ./scripts/sync-lance-c.sh \
+            --library "$LANCE_STRIPPED_LIBRARY" \
+            --header "$LANCE_HEADER" \
+            --target "$TARGET" \
+            --module-path "$MODULE_PATH" \
+            --out "$CANDIDATE_ROOT"
+          selector="$CANDIDATE_ROOT/selector/lance_bundle_${TARGET_GOOS}_${TARGET_GOARCH}.go"
+          test -f "$selector"
+          test -f "$CANDIDATE_ROOT/module/go.mod"
+          test -f "$CANDIDATE_ROOT/module/artifact.go"
+          grep -Fq "//go:build !lance_external_lib && $TARGET_GOOS && $TARGET_GOARCH" "$selector"
+          grep -Fq "\"$MODULE_PATH\"" "$selector"
+          go run ./scripts/verify-lance-c-artifact \
+            -module "$CANDIDATE_ROOT/module" \
+            -library "$LANCE_STRIPPED_LIBRARY" \
+            -target "$TARGET" \
+            -module-path "$MODULE_PATH" | tee "$RUNNER_TEMP/evidence/artifact-verification.txt"
+          stripped_sha=$(sed -n 's/^stripped_library_sha256=//p' "$RUNNER_TEMP/evidence/production-library.txt")
+          [[ -n $stripped_sha ]] || {
+            echo "stripped library hash is missing from production evidence" >&2
+            exit 1
+          }
+          grep -Fqx "library_sha256=$stripped_sha" "$RUNNER_TEMP/evidence/production-library-check.txt"
+          grep -Fqx "library_sha256=$stripped_sha" "$RUNNER_TEMP/evidence/artifact-verification.txt"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git status --porcelain >&2
+            echo "candidate staging changed the checkout; selectors must not be activated by this workflow" >&2
+            exit 1
+          fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            selector_sha=$(sha256sum "$selector" | awk '{print $1}')
+          else
+            selector_sha=$(shasum -a 256 "$selector" | awk '{print $1}')
+          fi
+          {
+            echo "candidate_root: $CANDIDATE_ROOT"
+            echo "module_path: $MODULE_PATH"
+            echo "candidate_status: unpublished"
+            echo "source_library: $LANCE_LIBRARY"
+            echo "stripped_library: $LANCE_STRIPPED_LIBRARY"
+            echo "stripped_library_sha256: $stripped_sha"
+            echo "module_files:"
+            find "$CANDIDATE_ROOT/module" -maxdepth 1 -type f -print | sort |
+              while IFS= read -r file; do
+                printf '  %s %s\n' "$(wc -c < "$file" | tr -d ' ')" "$(basename "$file")"
+              done
+            echo "selector: $(basename "$selector")"
+            echo "selector_sha256: $selector_sha"
+            echo "selector_activated: false"
+          } | tee "$RUNNER_TEMP/evidence/candidate-staging.txt"
+
+      - name: Publish validated native install cache
+        if: steps.native.outputs.cache_state == 'miss'
+        run: |
+          set -euo pipefail
+          final="$RUNNER_TEMP/lance-c-install-cache"
+          rm -rf "$final"
+          mv "$RUNNER_TEMP/lance-c-cache-staging" "$final"
+          test -f "$final/manifest.txt"
+          echo "published validated native install cache"
+
+      - name: Upload production candidate companion module
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unix-native-candidate-${{ matrix.slug }}
+          path: ${{ runner.temp }}/candidate/${{ matrix.slug }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
+
+      - name: Upload native evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unix-native-evidence-${{ matrix.slug }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: ignore
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
