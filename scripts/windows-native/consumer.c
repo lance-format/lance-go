@@ -6,17 +6,21 @@
  * reopens it, scans it, verifies that a cloned handle outlives its source, and
  * checks thread-local error ownership. It also verifies that the DLL was
  * loaded from the supplied runtime directory rather than from a build tree or
- * a developer PATH entry.
+ * a developer PATH entry, and that no redistributable VC runtime module is
+ * loaded before or after native operations. Only the exact OS components
+ * msvcp_win.dll, msvcrt.dll, and ucrtbase.dll are accepted.
  */
 
 #define _CRT_SECURE_NO_WARNINGS
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include <tlhelp32.h>
 
 #include "lance/lance.h"
 
@@ -280,6 +284,112 @@ static void check_loaded_runtime(const char* runtime_dir) {
 	}
 }
 
+static int has_prefix(const char* value, const char* prefix) {
+	return strncmp(value, prefix, strlen(prefix)) == 0;
+}
+
+static int is_exact_os_crt_module(const char* name) {
+	char lower[512];
+	size_t i;
+
+	for (i = 0; name[i] != '\0' && i + 1 < sizeof(lower); i++) {
+		lower[i] = (char)tolower((unsigned char)name[i]);
+	}
+	lower[i] = '\0';
+	return strcmp(lower, "msvcp_win.dll") == 0 ||
+		strcmp(lower, "msvcrt.dll") == 0 ||
+		strcmp(lower, "ucrtbase.dll") == 0;
+}
+
+static int is_redistributable_crt_module(const char* name) {
+	char lower[512];
+	size_t i;
+
+	if (is_exact_os_crt_module(name)) {
+		return 0;
+	}
+	for (i = 0; name[i] != '\0' && i + 1 < sizeof(lower); i++) {
+		lower[i] = (char)tolower((unsigned char)name[i]);
+	}
+	lower[i] = '\0';
+	/* Match Get-DependencyClass; only the exact OS CRT names above are allowed. */
+	return has_prefix(lower, "vcruntime") ||
+		has_prefix(lower, "concrt") ||
+		has_prefix(lower, "vcomp") ||
+		has_prefix(lower, "vccorlib") ||
+		has_prefix(lower, "mfc") ||
+		has_prefix(lower, "msvcp") ||
+		has_prefix(lower, "msvcr") ||
+		has_prefix(lower, "ucrtbase") ||
+		has_prefix(lower, "vcamp") ||
+		has_prefix(lower, "atl") ||
+		has_prefix(lower, "msvcirt");
+}
+
+static void check_crt_modules(const char* phase) {
+	HANDLE snapshot;
+	/* Toolhelp's ANSI declarations are unsuffixed; there are no A variants. */
+	MODULEENTRY32 entry;
+	char os_names[8][256];
+	char joined[2048];
+	int os_count = 0;
+	int redist_count = 0;
+	int index;
+
+	snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32,
+		GetCurrentProcessId());
+	if (snapshot == INVALID_HANDLE_VALUE) {
+		fprintf(stderr, "FAIL: %s: CreateToolhelp32Snapshot failed: %lu\n",
+			phase, (unsigned long)GetLastError());
+		failures++;
+		return;
+	}
+
+	memset(&entry, 0, sizeof(entry));
+	entry.dwSize = (DWORD)sizeof(entry);
+	if (Module32First(snapshot, &entry)) {
+		do {
+			if (is_redistributable_crt_module(entry.szModule)) {
+				fprintf(stderr,
+					"FAIL: %s: redistributable CRT module loaded: %s (%s)\n",
+					phase, entry.szModule, entry.szExePath);
+				failures++;
+				redist_count++;
+			} else if (is_exact_os_crt_module(entry.szModule)) {
+				int duplicate = 0;
+				for (index = 0; index < os_count; index++) {
+					if (_stricmp(os_names[index], entry.szModule) == 0) {
+						duplicate = 1;
+						break;
+					}
+				}
+				if (!duplicate && os_count < (int)(sizeof(os_names) / sizeof(os_names[0]))) {
+					snprintf(os_names[os_count], sizeof(os_names[0]), "%s", entry.szModule);
+					os_count++;
+				}
+			}
+		} while (Module32Next(snapshot, &entry));
+	} else {
+		fprintf(stderr, "FAIL: %s: Module32First failed: %lu\n",
+			phase, (unsigned long)GetLastError());
+		failures++;
+	}
+	CloseHandle(snapshot);
+
+	joined[0] = '\0';
+	for (index = 0; index < os_count; index++) {
+		if (index > 0) {
+			strncat(joined, ",", sizeof(joined) - strlen(joined) - 1);
+		}
+		strncat(joined, os_names[index], sizeof(joined) - strlen(joined) - 1);
+	}
+	printf("loaded_crt_modules_%s=%s\n", phase, os_count > 0 ? joined : "none");
+	printf("redistributable_crt_modules_%s=%s\n", phase, redist_count > 0 ? "found" : "none");
+	if (redist_count == 0) {
+		printf("PASS: %s loaded CRT module guard\n", phase);
+	}
+}
+
 static int check_rows(LanceDataset* dataset, uint64_t want, const char* what) {
 	uint64_t rows = lance_dataset_count_rows(dataset);
 	if (!check_native_ok(what)) {
@@ -447,6 +557,10 @@ int main(int argc, char** argv) {
 	if (failures != 0) {
 		return 1;
 	}
+	check_crt_modules("before");
+	if (failures != 0) {
+		return 1;
+	}
 
 	if (!require(fill_schema(&schema) == 0, "cannot allocate input schema")) {
 		return 1;
@@ -553,6 +667,11 @@ int main(int argc, char** argv) {
 		printf("PASS: error ownership code=%d message=%s\n", (int)code, copy);
 	}
 
+	if (failures != 0) {
+		fprintf(stderr, "FAIL: %d native consumer check(s) failed\n", failures);
+		return 1;
+	}
+	check_crt_modules("after");
 	if (failures != 0) {
 		fprintf(stderr, "FAIL: %d native consumer check(s) failed\n", failures);
 		return 1;

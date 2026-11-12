@@ -20,8 +20,9 @@ module dependency, so building or testing fetches it through the Go module
 proxy; it is not a download-free installation. `go get` can download all four
 companion archives because it resolves packages for all build tags; a
 fresh-cache default target build is expected to fetch only the selected one.
-Windows remains `BLOCKED`, and other targets still need an explicit
-`LANCE_LIB_PATH` or a system `liblance_c`.
+Windows companion candidates have passed native validation but are not yet
+published or activated. Windows and other unsupported bundle targets still
+need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion
@@ -38,37 +39,53 @@ cache and Arrow callback unit tests on `windows-2022`. The separate
 evidence build for Windows amd64 and Windows arm64. Each matrix entry compiles
 the pinned upstream source with the runner-native MSVC toolchain and target
 (`x86_64-pc-windows-msvc` on `windows-2022`, `aarch64-pc-windows-msvc` on
-`windows-11-vs2026-arm`), stages the DLL, MSVC import library and public
-headers, checks the PE machine, PE32+ format, derived exported `lance_*` symbols
-and staged dependencies, and runs a native C consumer plus the full Go SDK
-suite against the staged DLL: the external tag at `CGO_ENABLED=0`, the default
-tag with the DLL supplied through `LANCE_LIB_PATH`, and, on amd64, a `CGO 1`
-`-race` lane with the host gcc. The full suites enable Go's pointer checks,
-and they fail on any skipped or failing test. The public `lance_*` export set
-must exactly match the
+`windows-11-vs2026-arm`) with a static CRT. The lane sets
+`CARGO_ENCODED_RUSTFLAGS` to include `-Ctarget-feature=+crt-static`, preserving
+flags from the first active source among `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`,
+and `CARGO_BUILD_RUSTFLAGS`. It records the effective configuration; per-target
+environment and Cargo config-file flags are overridden without being audited. Cargo exposes that
+target feature to native build scripts, so `cc` and AWS-LC select the static
+CRT for their C objects. The lane stages the DLL, MSVC import library and
+public headers, checks the PE machine, PE32+ format, derived exported `lance_*`
+symbols, direct and delay-load imports, and staged dependencies, and runs a
+native C consumer built with `/MT` plus the full Go SDK suite against the
+staged DLL: the external tag at `CGO_ENABLED=0`, the default tag with the DLL
+supplied through `LANCE_LIB_PATH`, and, on amd64, a `CGO 1` `-race` lane with
+the host gcc. The consumer rejects redistributable CRT modules before and
+after native operations; only the exact OS components `msvcp_win.dll`,
+`msvcrt.dll`, and `ucrtbase.dll` are accepted. The full suites enable Go's
+pointer checks, and they fail on any skipped or failing test. The public
+`lance_*` export set must exactly match the
 pinned header. Additional dependency exports are recorded separately; this lane
 does not establish their removal. The pinned `protoc` win64 executable is a build-time
 tool only; on arm64 it may run under OS emulation and is not part of the DLL,
 consumer, or Go runtime evidence.
 
 After those native gates pass, the lane evaluates the actual DLL dependency
-closure by module name. An OS-only closure produces an unpublished companion
-candidate at `artifacts/windows-<arch>`; the shared verifier checks provenance,
-payload bytes and layout, and an external-tag roundtrip uses the exact staged
-DLL. The candidate is uploaded separately from native evidence. A
-redistributable or unclassified dependency blocks the candidate explicitly
-after native evidence. In particular, the captured native DLL imports
+closure by module name. Direct and delay-load imports are both classified. An
+OS-only closure produces an unpublished companion candidate at
+`artifacts/windows-<arch>`; the shared verifier checks provenance, payload bytes
+and layout, and an external-tag roundtrip uses the exact staged DLL. The
+candidate is uploaded separately from native evidence. A redistributable or
+unclassified import blocks the candidate explicitly after native evidence. In
+earlier evidence for the pinned ac263 source, the native DLL imported
 `VCRUNTIME140.dll`, a separately deployed VC Runtime that happens to exist in
 the hosted `System32`; its presence there is not OS-only availability. Upstream
 [#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
 deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
-tracks dependency exports and is distinct. No Windows module is published, no
-selector is activated, and no module requirement is added. Native test success
-does not establish a cold default, cold external, or public consumer, zero-config distribution, or
-a supported Windows release. Full supplied-library SDK suites have passed on
-both Windows architectures; static-CRT candidate acceptance and Windows
-publication remain pending. The Unix public-consumer lane and its cache
-boundaries are described in
+tracks dependency exports and is distinct. Hosted ac263 static-CRT builds for
+both Windows architectures passed the C consumer, full external and
+supplied-library default SDK suites, and candidate verification at `c8373c9`
+([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
+The amd64 race/checkptr lane also passed; Go does not support Windows arm64
+race builds. Both DLLs have OS-only direct imports, no delay-load imports, and
+passed the loaded-module CRT guard and supplied-library roundtrip.
+
+The verified candidates remain unpublished. No Windows selector is activated
+and no Windows module requirement is added. This evidence does not establish
+cold default, cold external or public consumer acceptance, zero-config
+distribution, or a supported Windows release.
+The Unix public-consumer lane and its cache boundaries are described in
 [scripts/public-consumer/README.md](scripts/public-consumer/README.md).
 Remaining API parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
@@ -1128,12 +1145,15 @@ commands, the measurement contract and the limits of RSS evidence.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
-workflow builds the pinned DLL on windows/amd64 and windows/arm64 and runs the
-full external-tag and default-tag suites against it, requiring every test to
-pass without skips. On windows/amd64 it also runs the full external-tag suite
-with `-race`; the Go race detector has no windows/arm64 support, so that lane is
-recorded as unsupported rather than skipped. CI still does not publish a Windows
-binary or establish a cold default Windows bundle.
+workflow builds the pinned DLL with a static CRT on windows/amd64 and
+windows/arm64 and runs the full external-tag and default-tag suites against it,
+requiring every test to pass without skips. It also classifies direct and
+delay-load imports and runs a `/MT` native consumer that rejects redistributable
+CRT modules before and after native operations. On windows/amd64 it also runs
+the full external-tag suite with `-race`; the Go race detector has no
+windows/arm64 support, so that lane is recorded as unsupported rather than
+skipped. CI still does not publish a Windows binary or establish a cold default
+Windows bundle.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,

@@ -118,6 +118,10 @@ $script:PayloadSha256 = "n/a"
 $script:HostedDependencies = "not evaluated"
 $script:DependencyRecords = @()
 $script:ProductionGateBlocked = $false
+$script:StaticCrtConfig = "not applied"
+$script:CrtImportClosure = "not evaluated"
+$script:CrtLoadedModules = "not evaluated"
+$script:DelayDependencySummary = "n/a"
 
 # Reviewed OS-only Windows components. Membership is by module name, never by
 # the directory where a hosted runner happens to find the file. UCRT api-set
@@ -134,6 +138,9 @@ $script:OsOnlyDependencies = @(
 	"iphlpapi.dll",
 	"kernel32.dll",
 	"kernelbase.dll",
+	# Upstream lance-c 335dbac README names msvcp_win.dll, msvcrt.dll, and
+	# ucrtbase.dll as exact OS components permitted in the static-CRT closure.
+	"msvcp_win.dll",
 	"msvcrt.dll",
 	"ntdll.dll",
 	"ole32.dll",
@@ -194,6 +201,10 @@ function Write-Summary {
 		"| Header symbols / public exports | $script:HeaderCount / $script:PublicExportCount |",
 		"| Total / dependency exports | $script:ExportCount / $script:DependencyExportCount |",
 		"| DLL dependencies | $script:DependencySummary |",
+		"| Delay-load dependencies | $script:DelayDependencySummary |",
+		"| Static CRT compiler config | $script:StaticCrtConfig |",
+		"| Direct and delay-load import closure | $script:CrtImportClosure |",
+		"| Loaded CRT modules (consumer guard) | $script:CrtLoadedModules |",
 		"| Bundled dependencies | $script:BundledDependencies |",
 		"| Hosted-only non-OS dependencies | $script:HostedDependencies |",
 		"| Production eligibility | $script:ProductionEligibility |",
@@ -214,7 +225,9 @@ function Write-Summary {
 		"The pinned protoc win64 executable is a build-time tool only. On arm64 it may run under OS emulation; it is not linked into the DLL and is not part of the C consumer or Go runtime evidence.",
 		"The native C consumer and the full Go SDK suites are evidence for the staged DLL. The default-tag suite supplies the DLL through LANCE_LIB_PATH and is not a cold default bundle. These runs do not establish a cold external or public consumer, or a supported distribution.",
 		"A generated Windows companion is an unpublished CI candidate only. No selector is activated, no module requirement is added, and no module is published.",
-		"The single-DLL companion requires an OS-only dependency closure. A redistributable or unclassified dependency blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS."
+		"The single-DLL companion requires an OS-only dependency closure. Direct and delay-load imports are classified by module name. A redistributable or unclassified import blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS.",
+		"The DLL is built with '-Ctarget-feature=+crt-static' through CARGO_ENCODED_RUSTFLAGS. Inherited flags are merged and restored; an inherited '-crt-static' is rejected rather than overridden. The native C consumer is built with '/MT' and rejects redistributable CRT modules before and after native operations, allowing only the exact OS components msvcp_win.dll, msvcrt.dll, and ucrtbase.dll.",
+		"The static-CRT compiler configuration is source-inspected and recorded here; it does not claim that the pinned ac263 build has passed a hosted static-CRT run."
 	)
 	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "summary.md")
 	if (-not [string]::IsNullOrEmpty($env:GITHUB_STEP_SUMMARY)) {
@@ -438,6 +451,19 @@ function Get-PeProvenanceInfo {
 		$debugDirectoryPresent = $false
 		$debugEntries = New-Object System.Collections.Generic.List[object]
 		$dataDirectoryOffset = [int64]$peOffset + 24 + 112
+		$delayImportDirectoryPresent = $false
+		if ($numberOfRvaAndSizes -ge 14) {
+			if ($optionalHeaderSize -lt (112 + 14 * 8)) {
+				throw "$Path optional header does not contain its declared delay-import directory"
+			}
+			$stream.Position = $dataDirectoryOffset + (13 * 8)
+			$delayRva = $reader.ReadUInt32()
+			$delaySize = $reader.ReadUInt32()
+			if (($delayRva -eq 0) -ne ($delaySize -eq 0)) {
+				throw "$Path has inconsistent delay-import directory RVA and size"
+			}
+			$delayImportDirectoryPresent = $delayRva -ne 0
+		}
 		$debugDirectoryOffset = $dataDirectoryOffset + (6 * 8)
 		if ($numberOfRvaAndSizes -ge 7) {
 			if ($optionalHeaderSize -lt (112 + 7 * 8)) {
@@ -516,6 +542,7 @@ function Get-PeProvenanceInfo {
 			Sections = $sections.ToArray()
 			DebugSections = [object[]]$debugSections
 			PdataSection = $pdata
+			DelayImportDirectoryPresent = $delayImportDirectoryPresent
 			DebugDirectoryPresent = $debugDirectoryPresent
 			DebugEntries = $debugEntries.ToArray()
 		}
@@ -533,10 +560,164 @@ function Get-DependencyClass {
 	if ($script:OsOnlyDependencies -contains $lower) {
 		return "system"
 	}
-	if ($lower -match "^(vcruntime[0-9_]*d?|msvcp[0-9_]*d?|msvcr[0-9]+d?|concrt[0-9_]*d?|vcomp[0-9_]*d?|vccorlib[0-9_]*d?|ucrtbased|mfc[0-9]+u?d?|mfcm[0-9]+u?d?)\.dll$") {
+	# Match the conservative family guard in consumer.c; exact OS names above win.
+	if ($lower -match "^(vcruntime|msvcp|msvcr|concrt|vcomp|vccorlib|ucrtbase|mfc|vcamp|atl|msvcirt).*\.dll$") {
 		return "redistributable"
 	}
 	return "unclassified"
+}
+
+# Cargo gives CARGO_ENCODED_RUSTFLAGS precedence over RUSTFLAGS and target or
+# build config rustflags. Preserve the first active environment source among
+# CARGO_ENCODED_RUSTFLAGS, RUSTFLAGS, and CARGO_BUILD_RUSTFLAGS, then add
+# the static-CRT target feature. Reject -crt-static in that selected source.
+# Per-target environment and Cargo config-file flags are overridden by the
+# encoded flags; this helper does not claim to audit those lower-priority sources.
+#
+# The pinned ac263 source needs no patch for this: when static_crt is unset,
+# cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE, which Cargo derives from
+# rustc --print=cfg with these rustflags. Upstream 335dbac documents the same
+# direct-Cargo contract for its Windows build.
+function Get-StaticCrtRustFlags {
+	param([string]$EncodedRustFlags, [string]$RustFlags, [string]$BuildRustFlags)
+	$tokens = New-Object System.Collections.Generic.List[string]
+	$source = "none"
+	if (-not [string]::IsNullOrEmpty($EncodedRustFlags)) {
+		$source = "CARGO_ENCODED_RUSTFLAGS"
+		foreach ($token in $EncodedRustFlags.Split([char]0x1F)) {
+			if ($token.Length -gt 0) {
+				$tokens.Add($token)
+			}
+		}
+	} elseif (-not [string]::IsNullOrWhiteSpace($RustFlags)) {
+		$source = "RUSTFLAGS"
+		foreach ($token in ($RustFlags -split " ")) {
+			if ($token.Length -gt 0) {
+				$tokens.Add($token)
+			}
+		}
+	} elseif (-not [string]::IsNullOrWhiteSpace($BuildRustFlags)) {
+		$source = "CARGO_BUILD_RUSTFLAGS"
+		foreach ($token in ($BuildRustFlags -split " ")) {
+			if ($token.Length -gt 0) {
+				$tokens.Add($token)
+			}
+		}
+	}
+	$joined = $tokens -join " "
+	$hasStatic = $false
+	foreach ($match in [regex]::Matches($joined, "(?:^|\s)-C\s*target-feature\s*=\s*([^\s]+)")) {
+		foreach ($feature in $match.Groups[1].Value.Split(",")) {
+			if ($feature -eq "-crt-static") {
+				throw "inherited $source flags disable crt-static; refusing to override an explicit compiler configuration"
+			}
+			if ($feature -eq "+crt-static") {
+				$hasStatic = $true
+			}
+		}
+	}
+	$inherited = @($tokens)
+	if (-not $hasStatic) {
+		$tokens.Add("-Ctarget-feature=+crt-static")
+	}
+	return [pscustomobject]@{
+		Source = $source
+		InheritedFlags = ($inherited -join " ")
+		EffectiveFlags = ($tokens -join " ")
+		Encoded = ($tokens -join ([string][char]0x1F))
+	}
+}
+
+function Set-StaticCrtBuildEnvironment {
+	param([Parameter(Mandatory = $true)]$Plan)
+	$oldEncoded = [Environment]::GetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", "Process")
+	$oldRustFlags = [Environment]::GetEnvironmentVariable("RUSTFLAGS", "Process")
+	[Environment]::SetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", $Plan.Encoded, "Process")
+	# Cargo prefers the encoded variable, but clearing RUSTFLAGS avoids leaving
+	# a shadowed RUSTFLAGS record in the child environment. Other lower-priority
+	# variables remain unchanged and are ignored by Cargo while encoded is set.
+	[Environment]::SetEnvironmentVariable("RUSTFLAGS", $null, "Process")
+	return [pscustomobject]@{
+		OldEncoded = $oldEncoded
+		OldRustFlags = $oldRustFlags
+	}
+}
+
+function Restore-StaticCrtBuildEnvironment {
+	param([Parameter(Mandatory = $true)]$Saved)
+	[Environment]::SetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", $Saved.OldEncoded, "Process")
+	[Environment]::SetEnvironmentVariable("RUSTFLAGS", $Saved.OldRustFlags, "Process")
+}
+
+# dumpbin /imports separates the normal import directory from the delay-load
+# import directory. Both are part of the runtime closure; only the normal
+# directory appears in /dependents.
+function Read-NativeImports {
+	param([string[]]$Lines)
+	$direct = New-Object System.Collections.Generic.List[string]
+	$delay = New-Object System.Collections.Generic.List[string]
+	$section = $null
+	foreach ($line in $Lines) {
+		if ($line -match "^\s*Section contains the following (delay[- ]load )?imports:\s*$") {
+			$section = if ($Matches[1]) { "delay" } else { "direct" }
+			continue
+		}
+		if ($line -match "^\s*Section contains the following") {
+			$section = $null
+			continue
+		}
+		if ($null -eq $section) {
+			continue
+		}
+		if ($line -match "^\s{4,}([A-Za-z0-9_.-]+\.dll)\s*$") {
+			if ($section -eq "delay") {
+				$delay.Add($Matches[1])
+			} else {
+				$direct.Add($Matches[1])
+			}
+		}
+	}
+	return [pscustomobject]@{
+		Direct = @($direct | Sort-Object -Unique)
+		Delay = @($delay | Sort-Object -Unique)
+	}
+}
+
+# Compare the parser with the PE directory so an unrecognized dumpbin section
+# cannot turn a nonempty delay-import directory into an empty dependency list.
+function Assert-DelayImportDirectory {
+	param([bool]$Present, [AllowEmptyCollection()][string[]]$Names)
+	if ($Present -ne (@($Names).Count -gt 0)) {
+		throw "dumpbin delay imports disagree with the PE delay-import directory"
+	}
+}
+
+function Get-NativeImports {
+	param([Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$LogPath)
+	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/imports", $Path) -LogPath $LogPath -Label "dumpbin /imports" | Out-Host
+	return Read-NativeImports -Lines (Get-Content -LiteralPath $LogPath)
+}
+
+function Read-PeDependents {
+	param([string[]]$Lines)
+	$dependencies = New-Object System.Collections.Generic.List[string]
+	$inDependencies = $false
+	foreach ($line in $Lines) {
+		if ($line -match "Image has the following dependencies") {
+			$inDependencies = $true
+			continue
+		}
+		if (-not $inDependencies) {
+			continue
+		}
+		if ($line -match "^\s*Summary") {
+			break
+		}
+		if ($line -match "^\s*([A-Za-z0-9_.-]+\.dll)\s*$") {
+			$dependencies.Add($Matches[1])
+		}
+	}
+	return @($dependencies | Sort-Object -Unique)
 }
 
 function Get-ProductionEligibility {
@@ -563,13 +744,13 @@ function Write-ProductionEligibility {
 		$lines += "blocking=none"
 	} else {
 		foreach ($record in $blocking) {
-			$lines += "blocking_dependency=$($record.Name) class=$($record.Class) reason=$($record.Reason)"
+			$lines += "blocking_dependency=$($record.Name) class=$($record.Class) kind=$($record.Kind) reason=$($record.Reason)"
 		}
 	}
 	$lines += @(
 		"hosted_only_non_os=$script:HostedDependencies",
 		"issue_215=https://github.com/lance-format/lance-c/issues/215",
-		"issue_215_scope=supported Windows deployment contract is unresolved",
+		"issue_215_scope=supported Windows deployment contract; downstream eligibility is evaluated from this build",
 		"issue_214=https://github.com/lance-format/lance-c/issues/214",
 		"issue_214_scope=dependency export inventory is distinct from runtime availability",
 		"candidate_status=$CandidateStatus"
@@ -972,6 +1153,29 @@ try {
 	Write-Log "Cargo.lock sha256=$cargoLockSha"
 
 	$script:Step = "cargo-build"
+	$cargoBuildRustFlags = [Environment]::GetEnvironmentVariable("CARGO_BUILD_RUSTFLAGS", "Process")
+	$staticCrt = Get-StaticCrtRustFlags -EncodedRustFlags $env:CARGO_ENCODED_RUSTFLAGS -RustFlags $env:RUSTFLAGS -BuildRustFlags $cargoBuildRustFlags
+	$savedStaticCrtEnv = Set-StaticCrtBuildEnvironment -Plan $staticCrt
+	$script:StaticCrtConfig = $staticCrt.EffectiveFlags
+	if ([string]::IsNullOrEmpty($cargoBuildRustFlags)) {
+		$cargoBuildRustFlags = "<unset>"
+	}
+	$staticCrtLines = @(
+		"static_crt_flag=-Ctarget-feature=+crt-static",
+		"inherited_source=$($staticCrt.Source)",
+		"inherited_flags=$($staticCrt.InheritedFlags)",
+		"effective_flags=$($staticCrt.EffectiveFlags)",
+		"cargo_encoded_rustflags=$($staticCrt.Encoded.Replace([string][char]0x1F, '<US>'))",
+		"cargo_precedence=CARGO_ENCODED_RUSTFLAGS over RUSTFLAGS, target/build config rustflags, and CARGO_BUILD_RUSTFLAGS",
+		"cargo_build_rustflags_env=$cargoBuildRustFlags",
+		"inherited_audit_scope=selected environment source only; per-target environment and Cargo config-file flags are overridden, not audited",
+		"source_contract=cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE for crt-static when static_crt is not set explicitly",
+		"upstream_contract_reference=https://github.com/lance-format/lance-c/blob/335dbacad90786a486ac69e7f9bf089ab63ea751/README.md",
+		"rustflags_env_cleared=true",
+		"restore_after_build=true"
+	)
+	$staticCrtLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "cargo-static-crt.txt")
+	Write-Log "static_crt_config=$($staticCrt.EffectiveFlags); inherited_source=$($staticCrt.Source)"
 	$targetRoot = Join-Path $WorkDir "target"
 	$env:CARGO_TARGET_DIR = $targetRoot
 	$targetDir = Join-Path $targetRoot "$($script:TargetTriple)\release"
@@ -981,6 +1185,7 @@ try {
 		Invoke-Logged -FilePath "cargo" -ArgumentList @("build", "--locked", "--release", "--lib", "--target", $script:TargetTriple) -LogPath $cargoLog -Label "cargo build --locked --release --lib --target $($script:TargetTriple)"
 	} finally {
 		Pop-Location
+		Restore-StaticCrtBuildEnvironment -Saved $savedStaticCrtEnv
 	}
 
 	$dll = Join-Path $targetDir "lance_c.dll"
@@ -1086,6 +1291,7 @@ try {
 		"pdata_section=$pdataText",
 		"pdb_reference=$pdbText",
 		"unix_strip_applied=false",
+		"static_crt_config=$script:StaticCrtConfig",
 		"import_library=lib/lance_c.dll.lib",
 		"protoc_version=$protocVersion",
 		"protoc_archive_sha256=$actualProtocSha",
@@ -1097,9 +1303,11 @@ try {
 	$headersLog = Join-Path $EvidenceDir "dumpbin-headers.txt"
 	$exportsLog = Join-Path $EvidenceDir "dumpbin-exports.txt"
 	$dependentsLog = Join-Path $EvidenceDir "dumpbin-dependents.txt"
+	$importsLog = Join-Path $EvidenceDir "dumpbin-imports.txt"
 	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/headers", $stagedDll) -LogPath $headersLog -Label "dumpbin /headers"
 	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/exports", $stagedDll) -LogPath $exportsLog -Label "dumpbin /exports"
 	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/dependents", $stagedDll) -LogPath $dependentsLog -Label "dumpbin /dependents"
+	$imports = Get-NativeImports -Path $stagedDll -LogPath $importsLog
 
 	$exportNames = New-Object System.Collections.Generic.List[string]
 	$inExports = $false
@@ -1164,29 +1372,28 @@ try {
 	# Record those separately; their removal is not a public ABI prerequisite.
 	Write-Log "public exports match all $($headerNames.Count) header declarations; dependency exports=$($nonLanceExports.Count)"
 
-	$dependencies = New-Object System.Collections.Generic.List[string]
-	$inDependencies = $false
-	foreach ($line in Get-Content -LiteralPath $dependentsLog) {
-		if ($line -match "Image has the following dependencies") {
-			$inDependencies = $true
-			continue
-		}
-		if (-not $inDependencies) {
-			continue
-		}
-		if ($line -match "^\s*Summary") {
-			break
-		}
-		if ($line -match "^\s*([A-Za-z0-9_.-]+\.dll)\s*$") {
-			$dependencies.Add($Matches[1])
-		}
-	}
-	$dependencies = @($dependencies | Sort-Object -Unique)
+	$dependencies = @(Read-PeDependents -Lines (Get-Content -LiteralPath $dependentsLog))
 	if ($dependencies.Count -eq 0) {
 		throw "dumpbin /dependents found no dependency list for $stagedDll"
 	}
+	if ($imports.Direct.Count -eq 0) {
+		throw "dumpbin /imports found no direct import list for $stagedDll"
+	}
+	$dependentKeys = @($dependencies | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object -Unique)
+	$importKeys = @($imports.Direct | ForEach-Object { $_.ToLowerInvariant() } | Sort-Object -Unique)
+	if (($dependentKeys -join "`n") -ne ($importKeys -join "`n")) {
+		$onlyDependents = @($dependencies | Where-Object { $importKeys -notcontains $_.ToLowerInvariant() })
+		$onlyImports = @($imports.Direct | Where-Object { $dependentKeys -notcontains $_.ToLowerInvariant() })
+		throw "dumpbin /imports direct imports do not match /dependents (only in dependents: $($onlyDependents -join ', '); only in imports: $($onlyImports -join ', '))"
+	}
+	Assert-DelayImportDirectory -Present $peFacts.DelayImportDirectoryPresent -Names $imports.Delay
+	"pe_delay_import_directory_present=$($peFacts.DelayImportDirectoryPresent)" |
+		Set-Content -LiteralPath (Join-Path $EvidenceDir "delay-import-directory.txt")
 	$script:DependencySummary = $dependencies -join ", "
 	$dependencies | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependencies.txt")
+	$imports.Direct | Set-Content -LiteralPath (Join-Path $EvidenceDir "imports.txt")
+	$imports.Delay | Set-Content -LiteralPath (Join-Path $EvidenceDir "delay-imports.txt")
+	Write-Log "direct imports=$($dependencies -join ', '); delay-load imports=$(if ($imports.Delay.Count -gt 0) { $imports.Delay -join ', ' } else { 'none' })"
 
 	$script:Step = "runtime-dependencies"
 	$runtimeDir = Join-Path $StageDir "runtime"
@@ -1273,6 +1480,7 @@ try {
 		$eligibleText = if ($eligible) { "true" } else { "false" }
 		$recordLines = @(
 			"dependency=$dependency",
+			"kind=direct",
 			"class=$class",
 			"resolution=$resolution",
 			"bundled=$bundledText",
@@ -1289,10 +1497,49 @@ try {
 			Bundled = $bundledHere
 			Eligible = $eligible
 			Reason = $reason
+			Kind = "direct"
 		})
 		# Persist each decision so a later staging failure still leaves the
 		# dependency classification available for review.
 		$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
+	}
+	# A delay-loaded DLL is not resolved by the loader at process start, but it is
+	# still part of the runtime closure and can introduce a redistributable CRT
+	# after the DLL has loaded. Classify it with the same fail-closed policy.
+	foreach ($delayDependency in $imports.Delay) {
+		$class = Get-DependencyClass -Name $delayDependency
+		$eligible = $class -in @("system", "system-apiset")
+		if ($eligible) {
+			$reason = "delay-load import of a reviewed OS component"
+		} else {
+			$reason = "delay-load import is not a reviewed OS component; a delay-loaded runtime can still be loaded after the DLL starts"
+		}
+		$eligibleText = if ($eligible) { "true" } else { "false" }
+		$recordLines = @(
+			"dependency=$delayDependency",
+			"kind=delay-import",
+			"class=$class",
+			"resolution=delay-import",
+			"bundled=false",
+			"eligible=$eligibleText",
+			"reason=$reason"
+		)
+		$dependencyInventory.Add(($recordLines -join "`n"))
+		$dependencyRecords.Add([pscustomobject]@{
+			Name = $delayDependency
+			Class = $class
+			Resolution = "delay-import"
+			Bundled = $false
+			Eligible = $eligible
+			Reason = $reason
+			Kind = "delay-import"
+		})
+		$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
+	}
+	if ($imports.Delay.Count -gt 0) {
+		$script:DelayDependencySummary = $imports.Delay -join ", "
+	} else {
+		$script:DelayDependencySummary = "none"
 	}
 	if ($bundled.Count -gt 0) {
 		$script:BundledDependencies = $bundled -join ", "
@@ -1308,8 +1555,23 @@ try {
 	$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
 	Write-Log "runtime dependencies: bundled=$script:BundledDependencies; hosted_non_os=$script:HostedDependencies"
 	foreach ($record in $script:DependencyRecords) {
-		Write-Log "dependency $($record.Name): class=$($record.Class) eligible=$($record.Eligible) resolution=$($record.Resolution)"
+		Write-Log "dependency $($record.Name): kind=$($record.Kind) class=$($record.Class) eligible=$($record.Eligible) resolution=$($record.Resolution)"
 	}
+	$nonOsImports = @($script:DependencyRecords | Where-Object { $_.Class -notin @("system", "system-apiset") })
+	if ($nonOsImports.Count -eq 0) {
+		$script:CrtImportClosure = "os-only: direct and delay-load imports are reviewed OS components"
+	} else {
+		$script:CrtImportClosure = "blocked: " + (($nonOsImports | ForEach-Object { "$($_.Name) [$($_.Kind):$($_.Class)]" }) -join ", ")
+	}
+	$closureLines = New-Object System.Collections.Generic.List[string]
+	$closureLines.Add("direct_imports=$(if ($dependencies.Count -gt 0) { $dependencies -join ', ' } else { 'none' })")
+	$closureLines.Add("delay_imports=$(if ($imports.Delay.Count -gt 0) { $imports.Delay -join ', ' } else { 'none' })")
+	foreach ($record in $script:DependencyRecords) {
+		$closureLines.Add("import=$($record.Name) kind=$($record.Kind) class=$($record.Class) eligible=$($record.Eligible.ToString().ToLowerInvariant())")
+	}
+	$closureLines.Add("import_closure=$script:CrtImportClosure")
+	$closureLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "import-closure.txt")
+	Write-Log "import closure: $script:CrtImportClosure"
 
 	$script:Step = "abi-checker"
 	$env:LANCE_C_HEADER = $stagedHeader
@@ -1333,7 +1595,7 @@ try {
 	Push-Location $consumerDir
 	try {
 		Invoke-Logged -FilePath "cl" -ArgumentList @(
-			"/nologo", "/W4", "/O2", "/MD", "/D_CRT_SECURE_NO_WARNINGS",
+			"/nologo", "/W4", "/O2", "/MT", "/D_CRT_SECURE_NO_WARNINGS",
 			"/I$StageDir\include",
 			"/Fe:$consumerExe",
 			$consumerSource,
@@ -1347,6 +1609,17 @@ try {
 		throw "native consumer executable was not produced at $consumerExe"
 	}
 	[void](Assert-NativePe -Path $consumerExe -Label "native consumer executable")
+	$consumerDependentsLog = Join-Path $EvidenceDir "consumer-dependents.txt"
+	Invoke-Logged -FilePath "dumpbin" -ArgumentList @("/nologo", "/dependents", $consumerExe) -LogPath $consumerDependentsLog -Label "dumpbin consumer /dependents"
+	$consumerDependencies = @(Read-PeDependents -Lines (Get-Content -LiteralPath $consumerDependentsLog))
+	if ($consumerDependencies.Count -eq 0) {
+		throw "dumpbin /dependents found no dependency list for the native consumer"
+	}
+	$consumerRedistributable = @($consumerDependencies | Where-Object { (Get-DependencyClass -Name $_) -eq "redistributable" })
+	if ($consumerRedistributable.Count -gt 0) {
+		throw "native consumer itself imports redistributable CRT modules: $($consumerRedistributable -join ', '); it must be built with /MT"
+	}
+	Write-Log "consumer imports=$($consumerDependencies -join ', '); consumer_redistributable_imports=none"
 
 	$datasetDir = Join-Path $WorkDir "data"
 	New-Item -ItemType Directory -Force -Path $datasetDir | Out-Null
@@ -1374,6 +1647,44 @@ try {
 	}
 	$loadedPath = $loadedLine.Substring("loaded_module=".Length)
 	Write-Log "consumer_loaded_module=$loadedPath"
+	$crtPhases = @{}
+	foreach ($line in Get-Content -LiteralPath $consumerLog) {
+		if ($line -match "^(loaded_crt_modules|redistributable_crt_modules)_(before|after)=(.*)$") {
+			$crtPhases["$($Matches[1])_$($Matches[2])"] = $Matches[3]
+		}
+	}
+	foreach ($phase in @("before", "after")) {
+		foreach ($prefix in @("loaded_crt_modules", "redistributable_crt_modules")) {
+			$key = "${prefix}_${phase}"
+			if (-not $crtPhases.ContainsKey($key)) {
+				throw "native consumer did not report $key"
+			}
+		}
+		if ($crtPhases["redistributable_crt_modules_$phase"] -ne "none") {
+			throw "native consumer reported a redistributable CRT module $phase native operation"
+		}
+	}
+	$script:CrtLoadedModules = "before=$($crtPhases['loaded_crt_modules_before']); after=$($crtPhases['loaded_crt_modules_after'])"
+	$crtContractLines = @(
+		"static_crt_config=$script:StaticCrtConfig",
+		"static_crt_env=CARGO_ENCODED_RUSTFLAGS",
+		"static_crt_source=$($staticCrt.Source)",
+		"inherited_rustflags=$($staticCrt.InheritedFlags)",
+		"direct_imports=$(if ($dependencies.Count -gt 0) { $dependencies -join ', ' } else { 'none' })",
+		"delay_imports=$(if ($imports.Delay.Count -gt 0) { $imports.Delay -join ', ' } else { 'none' })",
+		"direct_and_delay_import_closure=$script:CrtImportClosure",
+		"consumer_dependents=$($consumerDependencies -join ', ')",
+		"consumer_redistributable_imports=none",
+		"loaded_crt_modules_before=$($crtPhases['loaded_crt_modules_before'])",
+		"loaded_crt_modules_after=$($crtPhases['loaded_crt_modules_after'])",
+		"redistributable_crt_modules_before=none",
+		"redistributable_crt_modules_after=none",
+		"consumer_crt_guard=PASS",
+		"os_crt_allowlist=msvcp_win.dll,msvcrt.dll,ucrtbase.dll",
+		"crt_contract_scope=compiler configuration and native evidence only; not a supported distribution claim",
+		"issue_215=https://github.com/lance-format/lance-c/issues/215"
+	)
+	$crtContractLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "crt-contract.txt")
 	$script:ConsumerResult = "PASS"
 
 	$script:Step = "go-native-tests"
@@ -1749,6 +2060,9 @@ try {
 		"target=windows/$Architecture",
 		"library_sha256=$script:DllSha256",
 		"library_bytes=$script:DllSize",
+		"static_crt_config=$script:StaticCrtConfig",
+		"direct_and_delay_import_closure=$script:CrtImportClosure",
+		"loaded_module_crt_guard=PASS ($script:CrtLoadedModules)",
 		"payload_sha256=$payloadSha",
 		"payload_bytes=$payloadBytes",
 		"decompressed_sha256=$script:DllSha256",
