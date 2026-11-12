@@ -111,7 +111,8 @@ func (o *UpdatedFragmentOffsets) FragmentIDAt(index uint64) (uint64, error) {
 	return fragmentID, nil
 }
 
-// OffsetsAt returns every offset of one slot in native bitmap order.
+// OffsetsAt returns an owned copy of every offset of one slot in native bitmap
+// order.
 func (o *UpdatedFragmentOffsets) OffsetsAt(index uint64) ([]uint32, error) {
 	if o == nil || !o.res.acquire() {
 		return nil, closedError("updated fragment offsets offsets", "")
@@ -194,7 +195,8 @@ func (r *UpdateColumnsResult) FieldsModified() ([]uint32, error) {
 	return fields, nil
 }
 
-// MatchedOffsets returns matched physical row offsets in native order.
+// MatchedOffsets returns an owned copy of the matched physical row offsets in
+// native order.
 func (r *UpdateColumnsResult) MatchedOffsets() ([]uint32, error) {
 	if r == nil || !r.res.acquire() {
 		return nil, closedError("update columns matched offsets", r.uriOrEmpty())

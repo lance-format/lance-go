@@ -3,6 +3,7 @@ package lance_test
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 
@@ -184,7 +185,7 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	updateVersion := mutationVersion(t, reopened)
 	updateFragment := mustOpenFragment(t, reopened, 0)
 	result, err := updateFragment.UpdateColumns(ctx, makeReader(t, testSchema(),
-		makeRecord(t, testSchema(), []int64{1, 3}, []string{"x", "z"}, []bool{true, true})), "id", "id")
+		makeRecord(t, testSchema(), []int64{1, 3, 4}, []string{"x", "z", "w"}, []bool{true, true, true})), "id", "id")
 	if err != nil {
 		t.Fatalf("UpdateColumns: %v", err)
 	}
@@ -199,8 +200,8 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MatchedOffsets: %v", err)
 	}
-	if !equalUint32(matched, []uint32{0, 2}) {
-		t.Fatalf("matched offsets = %v, want [0 2]", matched)
+	if !equalUint32(matched, []uint32{0, 2, 3}) {
+		t.Fatalf("matched offsets = %v, want [0 2 3]", matched)
 	}
 	updatedFragment, err := result.Fragment()
 	if err != nil {
@@ -242,8 +243,8 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	if err != nil {
 		t.Fatalf("operation offset entries: %v", err)
 	}
-	if len(entries) != 1 || entries[0].FragmentID != 0 || !equalUint32(entries[0].Offsets, []uint32{0, 2}) {
-		t.Fatalf("operation offset entries = %+v, want fragment 0 [0 2]", entries)
+	if len(entries) != 1 || entries[0].FragmentID != 0 || !equalUint32(entries[0].Offsets, []uint32{0, 2, 3}) {
+		t.Fatalf("operation offset entries = %+v, want fragment 0 [0 2 3]", entries)
 	}
 	operationOffsets.Close()
 
@@ -303,9 +304,12 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	updatedFragment.Close()
 	offsets.Close()
 	result.Close()
+	if !equalUint32(matched, []uint32{0, 2, 3}) {
+		t.Fatalf("matched offsets after result close = %v, want [0 2 3]", matched)
+	}
 
 	reopened = openDataset(t, ctx, uri)
-	requireMutationRows(t, reopened, []int64{1, 2, 3, 4}, []string{"x", "b", "z", "d"})
+	requireMutationRows(t, reopened, []int64{1, 2, 3, 4}, []string{"x", "b", "z", "w"})
 
 	reopenedSchema = mustNativeSchema(t, reopened)
 	requireFieldID(t, reopenedSchema, "name", 1)
@@ -318,6 +322,163 @@ func TestFragmentMergeAndUpdatePublish(t *testing.T) {
 	if got := mutationVersion(t, dataset); got != baseVersion {
 		t.Fatalf("source version after update = %d, want %d", got, baseVersion)
 	}
+}
+
+func TestFragmentUpdateMatchedOffsetsMatchNativeOracle(t *testing.T) {
+	dataset, _, _ := newMutationDataset(t)
+	ctx := context.Background()
+	fragment := mustOpenFragment(t, dataset, 0)
+
+	keys := [][]int64{{1, 3, 4}, {1, 4}, {99}}
+	want := [][]uint32{{0, 2, 3}, {0, 3}, {}}
+	for i, ids := range keys {
+		names := make([]string, len(ids))
+		for j := range names {
+			names[j] = "updated"
+		}
+		valid := make([]bool, len(ids))
+		for j := range valid {
+			valid[j] = true
+		}
+		result, err := fragment.UpdateColumns(ctx, makeReader(t, testSchema(),
+			makeRecord(t, testSchema(), ids, names, valid)), "id", "id")
+		if err != nil {
+			t.Fatalf("UpdateColumns(%v): %v", ids, err)
+		}
+		updated, err := result.Fragment()
+		if err != nil {
+			t.Fatalf("UpdateColumns(%v) Fragment: %v", ids, err)
+		}
+		matched, err := result.MatchedOffsets()
+		if err != nil {
+			t.Fatalf("UpdateColumns(%v) MatchedOffsets: %v", ids, err)
+		}
+		result.Close()
+		updated.Close()
+		if matched == nil {
+			t.Fatalf("matched offsets for %v = nil, want a non-nil slice", ids)
+		}
+		if !equalUint32(matched, want[i]) {
+			t.Fatalf("matched offsets for %v after result close = %v, want %v", ids, matched, want[i])
+		}
+	}
+
+	requireMutationRows(t, dataset, []int64{1, 2, 3, 4}, []string{"a", "b", "c", "d"})
+}
+
+func TestUpdatedFragmentOffsetsReportOwnedNativeSetCopies(t *testing.T) {
+	requireNative(t)
+	dense := make([]uint32, 65_537)
+	for i := range dense {
+		dense[i] = uint32(i)
+	}
+	entries := []lance.FragmentOffsets{
+		{FragmentID: 10, Offsets: dense},
+		{FragmentID: 20, Offsets: []uint32{1, 65_535, 65_536, math.MaxUint32}},
+		{FragmentID: 30, Offsets: []uint32{7, 1, 7, 1}},
+		{FragmentID: 40},
+	}
+	want := map[uint64][]uint32{
+		10: dense,
+		20: {1, 65_535, 65_536, math.MaxUint32},
+		30: {1, 7},
+		40: {},
+	}
+
+	offsets, err := lance.NewUpdatedFragmentOffsets(entries)
+	if err != nil {
+		t.Fatalf("NewUpdatedFragmentOffsets: %v", err)
+	}
+	if count, err := offsets.Count(); err != nil {
+		t.Fatalf("Count: %v", err)
+	} else if count != uint64(len(entries)) {
+		t.Fatalf("entry count = %d, want %d", count, len(entries))
+	}
+
+	check := func(fragmentID uint64, got, expected []uint32) {
+		t.Helper()
+		if got == nil {
+			t.Fatalf("fragment %d offsets = nil, want a non-nil slice", fragmentID)
+		}
+		if len(got) != len(expected) {
+			t.Fatalf("fragment %d offset count = %d, want %d", fragmentID, len(got), len(expected))
+		}
+		for i := range expected {
+			if got[i] != expected[i] {
+				t.Fatalf("fragment %d offset %d = %d, want %d", fragmentID, i, got[i], expected[i])
+			}
+		}
+	}
+	read := func(source *lance.UpdatedFragmentOffsets) map[uint64][]uint32 {
+		t.Helper()
+		count, err := source.Count()
+		if err != nil {
+			t.Fatalf("Count: %v", err)
+		}
+		got := make(map[uint64][]uint32, count)
+		for index := uint64(0); index < count; index++ {
+			fragmentID, err := source.FragmentIDAt(index)
+			if err != nil {
+				t.Fatalf("FragmentIDAt(%d): %v", index, err)
+			}
+			values, err := source.OffsetsAt(index)
+			if err != nil {
+				t.Fatalf("OffsetsAt(%d) for fragment %d: %v", index, fragmentID, err)
+			}
+			got[fragmentID] = values
+		}
+		return got
+	}
+	requireEntries := func(source *lance.UpdatedFragmentOffsets) {
+		t.Helper()
+		got := read(source)
+		if len(got) != len(want) {
+			t.Fatalf("fragment entry count = %d, want %d", len(got), len(want))
+		}
+		for fragmentID, expected := range want {
+			values, ok := got[fragmentID]
+			if !ok {
+				t.Fatalf("fragment %d missing from entries", fragmentID)
+			}
+			check(fragmentID, values, expected)
+		}
+	}
+
+	requireEntries(offsets)
+	if values, err := offsets.OffsetsAt(uint64(len(entries))); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("out-of-range OffsetsAt error = %v, want ErrInvalidArgument", err)
+	} else if values != nil {
+		t.Fatalf("out-of-range OffsetsAt values = %v, want nil", values)
+	}
+
+	emptyContainer, err := lance.NewUpdatedFragmentOffsets(nil)
+	if err != nil {
+		t.Fatalf("NewUpdatedFragmentOffsets(nil): %v", err)
+	}
+	if count, err := emptyContainer.Count(); err != nil {
+		t.Fatalf("empty container Count: %v", err)
+	} else if count != 0 {
+		t.Fatalf("empty container count = %d, want 0", count)
+	}
+	if values, err := emptyContainer.OffsetsAt(0); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("empty container OffsetsAt error = %v, want ErrInvalidArgument", err)
+	} else if values != nil {
+		t.Fatalf("empty container OffsetsAt values = %v, want nil", values)
+	}
+	emptyContainer.Close()
+
+	clone, err := offsets.Clone()
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	offsets.Close()
+	requireEntries(clone)
+
+	// Returned offsets are owned copies: mutating one must not change later reads.
+	got := read(clone)
+	got[10][0] = math.MaxUint32
+	requireEntries(clone)
+	clone.Close()
 }
 
 func TestFragmentWriteColumnsPublish(t *testing.T) {

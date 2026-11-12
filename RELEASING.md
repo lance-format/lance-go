@@ -421,11 +421,11 @@ platform:         target, ABI/runtime/race/default/external results, floor and d
 gaps:             untested targets and storage paths
 ```
 
-The current `linux/amd64` bundle, native `88c07cf8ccafebf579e769416251be370b45180e`,
-header `c23406d5c683133eb647cfeb150fa05182ffc8ba7da283b3902dbb4bf0926c6c`,
-payload `892be9602cf09f791cc62ed7e05002d5f4bd377113a8e0b414a03a90fd069927`,
+The current `linux/amd64` bundle, native `ac2634c553b450c7787577ffe964fc2b283b8334`,
+header `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`,
+payload `e933fc867b2a9ee404d01959aaef8dc8378ddf0b582d7bb2367ed3dbfe46c5b5`,
 and uncompressed library
-`20b2b63598fbca3f83146061f8ef4d2f616effb359af9ae4a01fd9afe9dad1d8` are
+`e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` are
 current pin examples, not a released preview.
 
 Prepare release notes from that record. Include the artifact version, payload

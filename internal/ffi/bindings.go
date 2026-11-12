@@ -416,7 +416,7 @@ type bindings struct {
 	fragmentUpdateColumnsResultFieldsModifiedCount func(result uintptr, out *uint64) int32
 	fragmentUpdateColumnsResultFieldsModifiedAt    func(result uintptr, index uint64, out *uint32) int32
 	fragmentUpdateColumnsResultMatchedOffsetCount  func(result uintptr, out *uint64) int32
-	fragmentUpdateColumnsResultMatchedOffsetAt     func(result uintptr, index uint64, out *uint32) int32
+	fragmentUpdateColumnsResultMatchedOffsets      func(result uintptr, out *uint32, count uint64) int32
 	fragmentCreate                                 func(uri string, fragmentID uint64, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragment *uintptr) int32
 	fragmentCreateMany                             func(uri string, options *fragmentCreateOptions, stream *cdata.ArrowArrayStream, outFragments **uintptr, outCount *uint64) int32
 	fragmentArrayFree                              func(fragments *uintptr, count uint64)
@@ -488,7 +488,7 @@ type bindings struct {
 	updatedFragmentOffsetsCount                    func(offsets uintptr, out *uint64) int32
 	updatedFragmentOffsetsFragmentIDAt             func(offsets uintptr, index uint64, out *uint64) int32
 	updatedFragmentOffsetsOffsetCountAt            func(offsets uintptr, index uint64, out *uint64) int32
-	updatedFragmentOffsetsOffsetAt                 func(offsets uintptr, index, position uint64, out *uint32) int32
+	updatedFragmentOffsetsCopyAt                   func(offsets uintptr, index uint64, out *uint32, count uint64) int32
 	operationDataReplacementCount                  func(operation uintptr, out *uint64) int32
 	operationDataReplacementAt                     func(operation uintptr, index uint64, out *uintptr) int32
 	operationSchemaClone                           func(operation uintptr, out *uintptr) int32
@@ -924,7 +924,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_fragment_update_columns_result_fields_modified_count", &b.fragmentUpdateColumnsResultFieldsModifiedCount},
 		{"lance_fragment_update_columns_result_fields_modified_at", &b.fragmentUpdateColumnsResultFieldsModifiedAt},
 		{"lance_fragment_update_columns_result_matched_offset_count", &b.fragmentUpdateColumnsResultMatchedOffsetCount},
-		{"lance_fragment_update_columns_result_matched_offset_at", &b.fragmentUpdateColumnsResultMatchedOffsetAt},
+		{"lance_fragment_update_columns_result_matched_offsets", &b.fragmentUpdateColumnsResultMatchedOffsets},
 		{"lance_fragment_create", &b.fragmentCreate},
 		{"lance_fragment_create_many", &b.fragmentCreateMany},
 		{"lance_fragment_array_free", &b.fragmentArrayFree},
@@ -996,7 +996,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_updated_fragment_offsets_count", &b.updatedFragmentOffsetsCount},
 		{"lance_updated_fragment_offsets_fragment_id_at", &b.updatedFragmentOffsetsFragmentIDAt},
 		{"lance_updated_fragment_offsets_offset_count_at", &b.updatedFragmentOffsetsOffsetCountAt},
-		{"lance_updated_fragment_offsets_offset_at", &b.updatedFragmentOffsetsOffsetAt},
+		{"lance_updated_fragment_offsets_copy_at", &b.updatedFragmentOffsetsCopyAt},
 		{"lance_operation_data_replacement_count", &b.operationDataReplacementCount},
 		{"lance_operation_data_replacement_at", &b.operationDataReplacementAt},
 		{"lance_operation_schema_clone", &b.operationSchemaClone},
