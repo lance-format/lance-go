@@ -4,7 +4,8 @@ This directory contains the published `linux/amd64` artifact module and
 documents the packaging interface between the loader and release artifacts.
 The tracked `artifacts/linux-amd64/liblance_c.so.zst` is the production
 compressed payload; no raw shared library, static archive, or build evidence is
-tracked.
+tracked. Windows companion candidates are generated outside the checkout by the
+native evidence lane and are not tracked or published.
 
 ## Active linux/amd64 bundle
 
@@ -41,6 +42,62 @@ the bundle module in the error; the loader does not fall back to a system copy.
 
 The compressed payload is data. Importing the artifact module does not link,
 load, or execute native code; the loader decompresses and maps it on first use.
+
+## Windows production companion candidates
+
+No Windows target is published. `internal/bundled` has no Windows selector, the
+root `go.mod` has no Windows artifact requirement, and no Windows module is
+available through the proxy. The Windows native lane may produce an unpublished
+candidate at `github.com/lance-format/lance-go/artifacts/windows-<arch>` only after
+the DLL, header, public ABI, dependency staging, native C consumer, and selected
+Go external-library tests all pass.
+
+The candidate uses the exact staged DLL bytes. No Unix-style strip is applied,
+and dependency bytes or install names are not modified. The read-only captured
+Windows DLL reviewed for this work, from native source evidence rather than the
+current pin, has a zero COFF symbol table pointer and count, no `.debug`
+sections, and a `.pdata` unwind section. `.pdata` is runtime unwind
+metadata, not debug data, so it remains in the packaged bytes. The PDB and MSVC
+import library are native build evidence; they do not belong in a data-only
+module.
+
+The generator writes `module/artifact.go`, `module/go.mod`,
+`module/lance_c.dll.zst`, and a `selector/lance_bundle_windows_<arch>.go` file
+with build constraint `!lance_external_lib && windows && <arch>`. The selector is
+not copied into `internal/bundled`. The shared verifier checks target, module
+path, upstream repository/commit, header hash, payload size and hash, decoded
+size and hash, byte equality, embed layout, and file set. The exact staged DLL
+is hashed before and after generation. A compressed payload larger than the
+ordinary 100 MiB GitHub blob limit blocks the candidate; this repository does
+not introduce chunking for it.
+
+Dependency eligibility is classified by module name, not by the directory where
+a hosted runner happens to find the file. The single-DLL companion requires a
+reviewed OS-only dependency closure. The captured native DLL imports
+`VCRUNTIME140.dll`, which is a separately deployed VC Runtime; its presence in
+the hosted `System32` is not OS-only availability. Redistributable and
+unclassified dependencies therefore block candidate generation explicitly
+after the native evidence, and the workflow records `BLOCKED` with actionable
+provenance. Upstream
+[#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
+Windows deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
+tracks dependency exports and is distinct. No System32 files are copied into the
+module, no installer prerequisite or loader sidecar is added, and no license
+assumption is made.
+
+If the closure is OS-only, the candidate is verified and then exercised by
+`go run -tags lance_external_lib ./examples/roundtrip` with `LANCE_LIB_PATH`
+pointing at the exact staged DLL. The required output is
+`Created, reopened and scanned 3 rows: [10 20 30]`. This is a supplied-library
+check, not a cold default, cold external, or public consumer, and it does not
+establish zero-config Windows distribution. The candidate manifest records
+`candidate_status=verified-unpublished`, `selector_activated=false`,
+`module_requirement_added=false`, `publication_attempted=false`, and
+`cold_default_consumer=not_run`, `cold_external_consumer=not_run`, and
+`public_consumer=not_run`. Candidate and native evidence are uploaded as
+separate architecture-scoped CI artifacts. Windows publication, selector
+activation, hosted cold-cache loading, and supported distribution remain
+pending.
 
 ## Platform and runtime scope
 
@@ -212,5 +269,6 @@ In the earlier consumer checks, `go get` downloaded the artifact archive before
 the target build in both modes. External mode is not a zero-download contract.
 Only one artifact target is published, so these checks do not establish archive
 selection across a multi-platform release. Broader glibc/musl coverage, macOS
-runtime support, and real Windows DLL build, packaging and cold-cache loading
-remain pending.
+runtime support, Windows module publication, selector activation, and hosted
+Windows cold-cache loading remain pending. Windows native execution evidence and
+an unpublished candidate are not a supported Windows distribution.

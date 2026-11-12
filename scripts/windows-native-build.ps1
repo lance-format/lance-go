@@ -2,10 +2,18 @@
 # architecture, verify the produced PE and C ABI, then run a native C consumer
 # and the Go external-library tests against the staged DLL.
 #
-# This is an evidence workflow, not a release or packaging pipeline. It uses a
-# fresh runner-local source checkout and Cargo target directory, stages only the
-# DLL, its MSVC import library, and public headers, and uploads the stage plus
-# logs for review. It does not publish a Go module or modify the default bundle.
+# Native evidence is never replaced by packaging. Only after all native gates
+# pass does the script evaluate the actual DLL dependency closure. When every
+# dependency is an OS component, it packages the exact tested DLL bytes as an
+# unpublished companion candidate at
+# github.com/lance-format/lance-go/artifacts/windows-<arch>, verifies that module
+# with the shared verifier, and runs an external-tag roundtrip. A redistributable
+# or unclassified dependency blocks candidate generation explicitly; hosted
+# System32 presence alone is not treated as OS-only availability.
+#
+# The candidate is CI evidence only. This script does not publish a Go module,
+# copy a selector into internal/bundled, add a module requirement, or modify the
+# default bundle.
 #
 # -Architecture selects the native target: amd64 (x86_64-pc-windows-msvc) or
 # arm64 (aarch64-pc-windows-msvc). The workflow matrix runs each architecture
@@ -97,6 +105,49 @@ $script:VsDeveloperShell = "n/a"
 $script:VsHostArch = "n/a"
 $script:VsTargetArch = "n/a"
 $script:ProtocMachine = "n/a"
+$script:PeDebugFacts = "not recorded"
+$script:ProductionEligibility = "not evaluated"
+$script:ProductionCandidate = "not generated"
+$script:RoundtripResult = "not run"
+$script:PayloadSize = "n/a"
+$script:PayloadSha256 = "n/a"
+$script:HostedDependencies = "not evaluated"
+$script:DependencyRecords = @()
+$script:ProductionGateBlocked = $false
+
+# Reviewed OS-only Windows components. Membership is by module name, never by
+# the directory where a hosted runner happens to find the file. UCRT api-set
+# names are handled separately below. VC Runtime and MFC redistributables are
+# deliberately absent: they are separately deployed application dependencies.
+$script:OsOnlyDependencies = @(
+	"advapi32.dll",
+	"bcrypt.dll",
+	"bcryptprimitives.dll",
+	"cfgmgr32.dll",
+	"combase.dll",
+	"crypt32.dll",
+	"gdi32.dll",
+	"iphlpapi.dll",
+	"kernel32.dll",
+	"kernelbase.dll",
+	"msvcrt.dll",
+	"ntdll.dll",
+	"ole32.dll",
+	"oleaut32.dll",
+	"pdh.dll",
+	"powrprof.dll",
+	"psapi.dll",
+	"rpcrt4.dll",
+	"sechost.dll",
+	"shell32.dll",
+	"shlwapi.dll",
+	"ucrtbase.dll",
+	"user32.dll",
+	"userenv.dll",
+	"version.dll",
+	"winmm.dll",
+	"ws2_32.dll"
+)
 
 function Write-Log {
 	param([string]$Message)
@@ -140,6 +191,12 @@ function Write-Summary {
 		"| Total / dependency exports | $script:ExportCount / $script:DependencyExportCount |",
 		"| DLL dependencies | $script:Dependencies |",
 		"| Bundled dependencies | $script:BundledDependencies |",
+		"| Hosted-only non-OS dependencies | $script:HostedDependencies |",
+		"| Production eligibility | $script:ProductionEligibility |",
+		"| Production candidate | $script:ProductionCandidate |",
+		"| Candidate payload | $(if ($script:PayloadSize -eq "n/a") { "n/a" } else { "$script:PayloadSize bytes (SHA-256 $script:PayloadSha256)" }) |",
+		"| Supplied-library roundtrip | $script:RoundtripResult |",
+		"| PE debug/COFF facts | $script:PeDebugFacts |",
 		"| Visual Studio developer shell | $script:VsDeveloperShell |",
 		"| Visual Studio host / target | $script:VsHostArch / $script:VsTargetArch |",
 		"| Go host / target | $script:GoHostTarget |",
@@ -149,7 +206,9 @@ function Write-Summary {
 		"| Go external-library tests | $script:GoTestResult |",
 		"",
 		"The pinned protoc win64 executable is a build-time tool only. On arm64 it may run under OS emulation; it is not linked into the DLL and is not part of the C consumer or Go runtime evidence.",
-		"The staged DLL/import library/headers are CI evidence only and are not a published release or Go module."
+		"The native C consumer and selected Go tests are evidence for the staged DLL. They do not establish a cold default, cold external, or public consumer, or a supported distribution.",
+		"A generated Windows companion is an unpublished CI candidate only. No selector is activated, no module requirement is added, and no module is published.",
+		"The single-DLL companion requires an OS-only dependency closure. A redistributable or unclassified dependency blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS."
 	)
 	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "summary.md")
 	if (-not [string]::IsNullOrEmpty($env:GITHUB_STEP_SUMMARY)) {
@@ -229,6 +288,227 @@ function Get-PeImageInfo {
 	} finally {
 		$stream.Dispose()
 	}
+}
+
+function Convert-GuidBytes {
+	param([Parameter(Mandatory = $true)][byte[]]$Bytes)
+	if ($Bytes.Count -ne 16) {
+		return "invalid-guid-size-$($Bytes.Count)"
+	}
+	$data1 = [BitConverter]::ToUInt32($Bytes, 0)
+	$data2 = [BitConverter]::ToUInt16($Bytes, 4)
+	$data3 = [BitConverter]::ToUInt16($Bytes, 6)
+	$data4a = ($Bytes[8..9] | ForEach-Object { $_.ToString("x2") }) -join ""
+	$data4b = ($Bytes[10..15] | ForEach-Object { $_.ToString("x2") }) -join ""
+	return ("{0:x8}-{1:x4}-{2:x4}-{3}-{4}" -f $data1, $data2, $data3, $data4a, $data4b)
+}
+
+function Get-PeProvenanceInfo {
+	param([Parameter(Mandatory = $true)][string]$Path)
+	$stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+	try {
+		if ($stream.Length -lt 0x40) {
+			throw "$Path is too small to contain a PE header"
+		}
+		$reader = New-Object IO.BinaryReader($stream)
+		$stream.Position = 0x3C
+		$peOffset = $reader.ReadInt32()
+		if ($peOffset -lt 0 -or ([int64]$peOffset + 0x40) -gt $stream.Length) {
+			throw "$Path has an invalid PE offset $peOffset"
+		}
+		$stream.Position = $peOffset
+		if ($reader.ReadUInt32() -ne 0x00004550) {
+			throw "$Path does not have a PE signature"
+		}
+		$machine = $reader.ReadUInt16()
+		$numberOfSections = $reader.ReadUInt16()
+		$stream.Position = $peOffset + 12
+		$coffSymbolTablePointer = $reader.ReadUInt32()
+		$coffSymbolCount = $reader.ReadUInt32()
+		$optionalHeaderSize = $reader.ReadUInt16()
+		$stream.Position = $peOffset + 24
+		$magic = $reader.ReadUInt16()
+		if ($magic -ne 0x20B) {
+			throw ("{0} optional header magic is 0x{1:X4}, want PE32+ (0x20B)" -f $Path, $magic)
+		}
+
+		if ($optionalHeaderSize -lt 112 -or ([int64]$peOffset + 24 + $optionalHeaderSize) -gt $stream.Length) {
+			throw "$Path has an invalid PE32+ optional header size"
+		}
+		$stream.Position = [int64]$peOffset + 24 + 108
+		$numberOfRvaAndSizes = $reader.ReadUInt32()
+
+		$sectionTableOffset = [int64]$peOffset + 24 + $optionalHeaderSize
+		if (($sectionTableOffset + ([int64]$numberOfSections * 40)) -gt $stream.Length) {
+			throw "$Path section table extends past the end of the file"
+		}
+		$sections = New-Object System.Collections.Generic.List[object]
+		for ($index = 0; $index -lt $numberOfSections; $index++) {
+			$sectionOffset = $sectionTableOffset + ([int64]$index * 40)
+			$stream.Position = $sectionOffset
+			$nameBytes = $reader.ReadBytes(8)
+			$name = [Text.Encoding]::ASCII.GetString($nameBytes).TrimEnd([char]0)
+			$stream.Position = $sectionOffset + 8
+			$virtualSize = $reader.ReadUInt32()
+			$virtualAddress = $reader.ReadUInt32()
+			$rawSize = $reader.ReadUInt32()
+			$rawPointer = $reader.ReadUInt32()
+			$stream.Position = $sectionOffset + 36
+			$characteristics = $reader.ReadUInt32()
+			$sections.Add([pscustomobject]@{
+				Name = $name
+				VirtualSize = $virtualSize
+				VirtualAddress = $virtualAddress
+				RawSize = $rawSize
+				RawPointer = $rawPointer
+				Characteristics = $characteristics
+			})
+		}
+
+		$debugSections = @($sections | Where-Object { $_.Name -like ".debug*" })
+		$pdataSections = @($sections | Where-Object { $_.Name -eq ".pdata" })
+		$pdata = if ($pdataSections.Count -gt 0) { $pdataSections[0] } else { $null }
+
+		$debugDirectoryPresent = $false
+		$debugEntries = New-Object System.Collections.Generic.List[object]
+		$dataDirectoryOffset = [int64]$peOffset + 24 + 112
+		$debugDirectoryOffset = $dataDirectoryOffset + (6 * 8)
+		if ($numberOfRvaAndSizes -ge 7) {
+			if ($optionalHeaderSize -lt (112 + 7 * 8)) {
+				throw "$Path optional header does not contain its declared debug directory"
+			}
+			$stream.Position = $debugDirectoryOffset
+			$debugRva = $reader.ReadUInt32()
+			$debugSize = $reader.ReadUInt32()
+			if ($debugRva -ne 0 -and $debugSize -ne 0) {
+				$debugDirectoryPresent = $true
+				$containing = @($sections | Where-Object {
+					$debugRva -ge $_.VirtualAddress -and $debugRva -lt ([uint64]$_.VirtualAddress + [uint64]$_.VirtualSize)
+				}) | Select-Object -First 1
+				if ($null -eq $containing) {
+					throw ("debug directory RVA 0x{0:X8} is not inside a section" -f $debugRva)
+				}
+				$debugFileOffset = [int64]$containing.RawPointer + ([int64]$debugRva - [int64]$containing.VirtualAddress)
+				$entryCount = [int]($debugSize / 28)
+				for ($index = 0; $index -lt $entryCount; $index++) {
+					$entryOffset = $debugFileOffset + ([int64]$index * 28)
+					if (($entryOffset + 28) -gt $stream.Length) {
+						throw "$Path debug directory entry extends past the end of the file"
+					}
+					$stream.Position = $entryOffset
+					$characteristics = $reader.ReadUInt32()
+					$timeDateStamp = $reader.ReadUInt32()
+					$majorVersion = $reader.ReadUInt16()
+					$minorVersion = $reader.ReadUInt16()
+					$type = $reader.ReadUInt32()
+					$sizeOfData = $reader.ReadUInt32()
+					$addressOfRawData = $reader.ReadUInt32()
+					$pointerToRawData = $reader.ReadUInt32()
+					$typeName = switch ($type) {
+						2 { "codeview" }
+						11 { "vc-feature" }
+						12 { "pogo" }
+						13 { "iltcg" }
+						16 { "embedded-portable-pdb" }
+						17 { "pdb-checksum" }
+						default { "type-$type" }
+					}
+					$entry = [pscustomobject]@{
+						Type = $type
+						TypeName = $typeName
+						Size = $sizeOfData
+						DataPointer = $pointerToRawData
+						PdbName = $null
+						PdbAge = $null
+						PdbGuid = $null
+					}
+					if ($type -eq 2 -and $sizeOfData -ge 24 -and $pointerToRawData -ne 0 -and ([int64]$pointerToRawData + [int64]$sizeOfData) -le $stream.Length) {
+						$stream.Position = $pointerToRawData
+						$signatureBytes = $reader.ReadBytes(4)
+						if ([Text.Encoding]::ASCII.GetString($signatureBytes) -eq "RSDS") {
+							$guidBytes = $reader.ReadBytes(16)
+							$entry.PdbGuid = Convert-GuidBytes -Bytes $guidBytes
+							$entry.PdbAge = $reader.ReadUInt32()
+							$pathBytes = $reader.ReadBytes(([int]$sizeOfData - 24))
+							$pdbPath = [Text.Encoding]::UTF8.GetString($pathBytes).TrimEnd([char]0)
+							if (-not [string]::IsNullOrEmpty($pdbPath)) {
+								$entry.PdbName = ($pdbPath -split "[\\/]")[-1]
+							}
+						}
+					}
+					$debugEntries.Add($entry)
+				}
+			}
+		}
+
+		return [pscustomobject]@{
+			Machine = $machine
+			Magic = $magic
+			NumberOfSections = $numberOfSections
+			CoffSymbolTablePointer = $coffSymbolTablePointer
+			CoffSymbolCount = $coffSymbolCount
+			Sections = $sections.ToArray()
+			DebugSections = [object[]]$debugSections
+			PdataSection = $pdata
+			DebugDirectoryPresent = $debugDirectoryPresent
+			DebugEntries = $debugEntries.ToArray()
+		}
+	} finally {
+		$stream.Dispose()
+	}
+}
+
+function Get-DependencyClass {
+	param([Parameter(Mandatory = $true)][string]$Name)
+	$lower = $Name.ToLowerInvariant()
+	if ($lower -match "^(api-ms-win-|ext-ms-)") {
+		return "system-apiset"
+	}
+	if ($script:OsOnlyDependencies -contains $lower) {
+		return "system"
+	}
+	if ($lower -match "^(vcruntime[0-9_]*d?|msvcp[0-9_]*d?|msvcr[0-9]+d?|concrt[0-9_]*d?|vcomp[0-9_]*d?|vccorlib[0-9_]*d?|ucrtbased|mfc[0-9]+u?d?|mfcm[0-9]+u?d?)\.dll$") {
+		return "redistributable"
+	}
+	return "unclassified"
+}
+
+function Get-ProductionEligibility {
+	param([object[]]$Records)
+	$blocking = @($Records | Where-Object { $_.Class -notin @("system", "system-apiset") })
+	return [pscustomobject]@{
+		Eligible = ($blocking.Count -eq 0)
+		Blocking = $blocking
+	}
+}
+
+function Write-ProductionEligibility {
+	param([bool]$Eligible, [string]$CandidateStatus)
+	$blocking = @($script:DependencyRecords | Where-Object { $_.Class -notin @("system", "system-apiset") })
+	$lines = @(
+		"native_evidence=PASS",
+		"native_runtime_scope=staged lance_c.dll with native C consumer and selected Go external-library tests",
+		"contract=single-dll-companion",
+		"os_only_dependency_closure_required=true",
+		"eligible=$($Eligible.ToString().ToLowerInvariant())",
+		"blocking_count=$($blocking.Count)"
+	)
+	if ($blocking.Count -eq 0) {
+		$lines += "blocking=none"
+	} else {
+		foreach ($record in $blocking) {
+			$lines += "blocking_dependency=$($record.Name) class=$($record.Class) reason=$($record.Reason)"
+		}
+	}
+	$lines += @(
+		"hosted_only_non_os=$script:HostedDependencies",
+		"issue_215=https://github.com/lance-format/lance-c/issues/215",
+		"issue_215_scope=supported Windows deployment contract is unresolved",
+		"issue_214=https://github.com/lance-format/lance-c/issues/214",
+		"issue_214_scope=dependency export inventory is distinct from runtime availability",
+		"candidate_status=$CandidateStatus"
+	)
+	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "production-eligibility.txt")
 }
 
 function Assert-NativePe {
@@ -486,7 +766,7 @@ try {
 	Write-Log "cmake=$((Get-Command cmake -ErrorAction Stop).Source)"
 
 	$goVersion = (Invoke-Capture -FilePath "go" -ArgumentList @("version") -Label "go version") -join " "
-	$goEnvLines = Invoke-Capture -FilePath "go" -ArgumentList @("env", "-json", "GOOS", "GOARCH", "GOHOSTOS", "GOHOSTARCH", "GOVERSION", "CGO_ENABLED") -Label "go env"
+	$goEnvLines = Invoke-Capture -FilePath "go" -ArgumentList @("env", "-json", "GOOS", "GOARCH", "GOHOSTOS", "GOHOSTARCH", "GOVERSION", "CGO_ENABLED", "GOMODCACHE", "GOCACHE") -Label "go env"
 	$goEnv = (($goEnvLines -join "`n") | ConvertFrom-Json)
 	if ($goEnv.GOOS -ne "windows" -or $goEnv.GOARCH -ne $Architecture -or $goEnv.GOHOSTOS -ne "windows" -or $goEnv.GOHOSTARCH -ne $Architecture -or "$($goEnv.CGO_ENABLED)" -ne "0") {
 		throw "go environment is not native windows/$Architecture with CGO disabled: $($goEnvLines -join '; ')"
@@ -671,6 +951,57 @@ try {
 	$script:PeMachine = "$($script:PeMachineLabel) (0x{0:X4})" -f $dllPe.Machine
 	$manifestPeMachine = "0x{0:X4}" -f $dllPe.Machine
 
+	$script:Step = "pe-provenance"
+	$peFacts = Get-PeProvenanceInfo -Path $stagedDll
+	$debugSectionText = if ($peFacts.DebugSections.Count -eq 0) {
+		"none"
+	} else {
+		($peFacts.DebugSections | ForEach-Object { $_.Name }) -join ","
+	}
+	$pdataText = if ($null -eq $peFacts.PdataSection) {
+		"absent"
+	} else {
+		"present raw_size=$($peFacts.PdataSection.RawSize) virtual_size=$($peFacts.PdataSection.VirtualSize)"
+	}
+	$pdbEntries = @($peFacts.DebugEntries | Where-Object { -not [string]::IsNullOrEmpty($_.PdbName) })
+	$pdbText = if ($pdbEntries.Count -eq 0) {
+		"none"
+	} else {
+		($pdbEntries | ForEach-Object { "$($_.PdbName) (not packaged)" }) -join ", "
+	}
+	$script:PeDebugFacts = "COFF symbol table=$($peFacts.CoffSymbolTablePointer)/$($peFacts.CoffSymbolCount); .debug=$debugSectionText; .pdata=$pdataText; PDB=$pdbText; unix strip=not applied"
+
+	$peFactLines = New-Object System.Collections.Generic.List[string]
+	$peFactLines.Add("file=$stagedDll")
+	$peFactLines.Add("sha256=$script:DllSha256")
+	$peFactLines.Add("bytes=$script:DllSize")
+	$peFactLines.Add("coff_symbol_table_pointer=$($peFacts.CoffSymbolTablePointer)")
+	$peFactLines.Add("coff_symbol_count=$($peFacts.CoffSymbolCount)")
+	$peFactLines.Add("debug_sections=$debugSectionText")
+	if ($null -eq $peFacts.PdataSection) {
+		$peFactLines.Add("pdata_section=absent")
+	} else {
+		$peFactLines.Add("pdata_section=present")
+		$peFactLines.Add("pdata_raw_size=$($peFacts.PdataSection.RawSize)")
+		$peFactLines.Add("pdata_virtual_size=$($peFacts.PdataSection.VirtualSize)")
+	}
+	$peFactLines.Add("debug_directory_present=$($peFacts.DebugDirectoryPresent.ToString().ToLowerInvariant())")
+	$peFactLines.Add("debug_entry_count=$($peFacts.DebugEntries.Count)")
+	foreach ($entry in $peFacts.DebugEntries) {
+		$entryLine = "debug_entry=$($entry.TypeName) size=$($entry.Size) pointer=$($entry.DataPointer)"
+		if (-not [string]::IsNullOrEmpty($entry.PdbName)) {
+			$entryLine += " pdb=$($entry.PdbName) guid=$($entry.PdbGuid) age=$($entry.PdbAge)"
+		}
+		$peFactLines.Add($entryLine)
+	}
+	foreach ($section in $peFacts.Sections) {
+		$peFactLines.Add("section=$($section.Name) virtual_size=$($section.VirtualSize) raw_size=$($section.RawSize)")
+	}
+	$peFactLines.Add("unix_strip_applied=false")
+	$peFactLines.Add("packaging_note=PE .pdata is unwind metadata, not debug data; the exact staged DLL bytes are packaged unmodified")
+	$peFactLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "pe-debug-facts.txt")
+	Write-Log "pe_debug_facts=$script:PeDebugFacts"
+
 	$manifest = @(
 		"architecture=$Architecture",
 		"target_triple=$($script:TargetTriple)",
@@ -683,6 +1014,12 @@ try {
 		"dll_sha256=$script:DllSha256",
 		"dll_size=$script:DllSize",
 		"pe_machine=$manifestPeMachine",
+		"coff_symbol_table_pointer=$($peFacts.CoffSymbolTablePointer)",
+		"coff_symbol_count=$($peFacts.CoffSymbolCount)",
+		"debug_sections=$debugSectionText",
+		"pdata_section=$pdataText",
+		"pdb_reference=$pdbText",
+		"unix_strip_applied=false",
 		"import_library=lib/lance_c.dll.lib",
 		"protoc_version=$protocVersion",
 		"protoc_archive_sha256=$actualProtocSha",
@@ -807,34 +1144,106 @@ try {
 		$syswow64
 	) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 	$dependencyInventory = New-Object System.Collections.Generic.List[string]
+	$dependencyInventory.Add("# Classification is by module name. A file under the hosted runner's System32 is a resolution diagnostic, not proof of OS-only availability.")
 	$bundled = New-Object System.Collections.Generic.List[string]
+	$hostedOnly = New-Object System.Collections.Generic.List[string]
+	$dependencyRecords = New-Object System.Collections.Generic.List[object]
 	foreach ($dependency in $dependencies) {
-		$systemCandidate = Join-Path $system32 $dependency
-		$isApiSet = $dependency -match "(?i)^(api-ms-win-|ext-ms-)"
-		if ((Test-Path -LiteralPath $systemCandidate -PathType Leaf) -or $isApiSet) {
-			$dependencyInventory.Add("system: $dependency")
-			continue
-		}
+		$class = Get-DependencyClass -Name $dependency
+		$osFound = Find-Dependency -Name $dependency -Directories @($system32, $syswow64)
 		$found = Find-Dependency -Name $dependency -Directories $searchDirs
-		if ($null -eq $found) {
-			$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
-			throw "DLL dependency $dependency is neither an OS component nor available on the build machine"
+		$resolution = if ($null -ne $osFound) { $osFound } elseif ($null -ne $found) { $found } else { "unresolved" }
+		$bundledHere = $false
+		$eligible = $true
+		$reason = $null
+
+		if ($class -eq "system-apiset") {
+			$resolution = "os-api-set"
+		} elseif ($class -eq "system") {
+			if ($null -eq $osFound) {
+				$resolution = "not-found-under-os-directories"
+			}
+		} else {
+			if ($class -eq "redistributable") {
+				$reason = "separately deployed VC Runtime/MFC component; hosted System32 presence is not OS-only availability"
+			} else {
+				$reason = "not on the reviewed OS-only Windows component allowlist"
+			}
+			$eligible = $false
+			if ($null -eq $found) {
+				$resolution = "unresolved"
+				$reason = "$reason; no file found on the build host"
+			} else {
+				$resolution = $found
+				$inOsDir = $false
+				foreach ($osDir in @($system32, $syswow64)) {
+					if (-not [string]::IsNullOrWhiteSpace($osDir)) {
+						$osPrefix = $osDir.TrimEnd([char]'\') + '\'
+						if ($found.StartsWith($osPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+							$inOsDir = $true
+						}
+					}
+				}
+				if ($inOsDir) {
+					# Do not copy arbitrary System32 files into the companion. Keep
+					# the hosted runtime usable for native tests, but record that the
+					# dependency is not part of an OS-only distribution contract.
+					$hostedOnly.Add($dependency)
+					$reason = "$reason; hosted resolution $found was not bundled"
+				} else {
+					[void](Assert-NativePe -Path $found -Label "DLL dependency $dependency")
+					$dependencyTarget = Join-Path $runtimeDir $dependency
+					if (-not [string]::Equals($found, $dependencyTarget, [StringComparison]::OrdinalIgnoreCase)) {
+						Copy-Item -LiteralPath $found -Destination $dependencyTarget
+					}
+					$bundled.Add($dependency)
+					$bundledHere = $true
+					$reason = "$reason; bundled for native evidence only"
+				}
+			}
 		}
-		[void](Assert-NativePe -Path $found -Label "DLL dependency $dependency")
-		$dependencyTarget = Join-Path $runtimeDir $dependency
-		if (-not [string]::Equals($found, $dependencyTarget, [StringComparison]::OrdinalIgnoreCase)) {
-			Copy-Item -LiteralPath $found -Destination $dependencyTarget
+
+		$bundledText = if ($bundledHere) { "true" } else { "false" }
+		$eligibleText = if ($eligible) { "true" } else { "false" }
+		$recordLines = @(
+			"dependency=$dependency",
+			"class=$class",
+			"resolution=$resolution",
+			"bundled=$bundledText",
+			"eligible=$eligibleText"
+		)
+		if (-not [string]::IsNullOrEmpty($reason)) {
+			$recordLines += "reason=$reason"
 		}
-		$bundled.Add($dependency)
-		$dependencyInventory.Add("bundled: $dependency <- $found")
+		$dependencyInventory.Add(($recordLines -join "`n"))
+		$dependencyRecords.Add([pscustomobject]@{
+			Name = $dependency
+			Class = $class
+			Resolution = $resolution
+			Bundled = $bundledHere
+			Eligible = $eligible
+			Reason = $reason
+		})
+		# Persist each decision so a later staging failure still leaves the
+		# dependency classification available for review.
+		$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
 	}
 	if ($bundled.Count -gt 0) {
 		$script:BundledDependencies = $bundled -join ", "
 	} else {
 		$script:BundledDependencies = "none"
 	}
+	if ($hostedOnly.Count -gt 0) {
+		$script:HostedDependencies = $hostedOnly -join ", "
+	} else {
+		$script:HostedDependencies = "none"
+	}
+	$script:DependencyRecords = @($dependencyRecords)
 	$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
-	Write-Log "runtime dependencies: $($dependencyInventory -join '; ')"
+	Write-Log "runtime dependencies: bundled=$script:BundledDependencies; hosted_non_os=$script:HostedDependencies"
+	foreach ($record in $script:DependencyRecords) {
+		Write-Log "dependency $($record.Name): class=$($record.Class) eligible=$($record.Eligible) resolution=$($record.Resolution)"
+	}
 
 	$script:Step = "abi-checker"
 	$env:LANCE_C_HEADER = $stagedHeader
@@ -959,17 +1368,282 @@ try {
 	}
 	$script:GoTestResult = "PASS ($($requiredTests.Count) required tests, no skips)"
 
+	$script:Step = "production-eligibility"
+	$eligibility = Get-ProductionEligibility -Records $script:DependencyRecords
+	if (-not $eligibility.Eligible) {
+		$blockingText = ($eligibility.Blocking | ForEach-Object { "$($_.Name) ($($_.Class))" }) -join ", "
+		$script:ProductionGateBlocked = $true
+		$script:ProductionEligibility = "BLOCKED: $blockingText"
+		$script:ProductionCandidate = "not generated (dependency eligibility blocked)"
+		Write-ProductionEligibility -Eligible $false -CandidateStatus "not_generated"
+		throw "production companion is not eligible: $blockingText; see production-eligibility.txt and https://github.com/lance-format/lance-c/issues/215"
+	}
+	$script:ProductionEligibility = "PASS: all dependencies are reviewed OS-only components"
+	Write-ProductionEligibility -Eligible $true -CandidateStatus "pending_generation"
+
+	$script:Step = "production-candidate"
+	$modulePath = "github.com/lance-format/lance-go/artifacts/windows-$Architecture"
+	$candidateRoot = Join-Path $WorkDir "candidate"
+	$candidateOut = Join-Path $candidateRoot "windows-$Architecture"
+	$candidateModule = Join-Path $candidateOut "module"
+	$candidateSelector = Join-Path $candidateOut "selector"
+	$candidateFull = [IO.Path]::GetFullPath($candidateOut)
+	$separator = [IO.Path]::DirectorySeparatorChar
+	$repoBase = ([IO.Path]::GetFullPath($RepoRoot)).TrimEnd([char[]]@('\', '/'))
+	if ($candidateFull.Equals($repoBase, [StringComparison]::OrdinalIgnoreCase) -or $candidateFull.StartsWith($repoBase + $separator, [StringComparison]::OrdinalIgnoreCase)) {
+		throw "production candidate output must be outside the checkout: $candidateFull"
+	}
+	foreach ($cachePath in @($goEnv.GOMODCACHE, $goEnv.GOCACHE)) {
+		if ([string]::IsNullOrWhiteSpace($cachePath)) {
+			continue
+		}
+		$cacheBase = ([IO.Path]::GetFullPath($cachePath)).TrimEnd([char[]]@('\', '/'))
+		if ($candidateFull.Equals($cacheBase, [StringComparison]::OrdinalIgnoreCase) -or $candidateFull.StartsWith($cacheBase + $separator, [StringComparison]::OrdinalIgnoreCase)) {
+			throw "production candidate output must be outside Go caches: $candidateFull is under $cacheBase"
+		}
+	}
+	if (Test-Path -LiteralPath $candidateRoot) {
+		Remove-Item -LiteralPath $candidateRoot -Recurse -Force
+	}
+	New-Item -ItemType Directory -Force -Path $candidateRoot | Out-Null
+
+	$rootGoMod = Join-Path $RepoRoot "go.mod"
+	$rootGoSum = Join-Path $RepoRoot "go.sum"
+	$rootGoModSha = (Get-FileHash -LiteralPath $rootGoMod -Algorithm SHA256).Hash.ToLowerInvariant()
+	$rootGoSumSha = (Get-FileHash -LiteralPath $rootGoSum -Algorithm SHA256).Hash.ToLowerInvariant()
+	$guardStatus = @(Invoke-Capture -FilePath "git" -ArgumentList @("-C", $RepoRoot, "status", "--porcelain", "--untracked-files=all", "--", "go.mod", "go.sum", "internal/bundled") -Label "git status guarded paths") -join "`n"
+	if (-not [string]::IsNullOrWhiteSpace($guardStatus)) {
+		throw "guarded paths are already dirty before packaging: $guardStatus"
+	}
+
+	$generatorLog = Join-Path $EvidenceDir "production-generator.log"
+	Push-Location $RepoRoot
+	try {
+		Invoke-Logged -FilePath "go" -ArgumentList @(
+			"run", "./scripts/sync-lance-c-gen",
+			"-library", $stagedDll,
+			"-header", $stagedHeader,
+			"-target", "windows/$Architecture",
+			"-out", $candidateOut,
+			"-module-path", $modulePath,
+			"-selector-package", "bundled",
+			"-upstream-repo", $upstreamRepo,
+			"-upstream-commit", $sourceCommit,
+			"-header-sha256", $headerSha
+		) -LogPath $generatorLog -Label "generate Windows production companion"
+	} finally {
+		Pop-Location
+	}
+
+	if (-not (Test-Path -LiteralPath (Join-Path $candidateModule "go.mod") -PathType Leaf)) {
+		throw "generator did not produce $candidateModule\go.mod"
+	}
+	$script:ProductionCandidate = "generated, verification pending (unpublished)"
+	$moduleNames = @(Get-ChildItem -LiteralPath $candidateModule -File -Force | ForEach-Object { $_.Name })
+	$expectedModuleNames = @("artifact.go", "go.mod", "lance_c.dll.zst")
+	$missingModuleNames = @($expectedModuleNames | Where-Object { $moduleNames -notcontains $_ })
+	$unexpectedModuleNames = @($moduleNames | Where-Object { $_ -notin @("artifact.go", "go.mod", "lance_c.dll.zst", "LICENSE") })
+	if ($missingModuleNames.Count -gt 0) {
+		throw "generated module is missing: $($missingModuleNames -join ', ')"
+	}
+	if ($unexpectedModuleNames.Count -gt 0) {
+		throw "generated module contains unexpected files: $($unexpectedModuleNames -join ', ')"
+	}
+	$selectorName = "lance_bundle_windows_$Architecture.go"
+	$selectorFiles = @(Get-ChildItem -LiteralPath $candidateSelector -File -Force)
+	if ($selectorFiles.Count -ne 1 -or $selectorFiles[0].Name -ne $selectorName) {
+		throw "generated selector must be exactly $selectorName, found: $($selectorFiles.Name -join ', ')"
+	}
+	$selectorText = Get-Content -Raw -LiteralPath $selectorFiles[0].FullName
+	$expectedBuildTag = "//go:build !lance_external_lib && windows && $Architecture"
+	if (-not $selectorText.Contains($expectedBuildTag)) {
+		throw "generated selector is missing build tag: $expectedBuildTag"
+	}
+	if (-not $selectorText.Contains('"' + $modulePath + '"')) {
+		throw "generated selector does not reference module $modulePath"
+	}
+	$forbidden = @(Get-ChildItem -LiteralPath $candidateOut -Recurse -File -Force | Where-Object { $_.Extension -in @(".dll", ".pdb", ".lib", ".exp") })
+	if ($forbidden.Count -gt 0) {
+		throw "candidate contains native binary side files that do not belong in a data-only module: $($forbidden.FullName -join ', ')"
+	}
+
+	$payloadFile = Join-Path $candidateModule "lance_c.dll.zst"
+	$payloadBytes = (Get-Item -LiteralPath $payloadFile).Length
+	$payloadSha = (Get-FileHash -LiteralPath $payloadFile -Algorithm SHA256).Hash.ToLowerInvariant()
+	$script:PayloadSize = $payloadBytes
+	$script:PayloadSha256 = $payloadSha
+	$maxOrdinaryBlobBytes = 104857600
+	if ($payloadBytes -gt $maxOrdinaryBlobBytes) {
+		$script:ProductionGateBlocked = $true
+		$script:ProductionCandidate = "BLOCKED: compressed payload $payloadBytes bytes exceeds ordinary GitHub blob limit ($maxOrdinaryBlobBytes bytes); no chunking introduced"
+		Write-ProductionEligibility -Eligible $true -CandidateStatus "blocked_size"
+		$sizeLines = @(
+			"candidate_status=blocked_size",
+			"payload_bytes=$payloadBytes",
+			"payload_sha256=$payloadSha",
+			"ordinary_blob_limit_bytes=$maxOrdinaryBlobBytes",
+			"chunking_introduced=false",
+			"candidate_accepted_for_publication=false"
+		)
+		$sizeLines | Set-Content -LiteralPath (Join-Path $candidateOut "size-gate.txt")
+		$sizeLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "production-size-gate.txt")
+		throw "production candidate blocked: compressed payload $payloadBytes bytes exceeds ordinary GitHub blob limit $maxOrdinaryBlobBytes bytes; no chunking introduced"
+	}
+
+	$script:Step = "production-verifier"
+	$verifierLog = Join-Path $EvidenceDir "production-verifier.log"
+	Push-Location $RepoRoot
+	try {
+		Invoke-Logged -FilePath "go" -ArgumentList @(
+			"run", "./scripts/verify-lance-c-artifact",
+			"-module", $candidateModule,
+			"-library", $stagedDll,
+			"-pin", (Join-Path $RepoRoot "internal\ffi\upstream.go"),
+			"-target", "windows/$Architecture",
+			"-module-path", $modulePath
+		) -LogPath $verifierLog -Label "verify Windows production companion"
+	} finally {
+		Pop-Location
+	}
+	$verifyValues = @{}
+	foreach ($line in Get-Content -LiteralPath $verifierLog) {
+		if ($line -match "^([a-z0-9_]+)=(.*)$") {
+			$verifyValues[$Matches[1]] = $Matches[2]
+		}
+	}
+	$requiredVerifierKeys = @(
+		"artifact_verification", "target", "module_path", "library_bytes", "library_sha256",
+		"payload", "payload_bytes", "payload_sha256", "decompressed_bytes", "decompressed_sha256",
+		"byte_equality", "upstream_repo", "upstream_commit", "header_sha256"
+	)
+	foreach ($key in $requiredVerifierKeys) {
+		if (-not $verifyValues.ContainsKey($key)) {
+			throw "production verifier output is missing $key; see $verifierLog"
+		}
+	}
+	if ($verifyValues["artifact_verification"] -ne "ok") { throw "production verifier did not report artifact_verification=ok" }
+	if ($verifyValues["target"] -ne "windows/$Architecture") { throw "production verifier target is $($verifyValues['target']), want windows/$Architecture" }
+	if ($verifyValues["module_path"] -ne $modulePath) { throw "production verifier module_path is $($verifyValues['module_path']), want $modulePath" }
+	if ($verifyValues["library_sha256"] -ne $script:DllSha256) { throw "production verifier library sha does not match the staged DLL" }
+	if ([int64]$verifyValues["library_bytes"] -ne [int64]$script:DllSize) { throw "production verifier library size does not match the staged DLL" }
+	if ($verifyValues["payload_sha256"] -ne $payloadSha -or $verifyValues["decompressed_sha256"] -ne $script:DllSha256) { throw "production verifier payload/decompressed sha does not match" }
+	if ([int64]$verifyValues["payload_bytes"] -ne [int64]$payloadBytes -or [int64]$verifyValues["decompressed_bytes"] -ne [int64]$script:DllSize) { throw "production verifier payload/decompressed size does not match" }
+	if ($verifyValues["byte_equality"] -ne "identical") { throw "production verifier did not prove byte equality between payload and staged DLL" }
+	if ($verifyValues["upstream_repo"] -ne $upstreamRepo) { throw "production verifier upstream_repo is $($verifyValues['upstream_repo']), want $upstreamRepo" }
+	if ($verifyValues["upstream_commit"] -ne $sourceCommit) { throw "production verifier upstream_commit is $($verifyValues['upstream_commit']), want $sourceCommit" }
+	if ($verifyValues["header_sha256"] -ne $headerSha) { throw "production verifier header sha is $($verifyValues['header_sha256']), want $headerSha" }
+	$verifiedPayload = $verifyValues["payload"]
+	if (-not [IO.Path]::IsPathRooted($verifiedPayload)) {
+		$verifiedPayload = Join-Path $candidateModule $verifiedPayload
+	}
+	if ((Get-FileHash -LiteralPath $verifiedPayload -Algorithm SHA256).Hash.ToLowerInvariant() -ne $payloadSha) { throw "verified payload file hash changed: $verifiedPayload" }
+
+	$script:Step = "supplied-library-roundtrip"
+	$script:ProductionCandidate = "verified, supplied-library roundtrip pending (unpublished)"
+	$roundtripLog = Join-Path $EvidenceDir "roundtrip.log"
+	$oldPath = $env:PATH
+	$oldLibPath = $env:LANCE_LIB_PATH
+	try {
+		$env:LANCE_LIB_PATH = $stagedDllPath
+		$env:PATH = "$runtimeDir;$system32;$env:SystemRoot;$goBin"
+		Push-Location $RepoRoot
+		try {
+			Invoke-Logged -FilePath $goExe -ArgumentList @("run", "-tags", "lance_external_lib", "./examples/roundtrip") -LogPath $roundtripLog -Label "supplied-library roundtrip"
+		} finally {
+			Pop-Location
+		}
+	} finally {
+		$env:PATH = $oldPath
+		$env:LANCE_LIB_PATH = $oldLibPath
+	}
+	$roundtripText = Get-Content -Raw -LiteralPath $roundtripLog
+	$expectedRoundtrip = "Created, reopened and scanned 3 rows: [10 20 30]"
+	if ($roundtripText -notmatch [regex]::Escape($expectedRoundtrip)) {
+		throw "supplied-library roundtrip did not print: $expectedRoundtrip"
+	}
+	$script:RoundtripResult = "PASS (supplied staged DLL, external tag; not cold default, cold external, or public)"
+
+	$script:Step = "candidate-acceptance"
+	$script:ProductionCandidate = "verified with roundtrip, acceptance pending (unpublished)"
+	$finalDllSha = (Get-FileHash -LiteralPath $stagedDll -Algorithm SHA256).Hash.ToLowerInvariant()
+	$finalDllSize = (Get-Item -LiteralPath $stagedDll).Length
+	$finalHeaderSha = (Get-FileHash -LiteralPath $stagedHeader -Algorithm SHA256).Hash.ToLowerInvariant()
+	$finalGoModSha = (Get-FileHash -LiteralPath $rootGoMod -Algorithm SHA256).Hash.ToLowerInvariant()
+	$finalGoSumSha = (Get-FileHash -LiteralPath $rootGoSum -Algorithm SHA256).Hash.ToLowerInvariant()
+	if ($finalDllSha -ne $script:DllSha256 -or [int64]$finalDllSize -ne [int64]$script:DllSize) { throw "staged DLL bytes changed during candidate generation" }
+	if ($finalHeaderSha -ne $headerSha) { throw "staged header bytes changed during candidate generation" }
+	if ($finalGoModSha -ne $rootGoModSha -or $finalGoSumSha -ne $rootGoSumSha) { throw "root go.mod/go.sum changed during candidate generation" }
+	$guardStatusAfter = @(Invoke-Capture -FilePath "git" -ArgumentList @("-C", $RepoRoot, "status", "--porcelain", "--untracked-files=all", "--", "go.mod", "go.sum", "internal/bundled") -Label "git status guarded paths after packaging") -join "`n"
+	if (-not [string]::IsNullOrWhiteSpace($guardStatusAfter)) {
+		throw "go.mod/go.sum/internal/bundled changed during candidate generation: $guardStatusAfter"
+	}
+
+	$candidateManifest = @(
+		"candidate=windows-$Architecture",
+		"candidate_status=verified-unpublished",
+		"native_evidence=PASS",
+		"dependency_eligibility=PASS",
+		"module_path=$modulePath",
+		"target=windows/$Architecture",
+		"library_sha256=$script:DllSha256",
+		"library_bytes=$script:DllSize",
+		"payload_sha256=$payloadSha",
+		"payload_bytes=$payloadBytes",
+		"decompressed_sha256=$script:DllSha256",
+		"decompressed_bytes=$script:DllSize",
+		"verifier=ok",
+		"roundtrip=supplied-library PASS",
+		"selector_activated=false",
+		"module_requirement_added=false",
+		"publication_attempted=false",
+		"cold_default_consumer=not_run",
+		"cold_external_consumer=not_run",
+		"public_consumer=not_run",
+		"public_module=not_published",
+		"supported_distribution=not_claimed"
+	)
+	$candidateManifest | Set-Content -LiteralPath (Join-Path $candidateOut "candidate-manifest.txt")
+	$candidateManifest | Set-Content -LiteralPath (Join-Path $EvidenceDir "production-candidate.txt")
+	$script:ProductionCandidate = "verified-unpublished: $modulePath (selector not activated)"
+	Write-ProductionEligibility -Eligible $true -CandidateStatus "verified_unpublished"
+
 	$script:Step = "complete"
-	Set-Status "PASS" "all native Windows $Architecture checks passed"
+	Set-Status "PASS" "all native Windows $Architecture checks passed; production candidate verified but unpublished"
 	Write-Summary
 	Stop-ScriptTranscript
-	Write-Log "PASS: staged DLL, import library, headers, ABI, consumer, and Go external-library tests"
+	Write-Log "PASS: native evidence and verified unpublished Windows production candidate; no publication or selector activation"
 	exit 0
 } catch {
 	$script:ExitCode = 1
 	$message = $_.Exception.Message
+	if ($script:ProductionGateBlocked) {
+		$script:Status = "BLOCKED"
+		Write-Log "BLOCKED at $script:Step`: $message"
+		try {
+			Set-Status "BLOCKED" "$script:Step`: $message"
+		} catch {
+			Write-Host "warning: could not write status: $($_.Exception.Message)"
+		}
+		try {
+			Write-Summary
+		} catch {
+			Write-Host "warning: could not write summary: $($_.Exception.Message)"
+		}
+		Stop-ScriptTranscript
+		exit 1
+	}
 	$script:Status = "FAIL"
 	Write-Log "FAILED at $script:Step`: $message"
+	if ($script:ProductionEligibility -like "PASS:*") {
+		if ($script:ProductionCandidate -notlike "verified-unpublished*") {
+			$script:ProductionCandidate = "failed before acceptance (unpublished)"
+		}
+		try {
+			Write-ProductionEligibility -Eligible $true -CandidateStatus "failed"
+		} catch {
+			Write-Host "warning: could not update production eligibility after failure: $($_.Exception.Message)"
+		}
+	}
 	try {
 		Set-Status "FAIL" "$script:Step`: $message"
 	} catch {
