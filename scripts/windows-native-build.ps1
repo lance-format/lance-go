@@ -111,7 +111,7 @@ $script:ProductionCandidate = "not generated"
 $script:RoundtripResult = "not run"
 $script:PayloadSize = "n/a"
 $script:PayloadSha256 = "n/a"
-$script:HostedDependencies = "none"
+$script:HostedDependencies = "not evaluated"
 $script:DependencyRecords = @()
 $script:ProductionGateBlocked = $false
 
@@ -332,6 +332,12 @@ function Get-PeProvenanceInfo {
 			throw ("{0} optional header magic is 0x{1:X4}, want PE32+ (0x20B)" -f $Path, $magic)
 		}
 
+		if ($optionalHeaderSize -lt 112 -or ([int64]$peOffset + 24 + $optionalHeaderSize) -gt $stream.Length) {
+			throw "$Path has an invalid PE32+ optional header size"
+		}
+		$stream.Position = [int64]$peOffset + 24 + 108
+		$numberOfRvaAndSizes = $reader.ReadUInt32()
+
 		$sectionTableOffset = [int64]$peOffset + 24 + $optionalHeaderSize
 		if (($sectionTableOffset + ([int64]$numberOfSections * 40)) -gt $stream.Length) {
 			throw "$Path section table extends past the end of the file"
@@ -367,7 +373,10 @@ function Get-PeProvenanceInfo {
 		$debugEntries = New-Object System.Collections.Generic.List[object]
 		$dataDirectoryOffset = [int64]$peOffset + 24 + 112
 		$debugDirectoryOffset = $dataDirectoryOffset + (6 * 8)
-		if (($debugDirectoryOffset + 8) -le $stream.Length) {
+		if ($numberOfRvaAndSizes -ge 7) {
+			if ($optionalHeaderSize -lt (112 + 7 * 8)) {
+				throw "$Path optional header does not contain its declared debug directory"
+			}
 			$stream.Position = $debugDirectoryOffset
 			$debugRva = $reader.ReadUInt32()
 			$debugSize = $reader.ReadUInt32()
@@ -458,7 +467,7 @@ function Get-DependencyClass {
 	if ($script:OsOnlyDependencies -contains $lower) {
 		return "system"
 	}
-	if ($lower -match "^(vcruntime[0-9_]*|msvcp[0-9_]*|msvcr[0-9]+|concrt[0-9_]*|vcomp[0-9_]*|vccorlib[0-9_]*|ucrtbased|mfc[0-9]+u?|mfcm[0-9]+u?)\.dll$") {
+	if ($lower -match "^(vcruntime[0-9_]*d?|msvcp[0-9_]*d?|msvcr[0-9]+d?|concrt[0-9_]*d?|vcomp[0-9_]*d?|vccorlib[0-9_]*d?|ucrtbased|mfc[0-9]+u?d?|mfcm[0-9]+u?d?)\.dll$") {
 		return "redistributable"
 	}
 	return "unclassified"
@@ -1165,6 +1174,7 @@ try {
 				$resolution = "unresolved"
 				$reason = "$reason; no file found on the build host"
 			} else {
+				$resolution = $found
 				$inOsDir = $false
 				foreach ($osDir in @($system32, $syswow64)) {
 					if (-not [string]::IsNullOrWhiteSpace($osDir)) {
