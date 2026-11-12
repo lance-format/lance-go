@@ -13,10 +13,12 @@ published and their selectors are active. All four Unix targets passed cold
 public default, namespace-only and external consumers at root `b8132c7`
 ([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)),
 including final cleanup. This evidence covers Go 1.23.0, Linux glibc 2.39 and
-macOS 15.x; it does not replace final tag acceptance. Windows remains `BLOCKED`
-for publication: the native lane has
-full SDK evidence for the dynamic-CRT build, while static-CRT packaging and
-public artifacts are still pending. Real AWS S3 refresh passed in both
+macOS 15.x; it does not replace final tag acceptance. Windows amd64 and arm64
+static-CRT candidates passed native C, full SDK, OS-only import closure,
+loaded-module guards, packaging verification and supplied-library roundtrip
+at `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
+amd64 race/checkptr also passed. Windows module publication, selector adoption
+and cold public consumers are still pending. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
