@@ -549,11 +549,10 @@ func main() {
 }
 EOF
   set +e
-  ( cd "$dir" && log_cmd env "${PUBLIC_GO_ENV[@]}" XDG_CACHE_HOME="$WORK/runtime" \
-      GOMODCACHE="$dir/modcache" GOCACHE="$dir/buildcache" go run . ) > "$out" 2>> "$log"
+  ( cd "$dir" && run_runtime "$log" "$out" env "${PUBLIC_GO_ENV[@]}" XDG_CACHE_HOME="$WORK/runtime" \
+      GOMODCACHE="$dir/modcache" GOCACHE="$dir/buildcache" go run . )
   rc=$?
   set -e
-  cat "$out" >> "$log"
   [[ $rc -eq 0 ]] || fail "os.UserCacheDir probe failed"
   SDK_CACHE_ROOT=$(head -n 1 "$out")
   [[ -n $SDK_CACHE_ROOT && $SDK_CACHE_ROOT == /* ]] || fail "os.UserCacheDir probe returned '$SDK_CACHE_ROOT'"
