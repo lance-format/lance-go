@@ -29,6 +29,10 @@ Windows DLL belongs to the lance-c release process. Remaining API parity and
 platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
+Maintainers preparing a native bundle release should follow
+[RELEASING.md](RELEASING.md); that guide records the current `linux/amd64`
+bundle limits and is not release authorization.
+
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:
 
@@ -214,10 +218,12 @@ matched physical offsets. `WriteColumns` returns a `DataReplacementGroup`;
 Publish staged results explicitly. Use `NewMergeOperation` with the complete
 final fragment list and complete schema for add-columns and merge results, and
 `NewUpdateOperation` with the updated fragment, modified field IDs and optional
-`UpdatedFragmentOffsets` for update results. Update operations select native
-RewriteColumns mode because `UpdateColumns` stages a horizontal column rewrite.
-Pass `nil` offsets to represent native None; pass
-`NewUpdatedFragmentOffsets(nil)` for native Some(empty).
+`UpdatedFragmentOffsets` for update results. Matched offsets and
+`UpdatedFragmentOffsets.OffsetsAt` results are independent copies in ascending
+native bitmap order. Update operations select native RewriteColumns mode
+because `UpdateColumns` stages a horizontal column rewrite. Pass `nil` offsets
+to represent native None; pass `NewUpdatedFragmentOffsets(nil)` for native
+Some(empty).
 `NewDataReplacementOperation` publishes replacement files, and
 `NewDeleteOperation` publishes partial or full physical deletion. The
 corresponding native Update options for removed or new fragments, compacted
@@ -1004,7 +1010,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show 88c07cf8ccafebf579e769416251be370b45180e:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show ac2634c553b450c7787577ffe964fc2b283b8334:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 

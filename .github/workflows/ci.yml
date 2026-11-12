@@ -87,12 +87,12 @@ jobs:
             echo "bundled public path test did not pass; it must not skip or use another library" >&2
             exit 1
           fi
-          cache_file="$cache_dir/lance-go/20b2b63598fbca3f83146061f8ef4d2f616effb359af9ae4a01fd9afe9dad1d8/liblance_c.so"
+          cache_file="$cache_dir/lance-go/e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378/liblance_c.so"
           if [[ ! -f "$cache_file" ]]; then
             echo "bundled library was not extracted to $cache_file" >&2
             exit 1
           fi
-          echo "20b2b63598fbca3f83146061f8ef4d2f616effb359af9ae4a01fd9afe9dad1d8  $cache_file" | sha256sum -c -
+          echo "e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378  $cache_file" | sha256sum -c -
 
   native:
     name: Native Linux amd64
