@@ -39,8 +39,8 @@ library names are in the workflow.
   requested revision. The root module archive is compared with `git ls-tree`
   content and blob hashes; a pseudo-version's 12-hex commit prefix or a tag's
   full commit is checked against the source.
-- Artifact metadata and payload bytes against the checked-out artifact module
-  and the source pin. The selected artifact is derived from the built binary,
+- Artifact metadata against the checked-out snapshot and the source pin;
+  downloaded payload size and SHA-256 against that matched metadata. The selected artifact is derived from the built binary,
   not hardcoded.
 - Default consumer: no `LANCE_LIB_PATH`, a cold SDK runtime cache, a standalone
   build from the public module using a fresh empty target module and build

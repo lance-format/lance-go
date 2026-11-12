@@ -43,7 +43,7 @@ interpolated into a shell command. Go is configured with `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`, `GOWORK=off`, and the public `proxy.golang.org` /
 `sum.golang.org` endpoints. The workflow never runs `go mod tidy`, `go mod
 verify`, a native build, Rust, or protoc. It disables Git line-ending
-conversion before checkout so the tracked artifact bytes can be compared with
+conversion before checkout so the tracked artifact metadata can be compared with
 the published module bytes.
 
 ## Consumers
@@ -138,3 +138,10 @@ late `go get` / cache-copy priming), and invokes the real `verify.py` PE and
 cache paths with synthetic files. Actual Windows runtime acceptance only
 happens on the hosted Windows runners; local static checks cannot substitute
 for it.
+
+Artifact snapshots in the SDK tree contain only `artifact.go`, `go.mod`, and
+`LICENSE`. The complete payload remains at the pinned publication commit. The
+lane compares these metadata files byte-for-byte, then verifies downloaded
+payload and decompressed DLL sizes and hashes against the matched metadata.
+It also verifies the public module checksum, embedded bytes and loaded identity;
+a second payload copy in the SDK checkout is unnecessary.

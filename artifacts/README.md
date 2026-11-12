@@ -1,17 +1,22 @@
 # Packaged lance-c artifacts
 
-This directory contains the published artifact modules and documents the
-packaging interface between the loader and release artifacts. The tracked
-`artifacts/<target>/liblance_c.so.zst`, `liblance_c.dylib.zst`, or `lance_c.dll.zst` files are the
-production compressed payloads; no raw shared library, static archive, or build
-evidence is tracked. Native workflows generate separate candidates; only
-accepted and published payloads are adopted here.
+This directory records metadata snapshots for the published artifact modules.
+Each `artifacts/<target>/` snapshot contains `artifact.go`, `go.mod`, and
+`LICENSE`, byte-identical to its pinned publication. Compressed payloads live
+only in the complete modules at their publication commits; those commits and
+branches must remain reachable. The root SDK tree does not duplicate them.
 
-The Unix native workflow separately produces staging candidates from the
-accepted native library. Staging candidates are workflow artifacts only; after
-review and publication, accepted payloads are tracked here, required by the
-root module, and paired with generated selectors. See "Native Unix validation
-workflow" and "Public-consumer acceptance".
+The snapshots are not independently buildable or publishable without their
+payloads. SDK builds resolve the complete modules through the root `go.mod`
+requirements. Public-consumer checks compare the downloaded metadata to these
+snapshots and verify payload size and SHA-256 against that metadata, as well
+as the public module checksum and actual loaded-library identity.
+
+Keeping payloads out of the SDK tree limits the Git data the public Go proxy
+must fetch before it can create the small root-module archive. Native workflows
+produce complete, unpublished candidate modules separately; publish an accepted
+candidate on its artifact branch, then adopt its metadata, requirement and
+selector without merging the payload into the SDK tree.
 
 ## Active Unix bundles
 
@@ -25,11 +30,10 @@ github.com/lance-format/lance-go/artifacts/darwin-amd64  v0.0.0-20261112064406-4
 github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.0.0-20261112064406-43fcbbee5161
 ```
 
-Their sources and payloads are also tracked under `artifacts/<target>/`.
-Because those directories are nested modules, the root module ignores them and
-resolves each requirement through the Go module proxy; the published modules
-are authoritative for builds. The tracked payloads must stay byte-identical to
-the published archives.
+The metadata snapshots are nested modules, so root builds resolve requirements
+through the Go module proxy rather than using the local directories. Complete
+sources and payloads remain at publication commits `ac5955a095d0` and
+`43fcbbee5161`, respectively.
 
 All four published Unix companions passed default, namespace-only and external
 cold public consumers at root `b8132c7ca5df4237c8c8324af2ec0fa148901926`

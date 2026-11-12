@@ -284,7 +284,7 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The tracked payload is the compressed archive. The current `linux/amd64`
+The artifact publication commit tracks the compressed archive. The current `linux/amd64`
 payload is 85,696,976 bytes (81.7 MiB) compressed and 322,099,824 bytes
 (307.2 MiB) uncompressed; exact hashes and counts are recorded in
 [artifacts/README.md](artifacts/README.md). The raw library is never committed. GitHub rejects
@@ -293,13 +293,19 @@ compressed payload below that hard limit. A future target whose compressed
 payload exceeds it needs a separate storage decision; do not silently switch
 formats or move the payload outside the module contract.
 
-The tracked payload under `artifacts/$SLUG/` must stay byte-identical to the
+The payload at the artifact publication commit must stay byte-identical to the
 published module archive. Preserve and record both sizes and both hashes.
+The root SDK tree retains only the three metadata files (`artifact.go`,
+`go.mod`, and `LICENSE`); it does not duplicate compressed payloads. These
+metadata snapshots are not standalone buildable or publishable modules.
 
 ## 4. Publish the artifact and resolve its exact version
 
-Commit the generated `artifacts/$SLUG` module on the task branch and push the
-branch. Record that full SHA as `ARTIFACT_COMMIT`. Publish the companion module
+Commit the complete generated `artifacts/$SLUG` module on a dedicated artifact
+publication branch and push that branch. Keep the publication branch reachable;
+do not merge its payload into the root SDK tree. Adopt only its three metadata
+files, generated selector and root requirement. Record the full publication SHA
+as `ARTIFACT_COMMIT`. Publish the companion module
 with a nested tag, or resolve a pseudo-version from that pushed commit. For the
 tagged path:
 

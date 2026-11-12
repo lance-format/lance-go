@@ -735,7 +735,9 @@ function Assert-TrackedArtifact($Meta) {
     if (-not (Test-Path -LiteralPath $trackedDir)) {
         Fail ("tracked Windows artifact is missing: {0}; publish and adopt the static-CRT Windows artifact module before this lane can pass" -f $trackedDir)
     }
-    foreach ($name in @('artifact.go', 'go.mod', 'LICENSE', $script:LibraryName + '.zst')) {
+    # Payload bytes live at the pinned publication commit. Matching artifact.go
+    # binds Read-ArtifactModule's payload size/hash checks to this SDK revision.
+    foreach ($name in @('artifact.go', 'go.mod', 'LICENSE')) {
         $tracked = Join-Path $trackedDir $name
         $published = Join-Path $Meta.Dir $name
         if (-not (Test-Path -LiteralPath $tracked)) {
