@@ -137,26 +137,8 @@ func (o *UpdatedFragmentOffsets) FragmentIDAt(index uint64) (uint64, error) {
 	return fragmentID, nil
 }
 
-// OffsetAt returns one offset by entry index and ascending offset position.
-func (o *UpdatedFragmentOffsets) OffsetAt(index, position uint64) (uint32, error) {
-	if o == nil {
-		return 0, fmt.Errorf("ffi: read nil updated fragment offsets")
-	}
-	handleValue := o.handle.Load()
-	if handleValue == 0 {
-		return 0, fmt.Errorf("ffi: read closed updated fragment offsets")
-	}
-	var offset uint32
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	rc := o.b.updatedFragmentOffsetsOffsetAt(handleValue, index, position, &offset)
-	if rc != 0 {
-		return 0, mutationError(o.b, "read updated fragment offsets offset")
-	}
-	return offset, nil
-}
-
-// OffsetsAt returns every offset of one fragment entry in native order.
+// OffsetsAt returns an owned copy of every offset of one fragment entry in
+// native order.
 func (o *UpdatedFragmentOffsets) OffsetsAt(index uint64) ([]uint32, error) {
 	if o == nil {
 		return nil, fmt.Errorf("ffi: read nil updated fragment offsets")
@@ -172,13 +154,15 @@ func (o *UpdatedFragmentOffsets) OffsetsAt(index uint64) ([]uint32, error) {
 	if rc != 0 {
 		return nil, mutationError(o.b, "read updated fragment offsets offset count")
 	}
-	offsets := make([]uint32, 0, count)
-	for position := uint64(0); position < count; position++ {
-		offset, err := o.OffsetAt(index, position)
-		if err != nil {
-			return nil, err
-		}
-		offsets = append(offsets, offset)
+	offsets := make([]uint32, count)
+	var outOffsets *uint32
+	if count > 0 {
+		outOffsets = &offsets[0]
+	}
+	rc = o.b.updatedFragmentOffsetsCopyAt(handleValue, index, outOffsets, count)
+	runtime.KeepAlive(offsets)
+	if rc != 0 {
+		return nil, mutationError(o.b, "read updated fragment offsets offsets")
 	}
 	return offsets, nil
 }
@@ -253,7 +237,8 @@ func (r *UpdateColumnsResult) FieldsModified() ([]uint32, error) {
 	return fields, nil
 }
 
-// MatchedOffsets returns matched physical row offsets in native bitmap order.
+// MatchedOffsets returns an owned copy of the matched physical row offsets in
+// native bitmap order.
 func (r *UpdateColumnsResult) MatchedOffsets() ([]uint32, error) {
 	if r == nil {
 		return nil, fmt.Errorf("ffi: read nil update columns result")
@@ -269,14 +254,15 @@ func (r *UpdateColumnsResult) MatchedOffsets() ([]uint32, error) {
 	if rc != 0 {
 		return nil, mutationError(r.b, "read update columns matched offset count")
 	}
-	offsets := make([]uint32, 0, count)
-	for index := uint64(0); index < count; index++ {
-		var offset uint32
-		rc = r.b.fragmentUpdateColumnsResultMatchedOffsetAt(handleValue, index, &offset)
-		if rc != 0 {
-			return nil, mutationError(r.b, "read update columns matched offset")
-		}
-		offsets = append(offsets, offset)
+	offsets := make([]uint32, count)
+	var outOffsets *uint32
+	if count > 0 {
+		outOffsets = &offsets[0]
+	}
+	rc = r.b.fragmentUpdateColumnsResultMatchedOffsets(handleValue, outOffsets, count)
+	runtime.KeepAlive(offsets)
+	if rc != 0 {
+		return nil, mutationError(r.b, "read update columns matched offsets")
 	}
 	return offsets, nil
 }
