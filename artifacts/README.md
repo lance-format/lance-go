@@ -151,7 +151,10 @@ no such runtime support is claimed.
 The cross-build matrix in `ci.yml` compiles other targets but does not run them
 and does not publish artifacts. The Unix native workflow rebuilds candidate
 libraries; publication and selector adoption are separate release steps.
-Windows remains `BLOCKED` and has no published module or selector.
+Windows static-CRT candidates passed native and packaging validation at
+`c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
+They remain unpublished, with no active Windows selector or cold public-consumer
+acceptance.
 
 A bundle is fetched through the normal Go module proxy when a default build for
 a published Unix target compiles its artifact package. This is not a
