@@ -312,6 +312,7 @@ static int is_redistributable_crt_module(const char* name) {
 		lower[i] = (char)tolower((unsigned char)name[i]);
 	}
 	lower[i] = '\0';
+	/* Match Get-DependencyClass; only the exact OS CRT names above are allowed. */
 	return has_prefix(lower, "vcruntime") ||
 		has_prefix(lower, "concrt") ||
 		has_prefix(lower, "vcomp") ||
@@ -319,7 +320,10 @@ static int is_redistributable_crt_module(const char* name) {
 		has_prefix(lower, "mfc") ||
 		has_prefix(lower, "msvcp") ||
 		has_prefix(lower, "msvcr") ||
-		has_prefix(lower, "ucrtbase");
+		has_prefix(lower, "ucrtbase") ||
+		has_prefix(lower, "vcamp") ||
+		has_prefix(lower, "atl") ||
+		has_prefix(lower, "msvcirt");
 }
 
 static void check_crt_modules(const char* phase) {

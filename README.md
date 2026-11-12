@@ -29,8 +29,10 @@ evidence build for Windows amd64 and Windows arm64. Each matrix entry compiles
 the pinned upstream source with the runner-native MSVC toolchain and target
 (`x86_64-pc-windows-msvc` on `windows-2022`, `aarch64-pc-windows-msvc` on
 `windows-11-vs2026-arm`) with a static CRT. The lane sets
-`CARGO_ENCODED_RUSTFLAGS` to `-Ctarget-feature=+crt-static` after merging any
-inherited flags, and records the effective configuration. Cargo exposes that
+`CARGO_ENCODED_RUSTFLAGS` to include `-Ctarget-feature=+crt-static`, preserving
+flags from the first active source among `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`,
+and `CARGO_BUILD_RUSTFLAGS`. It records the effective configuration; per-target
+environment and Cargo config-file flags are overridden without being audited. Cargo exposes that
 target feature to native build scripts, so `cc` and AWS-LC select the static
 CRT for their C objects. The lane stages the DLL, MSVC import library and
 public headers, checks the PE machine, PE32+ format, derived exported `lance_*`

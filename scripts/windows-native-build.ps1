@@ -451,6 +451,19 @@ function Get-PeProvenanceInfo {
 		$debugDirectoryPresent = $false
 		$debugEntries = New-Object System.Collections.Generic.List[object]
 		$dataDirectoryOffset = [int64]$peOffset + 24 + 112
+		$delayImportDirectoryPresent = $false
+		if ($numberOfRvaAndSizes -ge 14) {
+			if ($optionalHeaderSize -lt (112 + 14 * 8)) {
+				throw "$Path optional header does not contain its declared delay-import directory"
+			}
+			$stream.Position = $dataDirectoryOffset + (13 * 8)
+			$delayRva = $reader.ReadUInt32()
+			$delaySize = $reader.ReadUInt32()
+			if (($delayRva -eq 0) -ne ($delaySize -eq 0)) {
+				throw "$Path has inconsistent delay-import directory RVA and size"
+			}
+			$delayImportDirectoryPresent = $delayRva -ne 0
+		}
 		$debugDirectoryOffset = $dataDirectoryOffset + (6 * 8)
 		if ($numberOfRvaAndSizes -ge 7) {
 			if ($optionalHeaderSize -lt (112 + 7 * 8)) {
@@ -529,6 +542,7 @@ function Get-PeProvenanceInfo {
 			Sections = $sections.ToArray()
 			DebugSections = [object[]]$debugSections
 			PdataSection = $pdata
+			DelayImportDirectoryPresent = $delayImportDirectoryPresent
 			DebugDirectoryPresent = $debugDirectoryPresent
 			DebugEntries = $debugEntries.ToArray()
 		}
@@ -546,16 +560,19 @@ function Get-DependencyClass {
 	if ($script:OsOnlyDependencies -contains $lower) {
 		return "system"
 	}
-	if ($lower -match "^(vcruntime[0-9_]*d?|msvcp[0-9_]*d?|msvcr[0-9]+d?|concrt[0-9_]*d?|vcomp[0-9_]*d?|vccorlib[0-9_]*d?|ucrtbased|mfc[0-9]+u?d?|mfcm[0-9]+u?d?)\.dll$") {
+	# Match the conservative family guard in consumer.c; exact OS names above win.
+	if ($lower -match "^(vcruntime|msvcp|msvcr|concrt|vcomp|vccorlib|ucrtbase|mfc|vcamp|atl|msvcirt).*\.dll$") {
 		return "redistributable"
 	}
 	return "unclassified"
 }
 
 # Cargo gives CARGO_ENCODED_RUSTFLAGS precedence over RUSTFLAGS and target or
-# build config rustflags. Merge inherited flags so a caller's configuration is
-# not silently dropped, then add the reviewed static-CRT target feature. An
-# explicit -crt-static is a conflict: fail instead of overriding it.
+# build config rustflags. Preserve the first active environment source among
+# CARGO_ENCODED_RUSTFLAGS, RUSTFLAGS, and CARGO_BUILD_RUSTFLAGS, then add
+# the static-CRT target feature. Reject -crt-static in that selected source.
+# Per-target environment and Cargo config-file flags are overridden by the
+# encoded flags; this helper does not claim to audit those lower-priority sources.
 #
 # The pinned ac263 source needs no patch for this: when static_crt is unset,
 # cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE, which Cargo derives from
@@ -617,7 +634,8 @@ function Set-StaticCrtBuildEnvironment {
 	$oldRustFlags = [Environment]::GetEnvironmentVariable("RUSTFLAGS", "Process")
 	[Environment]::SetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", $Plan.Encoded, "Process")
 	# Cargo prefers the encoded variable, but clearing RUSTFLAGS avoids leaving
-	# two contradictory records in the child environment and recorded evidence.
+	# a shadowed RUSTFLAGS record in the child environment. Other lower-priority
+	# variables remain unchanged and are ignored by Cargo while encoded is set.
 	[Environment]::SetEnvironmentVariable("RUSTFLAGS", $null, "Process")
 	return [pscustomobject]@{
 		OldEncoded = $oldEncoded
@@ -640,7 +658,7 @@ function Read-NativeImports {
 	$delay = New-Object System.Collections.Generic.List[string]
 	$section = $null
 	foreach ($line in $Lines) {
-		if ($line -match "^\s*Section contains the following (delay load )?imports:\s*$") {
+		if ($line -match "^\s*Section contains the following (delay[- ]load )?imports:\s*$") {
 			$section = if ($Matches[1]) { "delay" } else { "direct" }
 			continue
 		}
@@ -662,6 +680,15 @@ function Read-NativeImports {
 	return [pscustomobject]@{
 		Direct = @($direct | Sort-Object -Unique)
 		Delay = @($delay | Sort-Object -Unique)
+	}
+}
+
+# Compare the parser with the PE directory so an unrecognized dumpbin section
+# cannot turn a nonempty delay-import directory into an empty dependency list.
+function Assert-DelayImportDirectory {
+	param([bool]$Present, [AllowEmptyCollection()][string[]]$Names)
+	if ($Present -ne (@($Names).Count -gt 0)) {
+		throw "dumpbin delay imports disagree with the PE delay-import directory"
 	}
 }
 
@@ -1141,6 +1168,7 @@ try {
 		"cargo_encoded_rustflags=$($staticCrt.Encoded.Replace([string][char]0x1F, '<US>'))",
 		"cargo_precedence=CARGO_ENCODED_RUSTFLAGS over RUSTFLAGS, target/build config rustflags, and CARGO_BUILD_RUSTFLAGS",
 		"cargo_build_rustflags_env=$cargoBuildRustFlags",
+		"inherited_audit_scope=selected environment source only; per-target environment and Cargo config-file flags are overridden, not audited",
 		"source_contract=cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE for crt-static when static_crt is not set explicitly",
 		"upstream_contract_reference=https://github.com/lance-format/lance-c/blob/335dbacad90786a486ac69e7f9bf089ab63ea751/README.md",
 		"rustflags_env_cleared=true",
@@ -1263,7 +1291,7 @@ try {
 		"pdata_section=$pdataText",
 		"pdb_reference=$pdbText",
 		"unix_strip_applied=false",
-		"static_crt_config=-Ctarget-feature=+crt-static",
+		"static_crt_config=$script:StaticCrtConfig",
 		"import_library=lib/lance_c.dll.lib",
 		"protoc_version=$protocVersion",
 		"protoc_archive_sha256=$actualProtocSha",
@@ -1358,6 +1386,9 @@ try {
 		$onlyImports = @($imports.Direct | Where-Object { $dependentKeys -notcontains $_.ToLowerInvariant() })
 		throw "dumpbin /imports direct imports do not match /dependents (only in dependents: $($onlyDependents -join ', '); only in imports: $($onlyImports -join ', '))"
 	}
+	Assert-DelayImportDirectory -Present $peFacts.DelayImportDirectoryPresent -Names $imports.Delay
+	"pe_delay_import_directory_present=$($peFacts.DelayImportDirectoryPresent)" |
+		Set-Content -LiteralPath (Join-Path $EvidenceDir "delay-import-directory.txt")
 	$script:DependencySummary = $dependencies -join ", "
 	$dependencies | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependencies.txt")
 	$imports.Direct | Set-Content -LiteralPath (Join-Path $EvidenceDir "imports.txt")
@@ -2029,7 +2060,7 @@ try {
 		"target=windows/$Architecture",
 		"library_sha256=$script:DllSha256",
 		"library_bytes=$script:DllSize",
-		"static_crt_config=+crt-static",
+		"static_crt_config=$script:StaticCrtConfig",
 		"direct_and_delay_import_closure=$script:CrtImportClosure",
 		"loaded_module_crt_guard=PASS ($script:CrtLoadedModules)",
 		"payload_sha256=$payloadSha",
