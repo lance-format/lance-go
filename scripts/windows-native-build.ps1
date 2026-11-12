@@ -750,7 +750,7 @@ function Write-ProductionEligibility {
 	$lines += @(
 		"hosted_only_non_os=$script:HostedDependencies",
 		"issue_215=https://github.com/lance-format/lance-c/issues/215",
-		"issue_215_scope=supported Windows deployment contract is unresolved",
+		"issue_215_scope=supported Windows deployment contract; downstream eligibility is evaluated from this build",
 		"issue_214=https://github.com/lance-format/lance-c/issues/214",
 		"issue_214_scope=dependency export inventory is distinct from runtime availability",
 		"candidate_status=$CandidateStatus"

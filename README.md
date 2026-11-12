@@ -68,10 +68,11 @@ static-CRT evidence; the candidate therefore remains unpublished and makes no
 support claim. No Windows module is published, no
 selector is activated, and no module requirement is added. Native test success
 does not establish a cold default, cold external, or public consumer, zero-config distribution, or
-a supported Windows release. The arm64 matrix entry was added but has not been
-executed in this change, so it is a planned evidence lane until a hosted run
-succeeds. macOS runtime behavior and Windows publication remain pending;
-acceptance of a packaged Windows DLL belongs to the lance-c release process.
+a supported Windows release. Prior hosted runs passed the full supplied-library
+SDK suites on both Windows architectures using a dynamically linked CRT.
+Static-CRT runtime acceptance and Windows companion publication remain pending.
+Unix native-library validation is documented below; it does not establish cold
+public-bundle acceptance.
 Remaining API parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
