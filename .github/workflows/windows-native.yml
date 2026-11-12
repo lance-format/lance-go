@@ -2,9 +2,13 @@
 #
 # Each matrix entry builds the pinned upstream source with the host-native MSVC
 # toolchain, then verifies the PE identity, header/export agreement, staged
-# dependencies, a native C consumer, and the Go external-library tests. The same
-# script and checks run on both architectures; -Architecture only selects the
-# target triple and expected host/target metadata.
+# dependencies, a native C consumer, and the full Go SDK suite. The suite runs
+# the external tag at CGO 0, the default tag with the staged DLL supplied
+# through LANCE_LIB_PATH, and on amd64 a CGO 1 -race lane with the host gcc;
+# windows/arm64 has no supported Go race build, which is recorded as such
+# rather than skipped. The same script and checks run on both architectures;
+# -Architecture only selects the target triple and expected host/target
+# metadata.
 #
 # amd64 runs on windows-2022 with x86_64-pc-windows-msvc.
 # arm64 runs on the GitHub-hosted windows-11-vs2026-arm image with
@@ -35,14 +39,13 @@ on:
       - "scripts/sync-lance-c-gen/**"
       - "scripts/internal/artifactgen/**"
       - "scripts/verify-lance-c-artifact/**"
-      - "examples/roundtrip/**"
-      - "internal/ffi/**"
-      - "internal/loader/**"
-      - "internal/cdata/**"
-      - "namespace*.go"
-      - "namespace/**"
-      - "dataset*.go"
+      - "examples/**"
+      - "internal/**"
+      - "compat/go/**"
+      - "benchmarks/**"
       - "file/**"
+      - "namespace/**"
+      - "*.go"
       - "go.mod"
       - "go.sum"
 
@@ -63,7 +66,7 @@ jobs:
   windows-native:
     name: windows-native-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -94,7 +97,7 @@ jobs:
 
       - name: Build and verify native Windows ${{ matrix.arch }}
         shell: pwsh
-        timeout-minutes: 110
+        timeout-minutes: 140
         run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-build.ps1 -Architecture ${{ matrix.arch }}
 
       - name: Upload native evidence
