@@ -1,0 +1,137 @@
+# Public-consumer acceptance for one published Unix target.
+#
+# Each job resolves the exact repository revision from the public Go module
+# proxy, builds standalone consumers outside the checkout, and exercises the
+# public default, namespace-only, and external-library contracts. It does not
+# rebuild native code, publish modules, or activate platform selectors.
+#
+# A pull request uses the exact head commit. Manual dispatch accepts one exact
+# full commit SHA or checked-out tag. The root module must already be publicly
+# resolvable from proxy.golang.org at that revision.
+name: Unix public consumers
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Exact root revision (full commit SHA or tag) to resolve from proxy.golang.org"
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - ".github/workflows/unix-public-consumers.yml"
+      - "scripts/public-consumer/**"
+      - "artifacts/**"
+      - "internal/ffi/**"
+      - "internal/loader/**"
+      - "internal/bundled/**"
+      - "namespace/**"
+      - "examples/roundtrip/**"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CGO_ENABLED: "0"
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+  GOENV: "off"
+  GOPROXY: https://proxy.golang.org
+  GOSUMDB: sum.golang.org
+
+jobs:
+  public-consumer:
+    name: Public consumer ${{ matrix.slug }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slug: linux-amd64
+            runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            uname: x86_64
+            library_name: liblance_c.so
+          - slug: linux-arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            uname: aarch64
+            library_name: liblance_c.so
+          - slug: darwin-amd64
+            runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            uname: x86_64
+            library_name: liblance_c.dylib
+          - slug: darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            uname: arm64
+            library_name: liblance_c.dylib
+    env:
+      TARGET_GOOS: ${{ matrix.goos }}
+      TARGET_GOARCH: ${{ matrix.goarch }}
+      EXPECTED_UNAME: ${{ matrix.uname }}
+      LIBRARY_NAME: ${{ matrix.library_name }}
+      ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+      SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+    steps:
+      - name: Check out exact source revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Go 1.23 from go.mod
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Assert native runtime and Go target
+        run: |
+          set -euo pipefail
+          actual_uname=$(uname -m)
+          actual_goos=$(go env GOOS)
+          actual_goarch=$(go env GOARCH)
+          go_version=$(go version)
+          if [[ $actual_uname != "$EXPECTED_UNAME" ]]; then
+            echo "uname -m is $actual_uname, expected $EXPECTED_UNAME" >&2
+            exit 1
+          fi
+          if [[ $actual_goos != "$TARGET_GOOS" || $actual_goarch != "$TARGET_GOARCH" ]]; then
+            echo "Go host is $actual_goos/$actual_goarch, expected $TARGET_GOOS/$TARGET_GOARCH" >&2
+            exit 1
+          fi
+          echo "native target: $TARGET_GOOS/$TARGET_GOARCH on $actual_uname"
+          echo "go: $go_version"
+          python3 --version
+          # Fixture checks for verify.py itself; they never build or run Go.
+          python3 -B scripts/public-consumer/binary_metadata_test.py
+
+      - name: Run public-consumer acceptance
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
+        run: bash scripts/public-consumer/run.sh
+
+      - name: Upload public-consumer evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: public-consumer-${{ matrix.slug }}
+          path: ${{ runner.temp }}/public-consumer-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+          overwrite: true
