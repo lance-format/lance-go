@@ -25,10 +25,12 @@ Windows remains `BLOCKED`, and other targets still need an explicit
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion
-modules use the same pinned upstream commit and header; their native runtime
-floors are not established here. The companion selectors were adopted for
-validation, but their hosted native cold public-consumer acceptance is pending.
-Do not treat publication alone as runtime support. Linux amd64 has native test
+modules use the same pinned upstream commit and header. All four Unix targets
+passed cold public default, namespace-only and external consumers at
+`b8132c7`, including independent target caches and final cleanup
+([hosted run](https://github.com/lance-format/lance-go/actions/runs/43193825133)).
+The tested Linux hosts use glibc 2.39; the macOS hosts run 15.x. This does not
+establish support for older runtimes. Linux amd64 has native test
 coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. The separate
@@ -63,13 +65,11 @@ deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
 tracks dependency exports and is distinct. No Windows module is published, no
 selector is activated, and no module requirement is added. Native test success
 does not establish a cold default, cold external, or public consumer, zero-config distribution, or
-a supported Windows release. The arm64 matrix entry was added but has not been
-executed in this change, so it is a planned evidence lane until a hosted run
-succeeds. macOS cold public-consumer acceptance and Windows publication remain
-pending; acceptance of a packaged Windows DLL belongs to the lance-c release
-process. The new Unix public-consumer lane is described in
-[scripts/public-consumer/README.md](scripts/public-consumer/README.md); its
-presence is not evidence that the three companion targets have passed.
+a supported Windows release. Full supplied-library SDK suites have passed on
+both Windows architectures; static-CRT candidate acceptance and Windows
+publication remain pending. The Unix public-consumer lane and its cache
+boundaries are described in
+[scripts/public-consumer/README.md](scripts/public-consumer/README.md).
 Remaining API parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
@@ -84,8 +84,7 @@ as a passing candidate.
 
 Maintainers preparing a native bundle release should follow
 [RELEASING.md](RELEASING.md); that guide records the current Unix bundle
-limits, including companion acceptance that is still pending, and is not
-release authorization.
+limits and remaining release gates, and is not release authorization.
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:

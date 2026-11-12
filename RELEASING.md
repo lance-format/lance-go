@@ -9,10 +9,12 @@ Four Unix targets now have published artifact modules and active selectors:
 `linux/amd64`, `linux/arm64`, `darwin/amd64`, and `darwin/arm64`. The
 `linux/amd64` artifact is the accepted published artifact and has prior
 native, default, external, and race evidence. The three companion modules are
-published and their selectors are adopted as validation candidates. No Unix
-target has completed cold public-consumer acceptance in all modes. Publication
-of an artifact or selector is therefore not, by itself, a runtime support
-claim. Windows remains `BLOCKED` for publication: the native lane has
+published and their selectors are active. All four Unix targets passed cold
+public default, namespace-only and external consumers at root `b8132c7`
+([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)),
+including final cleanup. This evidence covers Go 1.23.0, Linux glibc 2.39 and
+macOS 15.x; it does not replace final tag acceptance. Windows remains `BLOCKED`
+for publication: the native lane has
 full SDK evidence for the dynamic-CRT build, while static-CRT packaging and
 public artifacts are still pending. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
@@ -27,10 +29,9 @@ tests four native runners and generates unpublished candidate modules under
 their real `artifacts/$SLUG` module paths. The workflow uploads those
 candidates as review evidence; it does not publish a production module, push
 a tag, or activate a selector. A build/test success is not acceptance:
-candidate verification must also pass. A recent four-target default run built
-and tested on all four Unix targets but failed release verification before
-runtime while parsing the root module, so it did not establish acceptance; that
-fix is tracked separately. Use the current workflow and support status in
+candidate verification must also pass. The separate public-consumer workflow
+verifies published module identity and cold runtime behavior. Use the current
+workflow and support status in
 [artifacts/README.md](artifacts/README.md); record results for the exact release
 candidate rather than copying an earlier status table.
 
@@ -489,8 +490,8 @@ current pin examples, not a released preview. The accepted `linux/amd64`
 module is
 `github.com/lance-format/lance-go/artifacts/linux-amd64@v0.0.0-20261111235843-ac5955a095d0`.
 The published companion versions, payload sizes, and hashes are listed in
-[artifacts/README.md](artifacts/README.md); cold public-consumer acceptance in
-all modes remains pending.
+[artifacts/README.md](artifacts/README.md), together with exact-root cold public
+acceptance. A new release tag still requires the tag-based gates above.
 
 Prepare release notes from that record. Include the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,
