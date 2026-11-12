@@ -400,8 +400,9 @@ env -u LANCE_LIB_PATH CGO_ENABLED=0 GOWORK=off \
   go run "$ROOT_MODULE/examples/roundtrip"
 ```
 
-This smoke test shares its get and target caches by design. On macOS it uses
-the normal `os.UserCacheDir` cache, so a pre-existing cache can satisfy the run.
+This smoke test shares its module cache between `go get` and the target run.
+The target uses a separate build cache that `go get` does not use. On macOS it
+uses the normal `os.UserCacheDir` cache, so a pre-existing cache can satisfy the run.
 It only checks that the install commands complete and the default example runs;
 it is not a cold or cache-identity check. Default, namespace-only, and external
 acceptance must use the maintained driver below with fresh per-mode caches.
