@@ -328,7 +328,8 @@ static int is_redistributable_crt_module(const char* name) {
 
 static void check_crt_modules(const char* phase) {
 	HANDLE snapshot;
-	MODULEENTRY32A entry;
+	/* Toolhelp's ANSI declarations are unsuffixed; there are no A variants. */
+	MODULEENTRY32 entry;
 	char os_names[8][256];
 	char joined[2048];
 	int os_count = 0;
@@ -346,7 +347,7 @@ static void check_crt_modules(const char* phase) {
 
 	memset(&entry, 0, sizeof(entry));
 	entry.dwSize = (DWORD)sizeof(entry);
-	if (Module32FirstA(snapshot, &entry)) {
+	if (Module32First(snapshot, &entry)) {
 		do {
 			if (is_redistributable_crt_module(entry.szModule)) {
 				fprintf(stderr,
@@ -367,9 +368,9 @@ static void check_crt_modules(const char* phase) {
 					os_count++;
 				}
 			}
-		} while (Module32NextA(snapshot, &entry));
+		} while (Module32Next(snapshot, &entry));
 	} else {
-		fprintf(stderr, "FAIL: %s: Module32FirstA failed: %lu\n",
+		fprintf(stderr, "FAIL: %s: Module32First failed: %lu\n",
 			phase, (unsigned long)GetLastError());
 		failures++;
 	}
