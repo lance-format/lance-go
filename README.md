@@ -20,8 +20,9 @@ module dependency, so building or testing fetches it through the Go module
 proxy; it is not a download-free installation. `go get` can download all four
 companion archives because it resolves packages for all build tags; a
 fresh-cache default target build is expected to fetch only the selected one.
-Windows remains `BLOCKED`, and other targets still need an explicit
-`LANCE_LIB_PATH` or a system `liblance_c`.
+Windows companion candidates have passed native validation but are not yet
+published or activated. Windows and other unsupported bundle targets still
+need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion
@@ -72,15 +73,18 @@ earlier evidence for the pinned ac263 source, the native DLL imported
 the hosted `System32`; its presence there is not OS-only availability. Upstream
 [#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
 deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
-tracks dependency exports and is distinct. This change configures the static
-CRT and the import/loaded-module guards, but hosted ac263 static-CRT runtime
-acceptance is still pending; the candidate remains unpublished and makes no
-support claim. No Windows module is published, no
-selector is activated, and no module requirement is added. Native test success
-does not establish a cold default, cold external, or public consumer, zero-config distribution, or
-a supported Windows release. Prior hosted runs passed the full supplied-library
-SDK suites on both Windows architectures using a dynamically linked CRT.
-Static-CRT runtime acceptance and Windows companion publication remain pending.
+tracks dependency exports and is distinct. Hosted ac263 static-CRT builds for
+both Windows architectures passed the C consumer, full external and
+supplied-library default SDK suites, and candidate verification at `c8373c9`
+([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
+The amd64 race/checkptr lane also passed; Go does not support Windows arm64
+race builds. Both DLLs have OS-only direct imports, no delay-load imports, and
+passed the loaded-module CRT guard and supplied-library roundtrip.
+
+The verified candidates remain unpublished. No Windows selector is activated
+and no Windows module requirement is added. This evidence does not establish
+cold default, cold external or public consumer acceptance, zero-config
+distribution, or a supported Windows release.
 The Unix public-consumer lane and its cache boundaries are described in
 [scripts/public-consumer/README.md](scripts/public-consumer/README.md).
 Remaining API parity and platform distribution work is tracked in
