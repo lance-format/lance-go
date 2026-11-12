@@ -355,6 +355,9 @@ func TestFragmentUpdateMatchedOffsetsMatchNativeOracle(t *testing.T) {
 		}
 		result.Close()
 		updated.Close()
+		if matched == nil {
+			t.Fatalf("matched offsets for %v = nil, want a non-nil slice", ids)
+		}
 		if !equalUint32(matched, want[i]) {
 			t.Fatalf("matched offsets for %v after result close = %v, want %v", ids, matched, want[i])
 		}
@@ -394,6 +397,9 @@ func TestUpdatedFragmentOffsetsReportOwnedNativeSetCopies(t *testing.T) {
 
 	check := func(fragmentID uint64, got, expected []uint32) {
 		t.Helper()
+		if got == nil {
+			t.Fatalf("fragment %d offsets = nil, want a non-nil slice", fragmentID)
+		}
 		if len(got) != len(expected) {
 			t.Fatalf("fragment %d offset count = %d, want %d", fragmentID, len(got), len(expected))
 		}
