@@ -689,7 +689,7 @@ function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
     Assert-Equal "$($Mode.Name) root zip bytes at setup and cold target caches" (Get-FileSha256 $SetupZip) (Get-FileSha256 $zip)
     Assert-Equal "$($Mode.Name) root go.mod bytes at setup and cold target caches" (Get-FileSha256 $script:SetupRootGoMod) (Get-FileSha256 $goMod)
     Save-ModuleCacheSnapshot "$($Mode.Name)/cold/root-resolve" $Mode.ModCache
-    Assert-RootZip "$($Mode.Name)/cold/root-resolve/"
+    Assert-RootZip "$($Mode.Name)/cold/root-resolve"
     Assert-RootArchive $zip ("$($Mode.Name)-cold") $NestedModules
     return $zip
 }

@@ -249,7 +249,7 @@ The maintained Unix workflow generates its candidate with the real
 `--module-path "$ARTIFACT_MODULE"` and uploads it with seven-day retention. The
 candidate is unpublished review evidence, not a published target, and its
 selector must not be activated. Before release, regenerate and verify the
-tracked `artifacts/$SLUG` module from the recorded library and header, then
+complete generated module from the recorded library and header, then
 publish that exact module.
 
 Inspect the generated module before publishing:
@@ -340,8 +340,8 @@ cd "$REPO_ROOT"
 
 Record `Version`, `Sum`, `GoModSum`, and `Zip` from that output. A missing
 checksum entry or a version that only resolves from a local cache is a stop
-condition. Download the public archive and compare its payload with the tracked
-payload; the zip entry is under the module and version prefix:
+condition. Download the public archive and compare its payload with the generated
+module payload; the zip entry is under the module and version prefix:
 
 ```sh
 PAYLOAD=$(find "$ARTIFACT_OUT/module" -type f -name '*.zst' -print -quit)
@@ -349,12 +349,12 @@ ZIP=$(sed -n 's/.*"Zip": "\([^"]*\)".*/\1/p' "$PROBE_WORK/artifact.json")
 PAYLOAD_NAME=$(basename "$PAYLOAD")
 test -n "$ZIP"
 unzip -p "$ZIP" "$ARTIFACT_MODULE@$ARTIFACT_VERSION/$PAYLOAD_NAME" > "$PROBE_WORK/published.zst"
-cmp "$PROBE_WORK/published.zst" "artifacts/$SLUG/$PAYLOAD_NAME"
+cmp "$PROBE_WORK/published.zst" "$PAYLOAD"
 sha256sum "$PROBE_WORK/published.zst"
 ```
 
 The compressed payload hash must match both the module metadata and the
-tracked file.
+generated file verified before publication.
 
 ## 5. Activate the selector and root requirement
 
