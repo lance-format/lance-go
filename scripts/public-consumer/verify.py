@@ -199,35 +199,109 @@ def command_archive(args):
     return 0
 
 
+def metadata_field(fields, index):
+    return fields[index] if index < len(fields) else ""
+
+
+def metadata_record(fields):
+    return {
+        "path": metadata_field(fields, 2),
+        "version": metadata_field(fields, 3),
+        "sum": metadata_field(fields, 4),
+    }
+
+
 def parse_go_version_m(path):
-    dependencies = []
-    build = {}
-    tags = None
+    """Parse `go version -m` text into module records and build settings.
+
+    Go prints one `mod` record for the module that provided the built package
+    and one `dep` record per module linked from it. Building a package inside a
+    dependency module, as the default and external consumers do for the root
+    examples, records that dependency module as `mod` and omits a `dep` record
+    for it. A standalone consumer module instead records itself as `mod` and
+    the root module as `dep`. Root identity therefore has to accept both
+    shapes, while artifact identity stays limited to `dep` records.
+
+    Replacements are collected separately: a replaced module line carries no
+    sum, and the replacement describes bytes that the recorded version and sum
+    do not identify.
+    """
+    metadata = {
+        "package_path": None,
+        "main_module": None,
+        "dependencies": [],
+        "replacements": [],
+        "build": {},
+        "tags": None,
+    }
+    pending = None
     with open(path, "r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
             fields = line.rstrip("\n").split("\t")
-            if len(fields) >= 5 and fields[1] == "dep":
-                dependencies.append(
-                    {"path": fields[2], "version": fields[3], "sum": fields[4]}
-                )
-            elif len(fields) >= 3 and fields[1] == "build":
+            if len(fields) < 3 or fields[0] != "":
+                continue
+            kind = fields[1]
+            if kind == "mod" or kind == "dep":
+                record = metadata_record(fields)
+                if kind == "mod":
+                    metadata["main_module"] = record
+                else:
+                    metadata["dependencies"].append(record)
+                pending = (kind, record)
+            elif kind == "=>":
+                if pending is not None:
+                    replaced_kind, record = pending
+                    metadata["replacements"].append(
+                        {
+                            "record": replaced_kind,
+                            "path": record["path"],
+                            "version": record["version"],
+                            "replacement": metadata_record(fields),
+                        }
+                    )
+                pending = None
+            elif kind == "path":
+                metadata["package_path"] = fields[2]
+                pending = None
+            elif kind == "build":
                 item = fields[2]
                 if item.startswith("-tags="):
-                    tags = item[len("-tags="):]
+                    metadata["tags"] = item[len("-tags="):]
                 elif "=" in item:
                     key, value = item.split("=", 1)
-                    build[key] = value
+                    metadata["build"][key] = value
                 else:
-                    build[item] = ""
-    return dependencies, build, tags
+                    metadata["build"][item] = ""
+                pending = None
+    return metadata
 
 
 def command_binary(args):
     errors = []
-    dependencies, build, tags = parse_go_version_m(args.metadata)
-    root_dependency = next(
+    metadata = parse_go_version_m(args.metadata)
+    main_module = metadata["main_module"]
+    dependencies = metadata["dependencies"]
+    build = metadata["build"]
+    tags = metadata["tags"]
+
+    for item in metadata["replacements"]:
+        errors.append(
+            "%s module %s is replaced by %s; replacements are not accepted"
+            % (item["record"], item["path"], item["replacement"]["path"])
+        )
+
+    dependency_root = next(
         (item for item in dependencies if item["path"] == args.root_module), None
     )
+    root_dependency = None
+    root_source = "none"
+    if dependency_root is not None:
+        root_dependency = dependency_root
+        root_source = "dep"
+    elif main_module is not None and main_module["path"] == args.root_module:
+        root_dependency = main_module
+        root_source = "mod"
+
     artifact_dependencies = [
         item
         for item in dependencies
@@ -319,9 +393,13 @@ def command_binary(args):
         "metadata": args.metadata,
         "binary_size": file_size(args.binary),
         "root_module": args.root_module,
+        "package_path": metadata["package_path"],
+        "main_module": main_module,
         "root_dependency": root_dependency,
+        "root_source": root_source,
         "root_present": root_present,
         "artifact_dependencies": artifact_dependencies,
+        "replacements": metadata["replacements"],
         "build": build,
         "tags": tags,
         "payload_sha256": hashlib.sha256(payload).hexdigest(),
