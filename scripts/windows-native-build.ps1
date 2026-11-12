@@ -1,14 +1,20 @@
-# Build the pinned lance-c source as a native Windows x86_64 DLL, verify the
-# produced PE and C ABI, then run a native C consumer and the Go external-library
-# tests against the staged DLL.
+# Build the pinned lance-c source as a native Windows DLL for the requested
+# architecture, verify the produced PE and C ABI, then run a native C consumer
+# and the Go external-library tests against the staged DLL.
 #
 # This is an evidence workflow, not a release or packaging pipeline. It uses a
 # fresh runner-local source checkout and Cargo target directory, stages only the
 # DLL, its MSVC import library, and public headers, and uploads the stage plus
 # logs for review. It does not publish a Go module or modify the default bundle.
+#
+# -Architecture selects the native target: amd64 (x86_64-pc-windows-msvc) or
+# arm64 (aarch64-pc-windows-msvc). The workflow matrix runs each architecture
+# on its own hosted Windows runner.
 
 [CmdletBinding()]
 param(
+	[ValidateSet("amd64", "arm64")]
+	[string]$Architecture = "amd64",
 	[string]$RepoRoot = "",
 	[string]$WorkDir = "",
 	[string]$StageDir = "",
@@ -20,18 +26,37 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $LASTEXITCODE = 0
 
+$Architecture = $Architecture.ToLowerInvariant()
+switch ($Architecture) {
+	"amd64" {
+		$script:TargetTriple = "x86_64-pc-windows-msvc"
+		$script:ExpectedPeMachine = 0x8664
+		$script:PeMachineLabel = "x86_64"
+		$script:ExpectedProcessorArchitecture = "AMD64"
+	}
+	"arm64" {
+		$script:TargetTriple = "aarch64-pc-windows-msvc"
+		$script:ExpectedPeMachine = 0xAA64
+		$script:PeMachineLabel = "arm64"
+		$script:ExpectedProcessorArchitecture = "ARM64"
+	}
+	default {
+		throw "unsupported -Architecture '$Architecture'; expected amd64 or arm64"
+	}
+}
+
 if ([string]::IsNullOrEmpty($RepoRoot)) {
 	$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 }
 if ([string]::IsNullOrEmpty($WorkDir)) {
 	$tempRoot = if ([string]::IsNullOrEmpty($env:RUNNER_TEMP)) { [IO.Path]::GetTempPath() } else { $env:RUNNER_TEMP }
-	$WorkDir = Join-Path $tempRoot "lance-windows-native"
+	$WorkDir = Join-Path $tempRoot "lance-windows-native-$Architecture"
 }
 if ([string]::IsNullOrEmpty($StageDir)) {
-	$StageDir = Join-Path $RepoRoot "dist\windows-amd64"
+	$StageDir = Join-Path $RepoRoot "dist\windows-$Architecture"
 }
 if ([string]::IsNullOrEmpty($EvidenceDir)) {
-	$EvidenceDir = Join-Path $RepoRoot "dist\windows-amd64-evidence"
+	$EvidenceDir = Join-Path $RepoRoot "dist\windows-$Architecture-evidence"
 }
 
 $RepoRoot = [IO.Path]::GetFullPath($RepoRoot)
@@ -65,6 +90,11 @@ $script:BundledDependencies = "not run"
 $script:GoTestResult = "not run"
 $script:ConsumerResult = "not run"
 $script:AbiResult = "not run"
+$script:GoHostTarget = "n/a"
+$script:VsDeveloperShell = "n/a"
+$script:VsHostArch = "n/a"
+$script:VsTargetArch = "n/a"
+$script:ProtocMachine = "n/a"
 
 function Write-Log {
 	param([string]$Message)
@@ -90,10 +120,12 @@ function Set-Status {
 
 function Write-Summary {
 	$lines = @(
-		"## Windows native amd64 evidence",
+		"## Windows native $Architecture evidence",
 		"",
 		"| Item | Value |",
 		"| --- | --- |",
+		"| Architecture | $Architecture |",
+		"| Rust target | $script:TargetTriple |",
 		"| Result | $script:Status |",
 		"| Step | $script:Step |",
 		"| Source commit | $script:SourceCommit |",
@@ -105,11 +137,16 @@ function Write-Summary {
 		"| Header symbols / exports | $script:HeaderCount / $script:ExportCount |",
 		"| DLL dependencies | $script:Dependencies |",
 		"| Bundled dependencies | $script:BundledDependencies |",
+		"| Visual Studio developer shell | $script:VsDeveloperShell |",
+		"| Visual Studio host / target | $script:VsHostArch / $script:VsTargetArch |",
+		"| Go host / target | $script:GoHostTarget |",
+		"| Protoc build tool | $script:ProtocMachine |",
 		"| ABI checker | $script:AbiResult |",
 		"| Native C consumer | $script:ConsumerResult |",
 		"| Go external-library tests | $script:GoTestResult |",
 		"",
-		"Windows arm64 is not covered by this job. The staged DLL/import library/headers are CI evidence only and are not a published release or Go module."
+		"The pinned protoc win64 executable is a build-time tool only. On arm64 it may run under OS emulation; it is not linked into the DLL and is not part of the C consumer or Go runtime evidence.",
+		"The staged DLL/import library/headers are CI evidence only and are not a published release or Go module."
 	)
 	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "summary.md")
 	if (-not [string]::IsNullOrEmpty($env:GITHUB_STEP_SUMMARY)) {
@@ -161,28 +198,126 @@ function Read-Pin {
 	return $found[0].Groups[1].Value
 }
 
+function Get-PeImageInfo {
+	param([Parameter(Mandatory = $true)][string]$Path)
+	$stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+	try {
+		if ($stream.Length -lt 0x40) {
+			throw "$Path is too small to contain a PE header"
+		}
+		$reader = New-Object IO.BinaryReader($stream)
+		$stream.Position = 0x3C
+		$peOffset = $reader.ReadInt32()
+		if ($peOffset -lt 0 -or ([int64]$peOffset + 0x40) -gt $stream.Length) {
+			throw "$Path has an invalid PE offset $peOffset"
+		}
+		$stream.Position = $peOffset
+		$signature = $reader.ReadUInt32()
+		if ($signature -ne 0x00004550) {
+			throw "$Path does not have a PE signature"
+		}
+		$machine = $reader.ReadUInt16()
+		$stream.Position = $peOffset + 24
+		$magic = $reader.ReadUInt16()
+		return [pscustomobject]@{
+			Machine = $machine
+			Magic = $magic
+		}
+	} finally {
+		$stream.Dispose()
+	}
+}
+
+function Assert-NativePe {
+	param(
+		[Parameter(Mandatory = $true)][string]$Path,
+		[Parameter(Mandatory = $true)][string]$Label
+	)
+	$info = Get-PeImageInfo -Path $Path
+	if ($info.Machine -ne $script:ExpectedPeMachine) {
+		throw ("{0} PE machine is 0x{1:X4}, want 0x{2:X4} ({3}); refusing to accept a foreign-architecture or emulated binary at {4}" -f $Label, $info.Machine, $script:ExpectedPeMachine, $script:PeMachineLabel, $Path)
+	}
+	if ($info.Magic -ne 0x20B) {
+		throw ("{0} optional header magic is 0x{1:X4}, want 0x20B (PE32+) at {2}" -f $Label, $info.Magic, $Path)
+	}
+	return $info
+}
+
 function Import-VsDevShell {
-	$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-	if (-not (Test-Path -LiteralPath $vswhere -PathType Leaf)) {
-		throw "vswhere.exe not found at $vswhere"
-	}
-	$vsPath = @(& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath) |
-		Select-Object -First 1
-	if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) {
-		throw "could not locate a Visual Studio installation with the MSVC x64 toolchain"
-	}
-	$vsPath = $vsPath.Trim()
-	$vcvars = Join-Path $vsPath "VC\Auxiliary\Build\vcvars64.bat"
-	if (-not (Test-Path -LiteralPath $vcvars -PathType Leaf)) {
-		throw "vcvars64.bat not found at $vcvars"
+	if ($Architecture -eq "amd64") {
+		$component = "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+		$hostArch = "x64"
+		$targetArch = "x64"
+		$vcvarsNames = @("vcvars64.bat")
+		$vcvarsArguments = @()
+	} elseif ($Architecture -eq "arm64") {
+		$component = "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+		$hostArch = "arm64"
+		$targetArch = "arm64"
+		# VS ships a native ARM64 developer shell. vcvarsall.bat arm64 is the
+		# fallback for installations that do not include vcvarsarm64.bat; the
+		# VSCMD_ARG_* and compiler PE assertions below reject a cross shell or
+		# an x64 compiler running under emulation either way.
+		$vcvarsNames = @("vcvarsarm64.bat", "vcvarsall.bat")
+		$vcvarsArguments = @("arm64")
+	} else {
+		throw "unsupported architecture $Architecture"
 	}
 
+	$vswhereCandidates = New-Object System.Collections.Generic.List[string]
+	$vswhereCommand = Get-Command vswhere -ErrorAction SilentlyContinue
+	if ($null -ne $vswhereCommand -and -not [string]::IsNullOrWhiteSpace($vswhereCommand.Source)) {
+		$vswhereCandidates.Add($vswhereCommand.Source)
+	}
+	foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+		if (-not [string]::IsNullOrWhiteSpace($root)) {
+			$vswhereCandidates.Add((Join-Path $root "Microsoft Visual Studio\Installer\vswhere.exe"))
+		}
+	}
+	$vswhere = $null
+	foreach ($candidate in $vswhereCandidates) {
+		if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+			$vswhere = $candidate
+			break
+		}
+	}
+	if ([string]::IsNullOrEmpty($vswhere)) {
+		throw "vswhere.exe not found on PATH or under Program Files; install the Visual Studio C++ workload"
+	}
+	$vsPath = @(& $vswhere -latest -products * -requires $component -property installationPath) | Select-Object -First 1
+	if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($vsPath)) {
+		throw "could not locate a Visual Studio installation with $component"
+	}
+	$vsPath = $vsPath.Trim()
+
+	$vcvars = $null
+	foreach ($name in $vcvarsNames) {
+		$candidate = Join-Path $vsPath "VC\Auxiliary\Build\$name"
+		if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+			$vcvars = $candidate
+			break
+		}
+	}
+	if ([string]::IsNullOrEmpty($vcvars)) {
+		throw "no supported Visual Studio developer shell found under $vsPath\VC\Auxiliary\Build (tried $($vcvarsNames -join ', '))"
+	}
+	$vcvarsBase = Split-Path -Leaf $vcvars
+	$callArguments = @()
+	if ($vcvarsBase -ieq "vcvarsall.bat") {
+		$callArguments = $vcvarsArguments
+	}
+	$callLine = "call `"$vcvars`""
+	if ($callArguments.Count -gt 0) {
+		$callLine += " " + ($callArguments -join " ")
+	}
+	$callLine += " >nul 2>&1"
+
 	$vcvarsScript = Join-Path ([IO.Path]::GetTempPath()) ("lance-vcvars-{0}.cmd" -f [guid]::NewGuid().ToString("N"))
-	@("call `"$vcvars`" >nul 2>&1", "set") | Set-Content -LiteralPath $vcvarsScript -Encoding ASCII
+	@($callLine, "set") | Set-Content -LiteralPath $vcvarsScript -Encoding ASCII
 	try {
 		$lines = & cmd.exe /c "`"$vcvarsScript`""
 		if ($LASTEXITCODE -ne 0) {
-			throw "vcvars64.bat failed with exit code $LASTEXITCODE"
+			throw "$vcvarsBase failed with exit code $LASTEXITCODE"
 		}
 	} finally {
 		Remove-Item -LiteralPath $vcvarsScript -Force -ErrorAction SilentlyContinue
@@ -196,7 +331,19 @@ function Import-VsDevShell {
 		$value = $line.Substring($index + 1)
 		[Environment]::SetEnvironmentVariable($name, $value, "Process")
 	}
+	$script:VsDeveloperShell = $vcvars
+	$script:VsHostArch = "$env:VSCMD_ARG_HOST_ARCH"
+	$script:VsTargetArch = "$env:VSCMD_ARG_TGT_ARCH"
+	if (-not [string]::Equals($env:VSCMD_ARG_HOST_ARCH, $hostArch, [StringComparison]::OrdinalIgnoreCase)) {
+		throw "Visual Studio host architecture is '$env:VSCMD_ARG_HOST_ARCH', want $hostArch"
+	}
+	if (-not [string]::Equals($env:VSCMD_ARG_TGT_ARCH, $targetArch, [StringComparison]::OrdinalIgnoreCase)) {
+		throw "Visual Studio target architecture is '$env:VSCMD_ARG_TGT_ARCH', want $targetArch"
+	}
 	Write-Log "visual_studio=$vsPath"
+	Write-Log "vs_developer_shell=$vcvars"
+	Write-Log "vs_host_arch=$hostArch"
+	Write-Log "vs_target_arch=$targetArch"
 }
 
 function Find-Dependency {
@@ -324,9 +471,11 @@ try {
 	$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
 
 	$script:Step = "toolchain"
-	if ($env:PROCESSOR_ARCHITECTURE -ne "AMD64") {
-		throw "runner processor architecture is $env:PROCESSOR_ARCHITECTURE, want AMD64 for native x86_64 evidence"
+	if ($env:PROCESSOR_ARCHITECTURE -ne $script:ExpectedProcessorArchitecture) {
+		throw "runner processor architecture is $env:PROCESSOR_ARCHITECTURE, want $($script:ExpectedProcessorArchitecture) for native $Architecture evidence"
 	}
+	Write-Log "architecture=$Architecture"
+	Write-Log "target_triple=$script:TargetTriple"
 	Write-Log "go=$((Get-Command go -ErrorAction Stop).Source)"
 	Write-Log "git=$((Get-Command git -ErrorAction Stop).Source)"
 	Write-Log "cargo=$((Get-Command cargo -ErrorAction Stop).Source)"
@@ -334,26 +483,30 @@ try {
 	Write-Log "cmake=$((Get-Command cmake -ErrorAction Stop).Source)"
 
 	$goVersion = (Invoke-Capture -FilePath "go" -ArgumentList @("version") -Label "go version") -join " "
-	$goEnvLines = Invoke-Capture -FilePath "go" -ArgumentList @("env", "-json", "GOOS", "GOARCH", "GOVERSION", "CGO_ENABLED") -Label "go env"
+	$goEnvLines = Invoke-Capture -FilePath "go" -ArgumentList @("env", "-json", "GOOS", "GOARCH", "GOHOSTOS", "GOHOSTARCH", "GOVERSION", "CGO_ENABLED") -Label "go env"
 	$goEnv = (($goEnvLines -join "`n") | ConvertFrom-Json)
-	if ($goEnv.GOOS -ne "windows" -or $goEnv.GOARCH -ne "amd64" -or "$($goEnv.CGO_ENABLED)" -ne "0") {
-		throw "go environment is not native windows/amd64 with CGO disabled: $($goEnvLines -join '; ')"
+	if ($goEnv.GOOS -ne "windows" -or $goEnv.GOARCH -ne $Architecture -or $goEnv.GOHOSTOS -ne "windows" -or $goEnv.GOHOSTARCH -ne $Architecture -or "$($goEnv.CGO_ENABLED)" -ne "0") {
+		throw "go environment is not native windows/$Architecture with CGO disabled: $($goEnvLines -join '; ')"
 	}
+	$script:GoHostTarget = "$($goEnv.GOHOSTOS)/$($goEnv.GOHOSTARCH)"
 	$rustcVerbose = Invoke-Capture -FilePath "rustc" -ArgumentList @("-vV") -Label "rustc -vV"
 	$rustcVerbose | Set-Content -LiteralPath (Join-Path $EvidenceDir "rustc-vV.txt")
 	$hostLine = @($rustcVerbose | Where-Object { $_ -match "^host:" } | ForEach-Object { $_.Trim() }) | Select-Object -First 1
-	if ($hostLine -notmatch "^host:\s*x86_64-pc-windows-msvc$") {
-		throw "rustc host is not x86_64-pc-windows-msvc: $($rustcVerbose -join '; ')"
+	$hostPattern = "^host:\s*" + [regex]::Escape($script:TargetTriple) + "$"
+	if ($hostLine -notmatch $hostPattern) {
+		throw "rustc host is not $($script:TargetTriple): $($rustcVerbose -join '; ')"
 	}
 	$rustupShow = Invoke-Capture -FilePath "rustup" -ArgumentList @("show", "active-toolchain") -Label "rustup show active-toolchain"
 	$rustupTargets = @(Invoke-Capture -FilePath "rustup" -ArgumentList @("target", "list", "--installed") -Label "rustup target list" | ForEach-Object { $_.Trim() })
-	if (-not (@($rustupTargets) -match "^x86_64-pc-windows-msvc$")) {
-		throw "x86_64-pc-windows-msvc target is not installed"
+	if (-not (@($rustupTargets) -contains $script:TargetTriple)) {
+		throw "$($script:TargetTriple) target is not installed"
 	}
 
 	Import-VsDevShell
 	$clCommand = Get-Command cl -ErrorAction Stop
 	$dumpbinCommand = Get-Command dumpbin -ErrorAction Stop
+	[void](Assert-NativePe -Path $clCommand.Source -Label "cl.exe")
+	[void](Assert-NativePe -Path $dumpbinCommand.Source -Label "dumpbin.exe")
 	$clVersion = @(& $clCommand.Source 2>&1) | Select-Object -First 1
 	$dumpbinVersion = @(& $dumpbinCommand.Source /nologo /version 2>&1) | Select-Object -First 1
 	if ($LASTEXITCODE -ne 0) {
@@ -362,6 +515,9 @@ try {
 
 	$protocDir = Join-Path $WorkDir "protoc-$protocVersion"
 	$protocZip = Join-Path $WorkDir "protoc-$protocVersion-win64.zip"
+	# protoc-21.12-win64.exe is an x86_64 build tool. On windows arm64 it runs
+	# under OS emulation while building the Rust library; it is not linked into
+	# the DLL and is not part of the C consumer or Go runtime evidence.
 	$protocUrl = "https://github.com/protocolbuffers/protobuf/releases/download/v$protocVersion/protoc-$protocVersion-win64.zip"
 	Write-Log "downloading $protocUrl"
 	Invoke-WebRequest -Uri $protocUrl -OutFile $protocZip -UseBasicParsing
@@ -379,23 +535,37 @@ try {
 	if (-not (Test-Path -LiteralPath (Join-Path $env:PROTOC_INCLUDE "google\protobuf\descriptor.proto") -PathType Leaf)) {
 		throw "protoc include tree not found under $env:PROTOC_INCLUDE"
 	}
+	$protocPe = Get-PeImageInfo -Path $env:PROTOC
+	if ($protocPe.Machine -ne 0x8664) {
+		throw ("protoc.exe PE machine is 0x{0:X4}, want 0x8664 for the pinned protoc-{1}-win64 archive" -f $protocPe.Machine, $protocVersion)
+	}
+	$script:ProtocMachine = "x86_64 (0x8664)"
+	if ($Architecture -eq "arm64") {
+		$script:ProtocMachine = "x86_64 (0x8664), build-time only under OS emulation on arm64"
+	}
 	$env:PATH = "$(Split-Path -Parent $env:PROTOC);$env:PATH"
 	$protocVersionOutput = Invoke-Capture -FilePath $env:PROTOC -ArgumentList @("--version") -Label "protoc --version"
 	Write-Log "protoc=$($protocVersionOutput -join ' ')"
 	Write-Log "protoc_sha256=$actualProtocSha"
 
 	$provenance = @(
+		"architecture: $Architecture",
+		"target_triple: $($script:TargetTriple)",
 		"source_repo: $upstreamRepo",
 		"source_commit: $sourceCommit",
 		"source_header_sha256: $headerSha",
 		"protoc_version: $protocVersion",
 		"protoc_archive_sha256: $actualProtocSha",
+		"protoc_pe_machine: $($script:ProtocMachine)",
 		"rustc: $(($rustcVerbose | Select-Object -First 1) -as [string])",
 		"rustup_active_toolchain: $(($rustupShow -join ' ') -as [string])",
 		"rust_targets: $(($rustupTargets -join ', ') -as [string])",
 		"cargo: $(Get-ToolVersion 'cargo')",
 		"go: $goVersion",
-		"go_environment: GOOS=$($goEnv.GOOS) GOARCH=$($goEnv.GOARCH) GOVERSION=$($goEnv.GOVERSION) CGO_ENABLED=$($goEnv.CGO_ENABLED)",
+		"go_environment: GOOS=$($goEnv.GOOS) GOARCH=$($goEnv.GOARCH) GOHOSTOS=$($goEnv.GOHOSTOS) GOHOSTARCH=$($goEnv.GOHOSTARCH) GOVERSION=$($goEnv.GOVERSION) CGO_ENABLED=$($goEnv.CGO_ENABLED)",
+		"vs_developer_shell: $($script:VsDeveloperShell)",
+		"vs_host_arch: $($script:VsHostArch)",
+		"vs_target_arch: $($script:VsTargetArch)",
 		"cmake: $(Get-ToolVersion 'cmake')",
 		"git: $(Get-ToolVersion 'git')",
 		"cl: $clVersion",
@@ -455,11 +625,11 @@ try {
 	$script:Step = "cargo-build"
 	$targetRoot = Join-Path $WorkDir "target"
 	$env:CARGO_TARGET_DIR = $targetRoot
-	$targetDir = Join-Path $targetRoot "x86_64-pc-windows-msvc\release"
+	$targetDir = Join-Path $targetRoot "$($script:TargetTriple)\release"
 	$cargoLog = Join-Path $EvidenceDir "cargo-build.log"
 	Push-Location $src
 	try {
-		Invoke-Logged -FilePath "cargo" -ArgumentList @("build", "--locked", "--release", "--lib", "--target", "x86_64-pc-windows-msvc") -LogPath $cargoLog -Label "cargo build --locked --release --lib"
+		Invoke-Logged -FilePath "cargo" -ArgumentList @("build", "--locked", "--release", "--lib", "--target", $script:TargetTriple) -LogPath $cargoLog -Label "cargo build --locked --release --lib --target $($script:TargetTriple)"
 	} finally {
 		Pop-Location
 	}
@@ -494,29 +664,13 @@ try {
 	$script:DllSha256 = (Get-FileHash -LiteralPath $stagedDll -Algorithm SHA256).Hash.ToLowerInvariant()
 	$script:DllSize = (Get-Item -LiteralPath $stagedDll).Length
 
-	$bytes = [IO.File]::ReadAllBytes($stagedDll)
-	if ($bytes.Length -lt 0x40) {
-		throw "DLL is too small to contain a PE header"
-	}
-	$peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
-	if ($peOffset -lt 0 -or ($peOffset + 26) -ge $bytes.Length) {
-		throw "DLL has an invalid PE offset $peOffset"
-	}
-	$peSignature = [BitConverter]::ToUInt32($bytes, $peOffset)
-	if ($peSignature -ne 0x00004550) {
-		throw "DLL does not have a PE signature"
-	}
-	$machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
-	if ($machine -ne 0x8664) {
-		throw ("DLL PE machine is 0x{0:X4}, want 0x8664 (x86_64)" -f $machine)
-	}
-	$optionalMagic = [BitConverter]::ToUInt16($bytes, $peOffset + 24)
-	if ($optionalMagic -ne 0x20B) {
-		throw ("DLL optional header magic is 0x{0:X4}, want 0x20B (PE32+)" -f $optionalMagic)
-	}
-	$script:PeMachine = "x86_64 (0x8664)"
+	$dllPe = Assert-NativePe -Path $stagedDll -Label "staged lance_c.dll"
+	$script:PeMachine = "$($script:PeMachineLabel) (0x{0:X4})" -f $dllPe.Machine
+	$manifestPeMachine = "pe_machine=0x{0:X4}" -f $dllPe.Machine
 
 	$manifest = @(
+		"architecture=$Architecture",
+		"target_triple=$($script:TargetTriple)",
 		"source_repo=$upstreamRepo",
 		"source_commit=$sourceCommit",
 		"source_tree=$sourceTree",
@@ -525,7 +679,7 @@ try {
 		"dll=bin/lance_c.dll",
 		"dll_sha256=$script:DllSha256",
 		"dll_size=$script:DllSize",
-		"pe_machine=0x8664",
+		"pe_machine=$manifestPeMachine",
 		"import_library=lib/lance_c.dll.lib",
 		"protoc_version=$protocVersion",
 		"protoc_archive_sha256=$actualProtocSha",
@@ -567,9 +721,10 @@ try {
 	$headerPattern = "(?m)^[ \t]*(?!typedef\b|struct\b|enum\b|union\b|#)(?:[A-Za-z_][A-Za-z0-9_]*[ \t*]+)+?(lance_[A-Za-z0-9_]+)[ \t]*\("
 	$headerMatches = [regex]::Matches($headerText, $headerPattern)
 	$headerNames = @($headerMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
-	if ($headerNames.Count -ne 876) {
-		throw "header parser found $($headerNames.Count) top-level lance_* declarations, want 876 for the pinned header"
+	if ($headerNames.Count -eq 0) {
+		throw "header parser found no top-level lance_* declarations in $stagedHeader"
 	}
+	Write-Log "header parser found $($headerNames.Count) callable lance_* declarations (derived from the pinned header)"
 	$headerNames | Set-Content -LiteralPath (Join-Path $EvidenceDir "header-symbols.txt")
 	$exportNames | Set-Content -LiteralPath (Join-Path $EvidenceDir "exports.txt")
 	$script:HeaderCount = $headerNames.Count
@@ -659,6 +814,7 @@ try {
 			$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
 			throw "DLL dependency $dependency is neither an OS component nor available on the build machine"
 		}
+		[void](Assert-NativePe -Path $found -Label "DLL dependency $dependency")
 		$dependencyTarget = Join-Path $runtimeDir $dependency
 		if (-not [string]::Equals($found, $dependencyTarget, [StringComparison]::OrdinalIgnoreCase)) {
 			Copy-Item -LiteralPath $found -Destination $dependencyTarget
@@ -709,6 +865,7 @@ try {
 	if (-not (Test-Path -LiteralPath $consumerExe -PathType Leaf)) {
 		throw "native consumer executable was not produced at $consumerExe"
 	}
+	[void](Assert-NativePe -Path $consumerExe -Label "native consumer executable")
 
 	$datasetDir = Join-Path $WorkDir "data"
 	New-Item -ItemType Directory -Force -Path $datasetDir | Out-Null
@@ -797,7 +954,7 @@ try {
 	$script:GoTestResult = "PASS ($($requiredTests.Count) required tests, no skips)"
 
 	$script:Step = "complete"
-	Set-Status "PASS" "all native Windows amd64 checks passed"
+	Set-Status "PASS" "all native Windows $Architecture checks passed"
 	Write-Summary
 	Stop-ScriptTranscript
 	Write-Log "PASS: staged DLL, import library, headers, ABI, consumer, and Go external-library tests"

@@ -1,14 +1,22 @@
+# Native Windows evidence for the lance-c DLL.
+#
+# Each matrix entry builds the pinned upstream source with the host-native MSVC
+# toolchain, then verifies the PE identity, header/export agreement, staged
+# dependencies, a native C consumer, and the Go external-library tests. The same
+# script and checks run on both architectures; -Architecture only selects the
+# target triple and expected host/target metadata.
+#
+# amd64 runs on windows-2022 with x86_64-pc-windows-msvc.
+# arm64 runs on the GitHub-hosted windows-11-vs2026-arm image with
+# aarch64-pc-windows-msvc. That image provides a native ARM64 Visual Studio
+# developer shell; the script asserts the host/target architecture and compiler
+# PE machine instead of trusting the shell name. The pinned protoc win64 build
+# tool may run under OS emulation on arm64; it is not linked into the DLL.
+#
+# This is evidence only: it does not publish a release, tag, or Go module. No
+# push trigger is added, so pushing a topic branch does not start a build before
+# review.
 name: Windows native
-
-# Manual and path-specific evidence lane for the pinned lance-c DLL. This is
-# deliberately separate from windows.yml: that workflow tests the pure-Go
-# loader/callback layer and cross-compiles, but does not load a real DLL.
-# This lane builds only amd64 on windows-2022. It does not publish a Go module
-# or a release artifact, and it makes no arm64 claim.
-# GitHub only offers workflow_dispatch for a workflow that exists on the default
-# branch; until this file is there, the pull_request path filter is the review
-# trigger. No push trigger is added, so pushing a topic branch does not start a
-# native build before the parent reviews and triggers it.
 
 on:
   workflow_dispatch:
@@ -42,12 +50,22 @@ env:
   PROTOC_SHA256: "71852a30cf62975358edfcbbff93086e8857a079c8e4d6904881aa968d65c7f9"
 
 jobs:
-  windows-native-amd64:
-    name: windows-native-amd64
-    runs-on: windows-2022
+  windows-native:
+    name: windows-native-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: windows-2022
+            rust_target: x86_64-pc-windows-msvc
+          - arch: arm64
+            runner: windows-11-vs2026-arm
+            rust_target: aarch64-pc-windows-msvc
     steps:
-      - name: Check out
+      - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -62,20 +80,20 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-16
         with:
           toolchain: stable
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.rust_target }}
 
-      - name: Build, verify, and run native Windows evidence
+      - name: Build and verify native Windows ${{ matrix.arch }}
         shell: pwsh
         timeout-minutes: 110
-        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-build.ps1
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-build.ps1 -Architecture ${{ matrix.arch }}
 
-      - name: Upload native Windows evidence
+      - name: Upload native evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-native-amd64-${{ github.run_id }}-${{ github.run_attempt }}
+          name: windows-native-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            dist/windows-amd64
-            dist/windows-amd64-evidence
+            dist/windows-${{ matrix.arch }}
+            dist/windows-${{ matrix.arch }}-evidence
           if-no-files-found: warn
           retention-days: 14
