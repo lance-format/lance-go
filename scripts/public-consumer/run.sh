@@ -149,14 +149,16 @@ run_go_capture() {
   return "$rc"
 }
 
-run_logged() {
-  local logfile=$1 rc
-  shift
+run_runtime() {
+  local logfile=$1 outfile=$2 rc
+  shift 2
   log_cmd "$@"
+  # Assertions read only this invocation's stdout, even when evidence is reused.
   set +e
-  "$@" 2>&1 | tee -a "$logfile"
-  rc=${PIPESTATUS[0]}
+  "$@" > "$outfile" 2>> "$logfile"
+  rc=$?
   set -e
+  cat "$outfile" | tee -a "$logfile"
   return "$rc"
 }
 
@@ -841,10 +843,10 @@ verify_binary default "$DEFAULT_BIN" "$DEFAULT_ARTIFACT_PAYLOAD" \
   "$SELECTED_ARTIFACT_PATH@$SELECTED_ARTIFACT_VERSION" present "" "$DEFAULT_ARTIFACT_SUM"
 
 check_cache default absent
-if ! run_logged "$EVIDENCE_DIR/default.log" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" "$DEFAULT_BIN"; then
+if ! run_runtime "$EVIDENCE_DIR/default.log" "$EVIDENCE_DIR/default-runtime.stdout" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" "$DEFAULT_BIN"; then
   fail "default: runtime failed"
 fi
-grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/default.log" ||
+grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/default-runtime.stdout" ||
   fail "default: runtime output did not show [10 20 30]"
 record default_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache default present
@@ -910,11 +912,11 @@ check_cache namespace absent
 NS_ROOT="$MODE_DIR/namespace-root"
 mkdir -p "$NS_ROOT"
 record namespace_root "$NS_ROOT"
-if ! run_logged "$EVIDENCE_DIR/namespace.log" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" \
+if ! run_runtime "$EVIDENCE_DIR/namespace.log" "$EVIDENCE_DIR/namespace-runtime.stdout" env -u LANCE_LIB_PATH XDG_CACHE_HOME="$WORK/runtime" \
     "$NS_BIN" -root "$NS_ROOT"; then
   fail "namespace: runtime failed"
 fi
-grep -Eq '^namespace id=".+" namespaces=0$' "$EVIDENCE_DIR/namespace.log" ||
+grep -Eq '^namespace id=".+" namespaces=0$' "$EVIDENCE_DIR/namespace-runtime.stdout" ||
   fail "namespace: runtime did not report an id and zero namespaces"
 record namespace_runtime 'namespace id=<nonempty> namespaces=0'
 check_cache namespace present
@@ -947,10 +949,10 @@ assert_root_package "$EVIDENCE_DIR/external-deps.txt" external
 record external_artifact_payload_zips "$(artifact_zips_for external/ | tr '\n' ';')"
 record external_artifact_mod_files "$(artifact_mods_for external/ | tr '\n' ';')"
 check_cache external absent
-if ! run_logged "$EVIDENCE_DIR/external.log" env LANCE_LIB_PATH="$SUPPLIED_LIB" XDG_CACHE_HOME="$WORK/runtime" "$EXT_BIN"; then
+if ! run_runtime "$EVIDENCE_DIR/external.log" "$EVIDENCE_DIR/external-runtime.stdout" env LANCE_LIB_PATH="$SUPPLIED_LIB" XDG_CACHE_HOME="$WORK/runtime" "$EXT_BIN"; then
   fail "external: runtime failed"
 fi
-grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/external.log" ||
+grep -Fxq 'Created, reopened and scanned 3 rows: [10 20 30]' "$EVIDENCE_DIR/external-runtime.stdout" ||
   fail "external: runtime output did not show [10 20 30]"
 record external_runtime 'Created, reopened and scanned 3 rows: [10 20 30]'
 check_cache external absent
