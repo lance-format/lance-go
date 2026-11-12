@@ -5,12 +5,16 @@ This is the maintainer sequence for a preview release that includes a compiled
 contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
-Only `linux/amd64` has an active bundle. Windows and other Unix runtime
-support remain pending. Real AWS S3 refresh passed in both direct-accessor and
-operator-owned namespace modes at `59a427e` through PR #37; this does not claim
-commercial namespace-service or production-account support. Release notes may claim only
-the evidence recorded for the claimed target; they must not claim that issue #1
-is complete.
+Four Unix targets now have published artifact modules and active selectors:
+`linux/amd64`, `linux/arm64`, `darwin/amd64`, and `darwin/arm64`. The
+`linux/amd64` bundle has prior native, default, external, and race evidence.
+The three companion modules were adopted for validation; their hosted native
+cold public-consumer acceptance is pending, so publication is not a companion
+support claim. Windows remains `BLOCKED`. Real AWS S3 refresh passed in both
+direct-accessor and operator-owned namespace modes at `59a427e` through PR #37;
+this does not claim commercial namespace-service or production-account support.
+Release notes may claim only the evidence recorded for the claimed target; they
+must not claim that issue #1 is complete.
 
 The Unix workflow proposed in PR #40 builds and tests four native runners and
 uploads staging modules as CI evidence. A successful staging run does not
@@ -27,11 +31,14 @@ selector             internal/bundled/lance_bundle_linux_amd64.go
 root requirement     $ROOT_MODULE/artifacts/linux-amd64   $ARTIFACT_VERSION
 ```
 
-Publish in this order: verify the native source and header, build and validate
-the library, generate and verify the production artifact module, publish that
-module and resolve its exact version through the public proxy and checksum
-database, then activate the selector and root requirement, test, and only after
-an authorized readiness decision create the root tag and release.
+Repeat the artifact/selector/requirement rows for each published Unix target.
+The current companion versions and payload facts are recorded in
+[artifacts/README.md](artifacts/README.md). Publish in this order: verify the
+native source and header, build and validate the library, generate and verify
+the production artifact module, publish that module and resolve its exact
+version through the public proxy and checksum database, then activate the
+selector and root requirement, test, and only after an authorized readiness
+decision create the root tag and release.
 
 Never activate an `artifacts/staging/...` selector. Staging modules are
 validation uploads, not published targets.
@@ -398,6 +405,37 @@ download the archive. This is not a zero-download contract. Confirm the built
 binary and its runtime do not use the bundle: `go version -m` must not list the
 artifact module, and no extraction directory should appear.
 
+### Public-consumer acceptance
+
+The maintained public-consumer lane is
+`.github/workflows/unix-public-consumers.yml` with the driver in
+`scripts/public-consumer/run.sh`. It runs on Linux and macOS amd64 and arm64
+runners, resolves one exact root revision through `proxy.golang.org` and
+`sum.golang.org`, and builds standalone default, namespace-only, and external
+consumers outside the checkout. It verifies the root archive and source tree,
+the artifact selected by the built binary, payload and extracted-library
+bytes, cache modes, and the roundtrip result. It does not rebuild native code.
+
+A pull request uses the exact PR head commit; manual dispatch takes a full
+commit SHA or checked-out tag. Run it locally on the matching native host:
+
+```sh
+ROOT_REVISION=<full-sha-or-tag> \
+TARGET_GOOS=linux TARGET_GOARCH=amd64 \
+EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
+bash scripts/public-consumer/run.sh
+```
+
+`ROOT_REVISION` is passed through the environment, never interpolated into
+shell code. The driver refuses an existing `<os.UserCacheDir>/lance-go` cache,
+uses separate module/build caches for each consumer mode, and moves aside only
+the SDK cache it produced. It records ordinary target build downloads rather
+than assuming that only one artifact archive can ever be fetched. The evidence
+directory contains compact logs and JSON manifests, not module or build caches.
+See [scripts/public-consumer/README.md](scripts/public-consumer/README.md) for
+the full checks and limits. This lane is public-distribution acceptance, not a
+full runtime regression.
+
 ## 6. Evidence, notes, and authorized release
 
 CI uploads native and race evidence with seven-day retention, and the Unix
@@ -417,6 +455,7 @@ native:           repository, commit, tag or explicit absence, header SHA-256
 library:          bytes, SHA-256, packaging source
 payload:          compressed and uncompressed bytes and SHA-256
 public archive:   proxy zip comparison and checksum-database result
+public consumer:  exact root/artifact versions, selected payload and extracted library hashes, result
 platform:         target, ABI/runtime/race/default/external results, floor and dependencies
 gaps:             untested targets and storage paths
 ```
@@ -426,7 +465,9 @@ header `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`,
 payload `e933fc867b2a9ee404d01959aaef8dc8378ddf0b582d7bb2367ed3dbfe46c5b5`,
 and uncompressed library
 `e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` are
-current pin examples, not a released preview.
+current pin examples, not a released preview. The published companion versions,
+payload sizes, and hashes are listed in [artifacts/README.md](artifacts/README.md);
+their cold public-consumer acceptance remains pending.
 
 Prepare release notes from that record. Include the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,

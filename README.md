@@ -12,15 +12,20 @@ fragment inspection, Blob reads, and native directory/REST namespaces with manag
 dataset open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
 or newer.
 
-Default `linux/amd64` builds include a verified compressed `lance-c` payload
-and load it automatically after verifying and unpacking it into the user cache.
-The payload is a normal Go module dependency, so building or testing fetches it
-through the Go module proxy; it is not a download-free installation. Other
-targets still need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
+Published Unix artifact modules now exist for `linux/amd64`, `linux/arm64`,
+`darwin/amd64`, and `darwin/arm64`, with selectors registered for each target.
+Default builds for these targets load their verified compressed `lance-c`
+payload after unpacking it into the user cache. The payload is a normal Go
+module dependency, so building or testing fetches it through the Go module
+proxy; it is not a download-free installation. Windows remains `BLOCKED`, and
+other targets still need an explicit `LANCE_LIB_PATH` or a system `liblance_c`.
 
-The bundled `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39
-and requires libc, libm, libgcc_s and the dynamic loader. Older glibc, musl,
-and other targets have no compatible bundle. Linux amd64 has native test
+The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
+requires libc, libm, libgcc_s and the dynamic loader. The three companion
+modules use the same pinned upstream commit and header; their native runtime
+floors are not established here. The companion selectors were adopted for
+validation, but their hosted native cold public-consumer acceptance is pending.
+Do not treat publication alone as runtime support. Linux amd64 has native test
 coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. The separate
@@ -53,8 +58,11 @@ selector is activated, and no module requirement is added. Native test success
 does not establish a cold default, cold external, or public consumer, zero-config distribution, or
 a supported Windows release. The arm64 matrix entry was added but has not been
 executed in this change, so it is a planned evidence lane until a hosted run
-succeeds. macOS runtime behavior and Windows publication remain pending;
-acceptance of a packaged Windows DLL belongs to the lance-c release process.
+succeeds. macOS cold public-consumer acceptance and Windows publication remain
+pending; acceptance of a packaged Windows DLL belongs to the lance-c release
+process. The new Unix public-consumer lane is described in
+[scripts/public-consumer/README.md](scripts/public-consumer/README.md); its
+presence is not evidence that the three companion targets have passed.
 Remaining API parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
@@ -68,8 +76,9 @@ production gate is recorded as `BLOCKED` after the native evidence rather than
 as a passing candidate.
 
 Maintainers preparing a native bundle release should follow
-[RELEASING.md](RELEASING.md); that guide records the current `linux/amd64`
-bundle limits and is not release authorization.
+[RELEASING.md](RELEASING.md); that guide records the current Unix bundle
+limits, including companion acceptance that is still pending, and is not
+release authorization.
 
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:
@@ -80,10 +89,11 @@ CGO_ENABLED=0 go run ./examples/roundtrip
 
 ## Read a dataset
 
-On `linux/amd64`, a default build needs no environment variable: the first
-call loads the bundled artifact. For other targets, build the native library
-and set `LANCE_LIB_PATH` to its installed path. Run your Go program with
-`CGO_ENABLED=0`:
+On a target with a published selector (`linux/amd64`, `linux/arm64`,
+`darwin/amd64`, or `darwin/arm64`), a default build needs no environment
+variable: the first call loads the bundled artifact. Targets without a selector
+need an explicit `LANCE_LIB_PATH` or a system `liblance_c`. Run your Go program
+with `CGO_ENABLED=0`:
 
 ```go
 package main
@@ -472,9 +482,9 @@ requests.
 ## Raw `.lance` files
 
 The `file` package reads and writes raw Lance files without a dataset or
-manifest. Importing it also initializes the default native bundle on
-`linux/amd64`; `CGO_ENABLED=0` is sufficient. Dataset APIs remain in the root
-`lance` package.
+manifest. Importing it also initializes the default native bundle on a
+published Unix target; `CGO_ENABLED=0` is sufficient. Dataset APIs remain in
+the root `lance` package.
 
 ```go
 import (
