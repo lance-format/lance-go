@@ -6,6 +6,11 @@ The tracked `artifacts/linux-amd64/liblance_c.so.zst` is the production
 compressed payload; no raw shared library, static archive, or build evidence is
 tracked.
 
+The Unix native workflow separately produces unpublished production-path
+candidates from the accepted native library. Candidate modules are workflow
+artifacts only: they are not tracked here, not required by the root module,
+and not activated by a selector. See "Native Unix validation workflow".
+
 ## Active linux/amd64 bundle
 
 The root module requires the published data-only module:
@@ -49,8 +54,10 @@ built on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and
 the dynamic loader. Do not assume it works on older glibc, musl, Windows, or
 other architectures; no bundle or runtime support is claimed for them.
 
-The CI cross-build matrix compiles other targets but does not run them and does
-not supply their artifacts. Each additional target needs its own payload,
+The cross-build matrix in `ci.yml` compiles other targets but does not run them
+and does not publish artifacts. The Unix native workflow produces unpublished
+candidates for the four native Unix targets; they do not change the published
+target set. Each additional published target needs its own accepted payload,
 selector, runtime validation, and platform documentation.
 
 The bundle is fetched through the normal Go module proxy when a default
@@ -81,6 +88,10 @@ archive. External builds use only `LANCE_LIB_PATH` and system discovery.
 `module/` is a data-only Go module. Its `artifact.go` imports only `embed`; it
 does not link, load, or execute native code. The generated `go.mod` targets Go
 1.23 and declares no requirements.
+
+The generator packages the library it is given; it does not strip or otherwise
+modify that library. For a production candidate, strip a copy first as
+described below and pass the stripped copy to the generator.
 
 `selector/` contains a file for `internal/bundled`. Its build constraint is
 `!lance_external_lib && <goos> && <goarch>`. It imports the artifact module
@@ -117,6 +128,40 @@ so the loader cannot prove from the shared library which commit built it. The
 packaging host and the release process must supply a library built from the
 pinned commit. The active bundle was packaged from `88c07cf8ccafebf579e769416251be370b45180e`;
 its `artifact.go` records the values in the table above.
+
+### Preparing a stripped production candidate
+
+Do not pass the install-cache library directly to the generator for a
+production candidate. Copy, strip, and verify the copy first:
+
+```sh
+out="$RUNNER_TEMP/production/linux-amd64"
+scripts/strip-native-library.sh \
+  --library "$LANCE_LIBRARY" \
+  --header "$LANCE_HEADER" \
+  --target linux/amd64 \
+  --out "$out"
+scripts/check-native-library.sh \
+  --library "$out/library/liblance_c.so" \
+  --header "$LANCE_HEADER" \
+  --target linux/amd64
+scripts/sync-lance-c.sh \
+  --library "$out/library/liblance_c.so" \
+  --header "$LANCE_HEADER" \
+  --target linux/amd64 \
+  --module-path github.com/lance-format/lance-go/artifacts/linux-amd64 \
+  --out "$RUNNER_TEMP/candidate/linux-amd64"
+```
+
+The helper copies the exact accepted library into `<out>/library`, strips only
+that copy, and fails unless the source library's size and SHA-256 are unchanged.
+Linux uses `strip --strip-unneeded`; macOS uses `strip -x`. It records the raw
+and stripped hashes and sizes, the strip tool path, hash, version, and argv,
+and the source/header/target provenance. It does not rewrite dependencies,
+install names, or RPATH. Re-running `check-native-library.sh` on the copy
+revalidates the architecture, dependency contract, deployment floor, and every
+bound export. The stripped copy is then passed to `sync-lance-c.sh`; the
+candidate is not written into the checkout or the install cache.
 
 ## Runtime cache
 
@@ -233,20 +278,48 @@ against the supplied library: the default build, an external build
 (`-tags lance_external_lib`) with `CGO_ENABLED=0`, and an external build with
 the race detector. A skipped native test fails the job.
 
-Finally, the job packages the library with `scripts/sync-lance-c.sh` into a
-companion module under an `artifacts/staging/<goos>-<goarch>` module path. The
-module directory is created outside the checkout, and
-`scripts/verify-lance-c-artifact` checks the compressed payload hash and size,
-decompresses it, compares it byte for byte with the library, and checks the
-uncompressed hash, size, pin, and module path. It also requires `Payload []byte`
-to embed that exact payload, rejects executable declarations and extra module
-files, and permits an optional `LICENSE`. Darwin export inspection must produce
-a symbol table; unavailable export evidence fails verification. The staged
-module and evidence are uploaded with seven-day retention. The workflow asserts that the checkout
-is unchanged, so it cannot activate a selector.
+After the three test runs, the job copies the accepted install-cache library
+into `$RUNNER_TEMP/production/<slug>/library`, outside the checkout and cache,
+and runs `scripts/strip-native-library.sh` on that copy. The helper records the raw
+and stripped sizes and SHA-256s, the strip tool path, hash, version, and argv,
+and fails if the source library's bytes or hash change. Linux uses
+`strip --strip-unneeded`; macOS uses `strip -x`. It does not rewrite
+dependencies, install names, or RPATH. `scripts/check-native-library.sh` then
+revalidates the stripped copy against the matching header, including the
+architecture, dependency contract, deployment floor, and every bound export.
 
-These uploads are validation evidence, not a published target. The workflow
-does not publish a module, create a release or tag, or change a build
-constraint. A successful run establishes native build and test results for
-that commit only; it does not claim macOS runtime support, a deployment floor,
-or completion of the platform roadmap.
+The job runs `examples/roundtrip` with `CGO_ENABLED=0`,
+`-tags lance_external_lib`, and `LANCE_LIB_PATH` set explicitly to the stripped
+copy. The external tag excludes the generated selector and bundle path, and
+the explicit path prevents system discovery from being used. The step requires
+the exact three-row output, not just exit status. The raw library still receives
+the default, external, and race test passes above.
+
+The job then passes the stripped copy to `scripts/sync-lance-c.sh` with the
+production module path `github.com/lance-format/lance-go/artifacts/<goos>-<goarch>`.
+The generated selector keeps the
+`!lance_external_lib && <goos> && <goarch>` constraint and imports that
+production path, but the workflow does not copy it into `internal/bundled`,
+change `go.mod`/`go.sum`, or write into the checkout.
+`scripts/verify-lance-c-artifact` checks the compressed payload hash and size,
+decompresses it, compares it byte for byte with the stripped copy, and checks
+the uncompressed hash, size, pin, module path, exact embed target, and file
+allowlist. Darwin export inspection must produce a symbol table; unavailable
+export evidence fails verification.
+
+The candidate module and evidence are uploaded as
+`unix-native-candidate-<slug>` and `unix-native-evidence-<slug>` with seven-day
+retention. These are unpublished candidates, not a published target or an
+accepted default bundle. The workflow publishes the validated install cache
+only after the stripped candidate is staged and verified and all consumers of
+the cache staging path finish; the cache continues to hold the unstripped
+accepted library, and candidates are never cached. The workflow asserts that
+the checkout is unchanged, so it cannot activate a selector.
+
+A successful run establishes native build, test, strip, and candidate
+verification results for that commit only. Public proxy and sumdb
+verification, cold default/external/namespace consumers of a published module,
+selector activation, release/tag creation, and acceptance of the candidate
+bundles remain pending and are owned by the release process. macOS runtime
+support, a deployment floor, and completion of the platform roadmap are not
+claimed.
