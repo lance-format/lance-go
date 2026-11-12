@@ -13,9 +13,15 @@
 # PE machine instead of trusting the shell name. The pinned protoc win64 build
 # tool may run under OS emulation on arm64; it is not linked into the DLL.
 #
-# This is evidence only: it does not publish a release, tag, or Go module. No
-# push trigger is added, so pushing a topic branch does not start a build before
-# review.
+# This is evidence only: it does not publish a release, tag, or Go module. After
+# the native gates pass, the script evaluates whether the actual DLL dependency
+# closure is OS-only. An eligible closure produces an unpublished companion
+# candidate at artifacts/windows-<arch>, verified by the shared artifact
+# verifier and exercised by the external-tag roundtrip against the exact staged
+# DLL. A redistributable or unclassified dependency blocks that candidate
+# explicitly after native evidence; hosted System32 presence is not treated as
+# OS-only availability. No push trigger is added, so pushing a topic branch does
+# not start a build before review.
 name: Windows native
 
 on:
@@ -26,6 +32,10 @@ on:
       - "scripts/windows-native-build.ps1"
       - "scripts/windows-native/**"
       - "scripts/check-abi-symbols.go"
+      - "scripts/sync-lance-c-gen/**"
+      - "scripts/internal/artifactgen/**"
+      - "scripts/verify-lance-c-artifact/**"
+      - "examples/roundtrip/**"
       - "internal/ffi/**"
       - "internal/loader/**"
       - "internal/cdata/**"
@@ -97,3 +107,14 @@ jobs:
             dist/windows-${{ matrix.arch }}-evidence
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Upload unpublished production candidate
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-native-candidate-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lance-windows-native-${{ matrix.arch }}/candidate
+          if-no-files-found: ignore
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
