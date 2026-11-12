@@ -23,11 +23,49 @@ and requires libc, libm, libgcc_s and the dynamic loader. Older glibc, musl,
 and other targets have no compatible bundle. Linux amd64 has native test
 coverage, including the bundled default path. Linux and macOS on amd64 and
 arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
-cache and Arrow callback unit tests on `windows-2022`. macOS runtime behavior
-and real Windows DLL acceptance remain pending; acceptance of a packaged
-Windows DLL belongs to the lance-c release process. Remaining API parity and
-platform distribution work is tracked in
+cache and Arrow callback unit tests on `windows-2022`. The separate
+`.github/workflows/windows-native.yml` lane is a manual, path-specific native
+evidence build for Windows amd64 and Windows arm64. Each matrix entry compiles
+the pinned upstream source with the runner-native MSVC toolchain and target
+(`x86_64-pc-windows-msvc` on `windows-2022`, `aarch64-pc-windows-msvc` on
+`windows-11-vs2026-arm`), stages the DLL, MSVC import library and public
+headers, checks the PE machine, PE32+ format, derived exported `lance_*` symbols
+and staged dependencies, and runs a native C consumer plus the Go
+external-library tests. The public `lance_*` export set must exactly match the
+pinned header. Additional dependency exports are recorded separately; this lane
+does not establish their removal. The pinned `protoc` win64 executable is a build-time
+tool only; on arm64 it may run under OS emulation and is not part of the DLL,
+consumer, or Go runtime evidence.
+
+After those native gates pass, the lane evaluates the actual DLL dependency
+closure by module name. An OS-only closure produces an unpublished companion
+candidate at `artifacts/windows-<arch>`; the shared verifier checks provenance,
+payload bytes and layout, and an external-tag roundtrip uses the exact staged
+DLL. The candidate is uploaded separately from native evidence. A
+redistributable or unclassified dependency blocks the candidate explicitly
+after native evidence. In particular, the captured native DLL imports
+`VCRUNTIME140.dll`, a separately deployed VC Runtime that happens to exist in
+the hosted `System32`; its presence there is not OS-only availability. Upstream
+[#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
+deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
+tracks dependency exports and is distinct. No Windows module is published, no
+selector is activated, and no module requirement is added. Native test success
+does not establish a cold default, cold external, or public consumer, zero-config distribution, or
+a supported Windows release. The arm64 matrix entry was added but has not been
+executed in this change, so it is a planned evidence lane until a hosted run
+succeeds. macOS runtime behavior and Windows publication remain pending;
+acceptance of a packaged Windows DLL belongs to the lance-c release process.
+Remaining API parity and platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
+
+To produce native Windows evidence, dispatch the **Windows native** workflow
+manually from the Actions tab once it is present on the default branch; the
+workflow also runs for pull requests that touch its listed paths. It uploads
+the staged DLL/import library/headers, its verification logs, and any
+unpublished companion candidate as separate CI artifacts. Those artifacts are
+evidence for review, not a supported release or a published module. A blocked
+production gate is recorded as `BLOCKED` after the native evidence rather than
+as a passing candidate.
 
 Maintainers preparing a native bundle release should follow
 [RELEASING.md](RELEASING.md); that guide records the current `linux/amd64`
@@ -1096,7 +1134,9 @@ separate job builds the pinned native library, and a race job uses that library
 with Go's race detector. The cross-build matrix checks Linux and macOS on amd64
 and arm64; it does not establish native runtime support on those other
 platforms. A separate Windows workflow tests Windows amd64 and cross-builds
-Windows arm64; neither establishes native Windows DLL support.
+Windows arm64; the native evidence lane is configured to load a real DLL on
+both Windows amd64 and Windows arm64 hosted runners. The arm64 entry has not run
+yet.
 
 ## Layout
 
