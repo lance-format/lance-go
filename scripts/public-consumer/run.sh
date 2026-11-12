@@ -178,7 +178,7 @@ go_env_value() {
 }
 
 snapshot() {
-  local label=$1 root="$GOMODCACHE/cache/download/$ROOT_MODULE"
+  local label=$1 root="$MODCACHE/cache/download/$ROOT_MODULE"
   [[ -d $root ]] || return 0
   find "$root" -type f \( -name '*.zip' -o -name '*.mod' \) -print | LC_ALL=C sort |
     while IFS= read -r path; do
@@ -251,9 +251,9 @@ artifact_field() {
   local file="$dir/artifact.go"
   require_file "$file"
   if [[ $kind == int ]]; then
-    sed -n "s/^[[:space:]]*$name[[:space:]]*int64[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$file" | head -n 1
+    sed -n "s/^[[:space:]]*${name}[[:space:]]*int64[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$file" | head -n 1
   else
-    sed -n "s/^[[:space:]]*$name[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$file" | head -n 1
+    sed -n "s/^[[:space:]]*${name}[[:space:]]*=[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$file" | head -n 1
   fi
 }
 
@@ -385,13 +385,14 @@ verify_binary() {
 }
 
 capture_deps() {
-  local mode=$1 pkg=$2 tag=$3 log="$EVIDENCE_DIR/$mode.log" deps="$EVIDENCE_DIR/$mode-deps.txt"
+  local mode=$1 pkg=$2 tag=$3
+  local log="$EVIDENCE_DIR/$mode.log" deps="$EVIDENCE_DIR/$mode-deps.txt"
   if [[ -n $tag ]]; then
-    if ! run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps -tags "$tag" "$pkg"; then
+    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps -tags "$tag" "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   else
-    if ! run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps "$pkg"; then
+    if ! ( cd "$CONSUMER_DIR" && run_go_capture "$log" "$deps" "$MODCACHE" "$GOCACHE" list -deps "$pkg" ); then
       fail "$mode: go list -deps failed"
     fi
   fi
@@ -466,7 +467,8 @@ assert_cache_absent() {
 }
 
 move_cache_aside() {
-  local stage=$1 dest="$WORK/state/$stage-sdk-cache"
+  local stage=$1
+  local dest="$WORK/state/$stage-sdk-cache"
   [[ -d $SDK_CACHE ]] || fail "expected an SDK cache after $stage"
   mkdir -p "$WORK/state"
   mv "$SDK_CACHE" "$dest" || fail "could not move the SDK cache produced by $stage"
