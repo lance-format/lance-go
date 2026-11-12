@@ -1238,7 +1238,7 @@ try {
 	} else {
 		$script:HostedDependencies = "none"
 	}
-	$script:DependencyRecords = @($dependencyRecords)
+	$script:DependencyRecords = $dependencyRecords.ToArray()
 	$dependencyInventory | Set-Content -LiteralPath (Join-Path $EvidenceDir "dependency-inventory.txt")
 	Write-Log "runtime dependencies: bundled=$script:BundledDependencies; hosted_non_os=$script:HostedDependencies"
 	foreach ($record in $script:DependencyRecords) {
