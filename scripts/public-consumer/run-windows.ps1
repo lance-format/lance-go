@@ -11,6 +11,14 @@ payload, cache, and PE inspection. It never runs go mod tidy or go mod verify,
 so module downloads are observed before anything could fan out to every
 platform artifact.
 
+Each mode has two cache phases. The setup phase performs the ordinary go get
+and prepares the identity helper with its pinned dependency. After every setup
+dependency-resolution command has finished, the driver switches to a fresh,
+empty target module cache and build cache, keeps the consumer go.mod and go.sum
+written during setup, and measures the target build and its archive downloads
+there. Setup archive observations are validated against the downloaded root
+requirements but are never reused as target-build evidence.
+
 The Windows cache contract is inherited from the per-user LocalAppData ACL.
 POSIX modes are recorded as evidence only; this script does not claim them.
 #>
@@ -75,10 +83,104 @@ function Assert-Equal([string]$Label, [string]$Actual, [string]$Expected) {
     }
 }
 
+function Get-JsonField($Object, [string]$Name) {
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return ''
+    }
+    return [string]$property.Value
+}
+
+function Assert-EqualPath([string]$Label, [string]$Actual, [string]$Expected) {
+    $actualFull = [IO.Path]::GetFullPath($Actual)
+    $expectedFull = [IO.Path]::GetFullPath($Expected)
+    if (-not $actualFull.Equals($expectedFull, [StringComparison]::OrdinalIgnoreCase)) {
+        Fail "$Label is '$actualFull', want '$expectedFull'"
+    }
+}
+
+function Get-CacheEntryCount([string]$Path) {
+    return @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop).Count
+}
+
+function Assert-EmptyCacheDirectory([string]$Path, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        Fail "$Label cache directory is missing: $Path"
+    }
+    $count = Get-CacheEntryCount $Path
+    if ($count -ne 0) {
+        Fail ("{0} cache is not empty: {1} entries under {2}" -f $Label, $count, $Path)
+    }
+}
+
+function Assert-PopulatedCacheDirectory([string]$Path, [string]$Label) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        Fail "$Label cache directory is missing: $Path"
+    }
+    if ((Get-CacheEntryCount $Path) -eq 0) {
+        Fail "$Label cache is empty; setup dependency resolution did not run: $Path"
+    }
+}
+
+function Test-PathWithin([string]$Inner, [string]$Outer) {
+    $innerFull = [IO.Path]::GetFullPath($Inner).TrimEnd('\', '/')
+    $outerFull = [IO.Path]::GetFullPath($Outer).TrimEnd('\', '/')
+    if ($innerFull.Equals($outerFull, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    $prefix = $outerFull + [IO.Path]::DirectorySeparatorChar
+    return $innerFull.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Assert-CacheScopeBoundary($Mode) {
+    $named = @(
+        [pscustomobject]@{ Name = 'setup module'; Path = $Mode.SetupModCache },
+        [pscustomobject]@{ Name = 'setup build'; Path = $Mode.SetupBuildCache },
+        [pscustomobject]@{ Name = 'cold target module'; Path = $Mode.ModCache },
+        [pscustomobject]@{ Name = 'cold target build'; Path = $Mode.BuildCache },
+        [pscustomobject]@{ Name = 'isolated LocalAppData'; Path = $Mode.LocalAppData },
+        [pscustomobject]@{ Name = 'isolated TEMP'; Path = $Mode.Temp },
+        [pscustomobject]@{ Name = 'consumer module'; Path = $Mode.Consumer }
+    )
+    for ($i = 0; $i -lt $named.Count; $i++) {
+        for ($j = $i + 1; $j -lt $named.Count; $j++) {
+            if ((Test-PathWithin $named[$i].Path $named[$j].Path) -or (Test-PathWithin $named[$j].Path $named[$i].Path)) {
+                Fail ("{0} cache scopes overlap: {1} ({2}) and {3} ({4})" -f $Mode.Name, $named[$i].Name, $named[$i].Path, $named[$j].Name, $named[$j].Path)
+            }
+        }
+    }
+    Assert-PopulatedCacheDirectory $Mode.SetupModCache "$($Mode.Name) setup module"
+    Assert-EmptyCacheDirectory $Mode.ModCache "$($Mode.Name) cold target module"
+    Assert-EmptyCacheDirectory $Mode.BuildCache "$($Mode.Name) cold target build"
+}
+
+function Get-ConsumerModuleFingerprint($Mode) {
+    $parts = @()
+    foreach ($name in @('go.mod', 'go.sum')) {
+        $path = Join-Path $Mode.Consumer $name
+        if (-not (Test-Path -LiteralPath $path)) {
+            Fail "consumer $name is missing: $path"
+        }
+        $parts += (Get-FileSha256 $path)
+    }
+    return ($parts -join ' ')
+}
+
+function Assert-ConsumerModuleUnchanged($Mode, [string]$Label) {
+    $property = $Mode.PSObject.Properties['ModuleFingerprint']
+    if ($null -eq $property) {
+        Fail "$Label has no setup consumer module fingerprint"
+    }
+    $now = Get-ConsumerModuleFingerprint $Mode
+    Assert-Equal "$Label consumer go.mod/go.sum" $now ([string]$property.Value)
+    Write-Summary "$Label.consumer_module_files=unchanged"
+}
+
 function Set-GoEnvironment([string]$ModCache, [string]$BuildCache) {
     foreach ($name in @(
         'GOOS', 'GOARCH', 'GOFLAGS', 'GOPRIVATE', 'GONOPROXY', 'GONOSUMDB',
-        'GONOSUMCHECK', 'GOINSECURE', 'GOPROXY_FALLBACK', 'GOBIN'
+        'GONOSUMCHECK', 'GOINSECURE', 'GOPROXY_FALLBACK', 'GOBIN',
+        'GOCACHEPROG', 'GO111MODULE'
     )) {
         Remove-Item -Path "Env:$name" -ErrorAction SilentlyContinue
     }
@@ -344,18 +446,22 @@ function Get-RequiredVersion([string]$Path) {
 function New-Mode([string]$Name) {
     $modeDir = Join-Path $script:WorkDir $Name
     $consumer = Join-Path $modeDir 'consumer'
-    $modCache = Join-Path $modeDir 'gomodcache'
-    $buildCache = Join-Path $modeDir 'gocache'
+    $setupModCache = Join-Path $modeDir 'setup/gomodcache'
+    $setupBuildCache = Join-Path $modeDir 'setup/gocache'
+    $modCache = Join-Path $modeDir 'target/gomodcache'
+    $buildCache = Join-Path $modeDir 'target/gocache'
     $localAppData = Join-Path $modeDir 'runtime/LocalAppData'
     $temp = Join-Path $modeDir 'runtime/Temp'
-    New-Item -ItemType Directory -Force -Path $consumer, $modCache, $buildCache, $localAppData, $temp | Out-Null
-    if (@(Get-ChildItem -LiteralPath $modCache -Force).Count -ne 0) {
-        Fail "module cache is not fresh: $modCache"
+    New-Item -ItemType Directory -Force -Path $consumer, $setupModCache, $setupBuildCache, $modCache, $buildCache, $localAppData, $temp | Out-Null
+    foreach ($cache in @(
+        @('setup module', $setupModCache),
+        @('setup build', $setupBuildCache),
+        @('cold target module', $modCache),
+        @('cold target build', $buildCache)
+    )) {
+        Assert-EmptyCacheDirectory $cache[1] "$Name fresh $($cache[0])"
     }
-    if (@(Get-ChildItem -LiteralPath $buildCache -Force).Count -ne 0) {
-        Fail "build cache is not fresh: $buildCache"
-    }
-    Set-GoEnvironment -ModCache $modCache -BuildCache $buildCache
+    Set-GoEnvironment -ModCache $setupModCache -BuildCache $setupBuildCache
     $null = Invoke-Go $consumer @('mod', 'init', "example.com/public-consumer-$Name") $script:CommandsLog
     $env:LOCALAPPDATA = $localAppData
     $env:TEMP = $temp
@@ -368,12 +474,16 @@ function New-Mode([string]$Name) {
         Name = $Name
         Dir = $modeDir
         Consumer = $consumer
+        SetupModCache = $setupModCache
+        SetupBuildCache = $setupBuildCache
         ModCache = $modCache
         BuildCache = $buildCache
         LocalAppData = $localAppData
         Temp = $temp
     }
     Write-Evidence $script:EnvironmentFile "mode_$Name.localappdata=$localAppData"
+    Write-Evidence $script:EnvironmentFile "mode_$Name.setup_gomodcache=$setupModCache"
+    Write-Evidence $script:EnvironmentFile "mode_$Name.setup_gocache=$setupBuildCache"
     Write-Evidence $script:EnvironmentFile "mode_$Name.gomodcache=$modCache"
     Write-Evidence $script:EnvironmentFile "mode_$Name.gocache=$buildCache"
     Write-Evidence $script:EnvironmentFile "mode_$Name.lance_lib_path=unset"
@@ -394,8 +504,8 @@ function Assert-CacheAbsent($Mode, [string]$Label) {
     Write-Summary "$Label.cache_absent=true"
 }
 
-function Save-ModuleCacheSnapshot([string]$Label) {
-    $root = Join-Path $env:GOMODCACHE ("cache/download/" + $script:RootModule)
+function Save-ModuleCacheSnapshot([string]$Label, [string]$ModCache) {
+    $root = Join-Path $ModCache ("cache/download/" + $script:RootModule)
     if (-not (Test-Path -LiteralPath $root)) {
         return
     }
@@ -454,6 +564,40 @@ function Get-ArtifactMods([string]$LabelPrefix) {
         Sort-Object -Unique)
 }
 
+function Assert-SetupArtifactZips([string]$Name, [string]$LabelPrefix) {
+    # Go 1.23 resolves imports with every build tag during go get, so setup
+    # legitimately observes all pinned artifact archives. Validate that exact
+    # set against the downloaded root go.mod instead of tolerating extras.
+    $got = @(Get-ArtifactZips $LabelPrefix)
+    if ($got.Count -eq 0) {
+        Fail ("{0} setup dependency resolution downloaded no artifact archives; ordinary go get is expected to resolve every pinned artifact" -f $Name)
+    }
+    $expected = @($script:ArtifactRequires | ForEach-Object { '{0}@{1}' -f $_.Path, $_.Version } | Sort-Object -Unique)
+    foreach ($entry in $got) {
+        $at = $entry.LastIndexOf('@')
+        if ($at -le 0) {
+            Fail "cannot parse setup artifact archive identity: $entry"
+        }
+        $path = $entry.Substring(0, $at)
+        $version = $entry.Substring($at + 1)
+        $require = @($script:ArtifactRequires | Where-Object { $_.Path -eq $path })
+        if ($require.Count -eq 0) {
+            Fail ("{0} setup downloaded artifact archive {1} that the downloaded root go.mod does not require" -f $Name, $entry)
+        }
+        if ($require.Count -ne 1) {
+            Fail "downloaded root go.mod has duplicate requirements for $path"
+        }
+        if ($require[0].Version -cne $version) {
+            Fail ("{0} setup artifact archive {1} is at {2}, want pinned {3}" -f $Name, $path, $version, $require[0].Version)
+        }
+    }
+    $missing = @($expected | Where-Object { $got -notcontains $_ })
+    if ($missing.Count -ne 0) {
+        Fail ("{0} setup dependency resolution is missing pinned artifact archives: {1}" -f $Name, ($missing -join ','))
+    }
+    Write-Summary "$Name.setup_artifact_zips=$($got -join ',')"
+}
+
 function Assert-RootZip([string]$LabelPrefix) {
     $versions = @(Get-CacheRows $LabelPrefix |
         Where-Object { $_.module_path -eq $script:RootModule -and $_.kind -eq 'zip' } |
@@ -470,6 +614,84 @@ function Assert-OnlySelectedArtifactZip([string]$LabelPrefix) {
     if ($got.Count -ne 1 -or $got[0] -cne $expected) {
         Fail ("artifact zips for {0} are {1}, want exactly [{2}]" -f $LabelPrefix, ($got -join ','), $expected)
     }
+}
+
+function Assert-RootArchive([string]$Zip, [string]$Label, [string[]]$NestedModules) {
+    $out = Join-Path $script:EvidenceDir ("verify-root-archive-" + ($Label -replace '/', '-') + ".json")
+    $arguments = @(
+        $script:Verify, 'archive',
+        '--zip', $Zip,
+        '--repo', $script:RepoDir,
+        '--module', $script:RootModule,
+        '--version', $script:RootVersion,
+        '--source-commit', $script:SourceHead,
+        '--out', $out
+    )
+    foreach ($module in $NestedModules) {
+        $arguments += @('--nested-module', $module)
+    }
+    $null = Invoke-Python $arguments $script:CommandsLog
+    $report = Read-JsonFile $out
+    Write-Summary "$Label.root_archive_files=$($report.expected_files)"
+    Write-Summary "$Label.root_archive_nested_excluded=$($report.nested_modules_excluded -join ',')"
+}
+
+function Enter-ColdTargetPhase($Mode) {
+    Assert-CacheScopeBoundary $Mode
+    foreach ($entry in @(
+        @('setup_gomodcache', $Mode.SetupModCache),
+        @('setup_gocache', $Mode.SetupBuildCache),
+        @('cold_gomodcache', $Mode.ModCache),
+        @('cold_gocache', $Mode.BuildCache)
+    )) {
+        Write-Evidence $script:EnvironmentFile ("cold_boundary.{0}.{1}={2}" -f $Mode.Name, $entry[0], $entry[1])
+    }
+    Write-Evidence $script:CommandsLog ("# cold-target boundary for {0}; setup dependency resolution is complete" -f $Mode.Name)
+    Set-GoEnvironment -ModCache $Mode.ModCache -BuildCache $Mode.BuildCache
+    $out = Join-Path $Mode.Dir 'cold-go-env.txt'
+    $null = Invoke-GoCapture $Mode.Consumer @('env', 'GOMODCACHE', 'GOCACHE') $out $script:CommandsLog
+    $lines = @(Get-Content -LiteralPath $out -Encoding utf8 | Where-Object { $_ -ne '' })
+    if ($lines.Count -ne 2) {
+        Fail "$($Mode.Name) go env GOMODCACHE GOCACHE returned $($lines.Count) lines"
+    }
+    Assert-EqualPath "$($Mode.Name) go env GOMODCACHE" $lines[0].Trim() $Mode.ModCache
+    Assert-EqualPath "$($Mode.Name) go env GOCACHE" $lines[1].Trim() $Mode.BuildCache
+    Assert-EmptyCacheDirectory $Mode.ModCache "$($Mode.Name) cold target module"
+    Assert-EmptyCacheDirectory $Mode.BuildCache "$($Mode.Name) cold target build"
+    foreach ($moduleFile in @('go.mod', 'go.sum')) {
+        $saved = Join-Path $script:EvidenceDir ("{0}-setup-{1}" -f $Mode.Name, $moduleFile)
+        Copy-Item -LiteralPath (Join-Path $Mode.Consumer $moduleFile) -Destination $saved
+        Write-Evidence $script:EnvironmentFile ("cold_boundary.{0}.setup_{1}={2}" -f $Mode.Name, $moduleFile, $saved)
+    }
+    $fingerprint = Get-ConsumerModuleFingerprint $Mode
+    $Mode | Add-Member -NotePropertyName ModuleFingerprint -NotePropertyValue $fingerprint -Force
+    Write-Evidence $script:EnvironmentFile ("cold_boundary.{0}.consumer_go_mod={1}" -f $Mode.Name, $fingerprint)
+    Save-ModuleCacheSnapshot "$($Mode.Name)/cold/boundary" $Mode.ModCache
+    Write-Summary "$($Mode.Name).cold_cache_scope=empty_after_setup"
+}
+
+function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
+    $jsonPath = Join-Path $Mode.Dir 'cold-root-download.json'
+    $null = Invoke-GoCapture $Mode.Consumer @('mod', 'download', '-json', ($script:RootModule + '@' + $script:RootVersion)) $jsonPath $script:CommandsLog
+    $json = Read-JsonFile $jsonPath
+    $errorText = Get-JsonField $json 'Error'
+    if ($errorText) {
+        Fail "$($Mode.Name) cold root download failed: $errorText"
+    }
+    Assert-Equal "$($Mode.Name) cold root version" (Get-JsonField $json 'Version') $script:RootVersion
+    Assert-Equal "$($Mode.Name) cold root sum" (Get-JsonField $json 'Sum') $script:RootSum
+    Assert-VersionIdentity $script:RootVersion $script:SourceHead $script:RootRevision
+    $zip = Get-JsonField $json 'Zip'
+    $goMod = Get-JsonField $json 'GoMod'
+    if (-not $zip -or -not $goMod -or -not (Test-Path -LiteralPath $zip)) {
+        Fail "$($Mode.Name) cold root download returned incomplete metadata"
+    }
+    Assert-Equal "$($Mode.Name) root zip bytes at setup and cold target caches" (Get-FileSha256 $SetupZip) (Get-FileSha256 $zip)
+    Assert-Equal "$($Mode.Name) root go.mod bytes at setup and cold target caches" (Get-FileSha256 $script:SetupRootGoMod) (Get-FileSha256 $goMod)
+    Save-ModuleCacheSnapshot "$($Mode.Name)/cold/root-resolve" $Mode.ModCache
+    Assert-RootZip "$($Mode.Name)/cold/root-resolve/"
+    Assert-RootArchive $zip ("$($Mode.Name)-cold") $NestedModules
+    return $zip
 }
 
 function Read-Pins {
@@ -645,13 +867,14 @@ function Download-ArtifactModule($Mode, [string]$Path, [string]$Version, [string
     $jsonPath = Join-Path $Mode.Dir ('artifact-' + ($Label -replace '/', '-') + '.json')
     $null = Invoke-GoCapture $Mode.Consumer @('mod', 'download', '-json', ($Path + '@' + $Version)) $jsonPath $script:CommandsLog
     $json = Read-JsonFile $jsonPath
-    if ($json.Error) {
-        Fail "artifact download failed for ${Path}@${Version}: $($json.Error)"
+    $errorText = Get-JsonField $json 'Error'
+    if ($errorText) {
+        Fail "artifact download failed for ${Path}@${Version}: $errorText"
     }
-    Assert-Equal "$Label artifact path" ([string]$json.Path) $Path
-    Assert-Equal "$Label artifact version" ([string]$json.Version) $Version
+    Assert-Equal "$Label artifact path" (Get-JsonField $json 'Path') $Path
+    Assert-Equal "$Label artifact version" (Get-JsonField $json 'Version') $Version
     $meta = Read-ArtifactModule $json $Label
-    Save-ModuleCacheSnapshot "$Label/artifact"
+    Save-ModuleCacheSnapshot "$Label/cold/artifact" $Mode.ModCache
     return $meta
 }
 
@@ -984,18 +1207,37 @@ function Assert-IdentityOutput([string]$Text, [string]$ExpectedDll, $Meta, [stri
     Write-Summary "$Label.redistributable_modules=none"
 }
 
-function Add-IdentityHelper($Mode, [string]$Label, [bool]$External) {
+function Add-IdentityHelperSource([string]$Label, $Mode) {
+    # Resolve the helper's pinned dependency during setup. Building the helper
+    # in the cold target phase must not run go get and contaminate its archive
+    # observations.
     $source = Join-Path $script:PublicConsumerDir 'windows-consumer/main.go'
     if (-not (Test-Path -LiteralPath $source)) {
         Fail "identity fixture is missing: $source"
     }
+    if (-not $script:XsysVersion) {
+        Fail 'root go.mod does not require golang.org/x/sys; cannot prepare the loaded-module identity helper'
+    }
     $identityDir = Join-Path $Mode.Consumer 'identitycmd'
     New-Item -ItemType Directory -Force -Path $identityDir | Out-Null
-    Copy-Item -LiteralPath $source -Destination (Join-Path $identityDir 'main.go')
-    if (-not $script:XsysVersion) {
-        Fail 'root go.mod does not require golang.org/x/sys; cannot build the loaded-module identity helper'
-    }
+    $identitySource = Join-Path $identityDir 'main.go'
+    Copy-Item -LiteralPath $source -Destination $identitySource
+    Write-CommandLog $Mode.Consumer @('copy', $source, $identitySource)
     $null = Invoke-Go $Mode.Consumer @('get', ('golang.org/x/sys@' + $script:XsysVersion)) $script:CommandsLog
+    $consumerMod = Get-Content -LiteralPath (Join-Path $Mode.Consumer 'go.mod') -Raw -Encoding utf8
+    $requires = @(Parse-GoModRequires $consumerMod | Where-Object { $_.Path -eq 'golang.org/x/sys' })
+    if ($requires.Count -ne 1 -or $requires[0].Version -cne $script:XsysVersion) {
+        Fail ("{0} identity helper dependency golang.org/x/sys is {1}, want the root-pinned {2}" -f $Label, (($requires | ForEach-Object { $_.Version }) -join ','), $script:XsysVersion)
+    }
+    Write-Summary "$Label.identity_helper=golang.org/x/sys@$($script:XsysVersion)"
+    Save-ModuleCacheSnapshot "$Label/setup/identity-helper" $Mode.SetupModCache
+}
+
+function Build-IdentityHelper($Mode, [string]$Label, [bool]$External) {
+    $identityDir = Join-Path $Mode.Consumer 'identitycmd'
+    if (-not (Test-Path -LiteralPath (Join-Path $identityDir 'main.go'))) {
+        Fail "identity helper source was not prepared during setup: $identityDir"
+    }
     $tags = @()
     if ($External) {
         $tags = @('-tags', 'lance_external_lib')
@@ -1003,16 +1245,16 @@ function Add-IdentityHelper($Mode, [string]$Label, [bool]$External) {
     $identityExe = Join-Path $Mode.Dir 'windows-consumer.exe'
     $buildArguments = @('build') + $tags + @('-o', $identityExe, './identitycmd')
     $null = Invoke-Go $Mode.Consumer $buildArguments $script:CommandsLog
-    Save-ModuleCacheSnapshot "$Label/identity-build"
+    Save-ModuleCacheSnapshot "$Label/cold/identity-build" $Mode.ModCache
     return $identityExe
 }
 
-function Run-Identity($Mode, $Meta, [string]$ExpectedDll, [string]$Label, [string]$ExpectedArtifact, [string]$ExpectedPayload, [string]$ExpectedTag) {
-    $identityExe = Add-IdentityHelper $Mode $Label ($ExpectedArtifact -eq 'none')
+function Run-Identity($Mode, $Meta, [string]$ExpectedDll, [string]$Label, [string]$ExpectedArtifact, [string]$ExpectedPayload, [string]$ExpectedTag, [string]$Payload) {
+    $identityExe = Build-IdentityHelper $Mode $Label ($ExpectedArtifact -eq 'none')
     Assert-BinaryPE $identityExe "$Label/identity"
     $identityMeta = Get-GoVersionMetadata $Mode $identityExe "$Label/identity"
     Assert-BinaryMetadata -Mode $Mode -Binary $identityExe -MetadataFile $identityMeta `
-        -Payload $script:DefaultPayload -ExpectedArtifact $ExpectedArtifact `
+        -Payload $Payload -ExpectedArtifact $ExpectedArtifact `
         -ExpectedPayload $ExpectedPayload -ExpectedTag $ExpectedTag `
         -ArtifactMeta $script:SelectedMeta -Label "$Label/identity"
     if (-not $ExpectedTag) {
@@ -1189,13 +1431,14 @@ try {
     $rootDownload = Join-Path $default.Dir 'root-download.json'
     $null = Invoke-GoCapture $default.Consumer @('mod', 'download', '-json', ($RootModule + '@' + $RootRevision)) $rootDownload $script:CommandsLog
     $rootJson = Read-JsonFile $rootDownload
-    if ($rootJson.Error) {
-        Fail "root module download failed: $($rootJson.Error)"
+    $rootError = Get-JsonField $rootJson 'Error'
+    if ($rootError) {
+        Fail "root module download failed: $rootError"
     }
-    $script:RootVersion = [string]$rootJson.Version
-    $script:RootSum = [string]$rootJson.Sum
-    $rootGoMod = [string]$rootJson.GoMod
-    $rootZip = [string]$rootJson.Zip
+    $script:RootVersion = Get-JsonField $rootJson 'Version'
+    $script:RootSum = Get-JsonField $rootJson 'Sum'
+    $rootGoMod = Get-JsonField $rootJson 'GoMod'
+    $rootZip = Get-JsonField $rootJson 'Zip'
     if (-not $script:RootVersion -or -not $script:RootSum -or -not $rootGoMod -or -not $rootZip) {
         Fail 'root module download returned incomplete metadata'
     }
@@ -1205,8 +1448,9 @@ try {
     Assert-VersionIdentity $script:RootVersion $sourceHead $RootRevision
     Write-Summary "root_version=$($script:RootVersion)"
     Write-Summary "root_sum=$($script:RootSum)"
-    Save-ModuleCacheSnapshot 'default/root-resolve'
-    Assert-RootZip 'default/'
+    $script:SetupRootGoMod = $rootGoMod
+    Save-ModuleCacheSnapshot 'default/setup/root-resolve' $default.SetupModCache
+    Assert-RootZip 'default/setup/root-resolve'
 
     $rootGoModText = Get-Content -LiteralPath $rootGoMod -Raw -Encoding utf8
     Assert-Equal 'downloaded go.mod module' (Get-RegexValue $rootGoModText '(?m)^module\s+(\S+)' 'module') $RootModule
@@ -1218,6 +1462,7 @@ try {
         Fail 'downloaded root go.mod contains replace or exclude'
     }
     $script:RootRequires = @(Parse-GoModRequires $rootGoModText)
+    $script:ArtifactRequires = @($script:RootRequires | Where-Object { $_.Path.StartsWith($RootModule + '/artifacts/') })
     foreach ($require in $script:RootRequires) {
         if ($require.Path.StartsWith($RootModule + '/artifacts/')) {
             Write-Evidence $script:RequiredArtifacts ("{0} {1}" -f $require.Path, $require.Version)
@@ -1248,31 +1493,21 @@ try {
             }
         }
     }
-    $archiveOut = Join-Path $script:EvidenceDir 'verify-root-archive.json'
-    $archiveArguments = @(
-        $script:Verify, 'archive',
-        '--zip', $rootZip,
-        '--repo', $script:RepoDir,
-        '--module', $RootModule,
-        '--version', $script:RootVersion,
-        '--source-commit', $sourceHead,
-        '--out', $archiveOut
-    )
-    foreach ($module in $nested) {
-        $archiveArguments += @('--nested-module', $module)
-    }
-    $null = Invoke-Python $archiveArguments $script:CommandsLog
-    $archiveReport = Read-JsonFile $archiveOut
-    Write-Summary "root_archive_files=$($archiveReport.expected_files)"
-    Write-Summary "root_archive_nested_excluded=$($archiveReport.nested_modules_excluded -join ',')"
+    Assert-RootArchive $rootZip 'default-setup' $nested.ToArray()
 
     $null = Invoke-Go $default.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
-    Save-ModuleCacheSnapshot 'default/go-get'
+    Save-ModuleCacheSnapshot 'default/setup/go-get' $default.SetupModCache
+    Add-IdentityHelperSource 'default' $default
+    Assert-RootZip 'default/setup/'
+    Assert-SetupArtifactZips 'default' 'default/setup/'
+
+    Enter-ColdTargetPhase $default
+    $null = Resolve-ColdRoot $default $rootZip $nested.ToArray()
 
     $defaultBinary = Join-Path $default.Dir 'roundtrip.exe'
     $null = Invoke-Go $default.Consumer @('build', '-o', $defaultBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog
     Assert-BinaryPE $defaultBinary 'default'
-    Save-ModuleCacheSnapshot 'default/build'
+    Save-ModuleCacheSnapshot 'default/cold/build' $default.ModCache
     $defaultMetaFile = Get-GoVersionMetadata $default $defaultBinary 'default'
     Assert-NoTag $defaultMetaFile 'lance_external_lib'
     $defaultSelected = Assert-SelectedArtifactFromMetadata $defaultMetaFile 'default'
@@ -1282,17 +1517,19 @@ try {
     $script:SelectedMeta = $defaultArtifact
     $script:DefaultPayload = $defaultArtifact.Payload
     Assert-SelectedArtifactRequired
+    Assert-RootZip 'default/cold/build'
+    Assert-OnlySelectedArtifactZip 'default/cold/build'
 
     $defaultDeps = Join-Path $default.Dir 'default-deps.txt'
     $null = Invoke-GoCapture $default.Consumer @('list', '-deps', ($RootModule + '/examples/roundtrip')) $defaultDeps $script:CommandsLog
-    Save-ModuleCacheSnapshot 'default/deps'
-    Assert-RootZip 'default/'
-    Assert-OnlySelectedArtifactZip 'default/'
-    $defaultArtifactMods = @(Get-ArtifactMods 'default/')
+    Save-ModuleCacheSnapshot 'default/cold/deps' $default.ModCache
+    Assert-RootZip 'default/cold/'
+    Assert-OnlySelectedArtifactZip 'default/cold/'
+    $defaultArtifactMods = @(Get-ArtifactMods 'default/cold/')
     Write-Summary ("default.artifact_mods_downloaded=" + ($defaultArtifactMods -join ','))
     Assert-DefaultDeps $defaultDeps
     Assert-BinaryMetadata -Mode $default -Binary $defaultBinary -MetadataFile $defaultMetaFile `
-        -Payload $script:DefaultPayload -ExpectedArtifact ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) `
+        -Payload $defaultArtifact.Payload -ExpectedArtifact ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) `
         -ExpectedPayload 'present' -ExpectedTag '' -ArtifactMeta $defaultArtifact -Label 'default'
 
     Assert-CacheAbsent $default 'default/before-runtime'
@@ -1300,39 +1537,49 @@ try {
     $defaultCacheLibrary = Assert-CachePresent $default $defaultArtifact 'default'
     Assert-CachePE $defaultCacheLibrary 'default'
     $script:SuppliedLib = Copy-SuppliedDll $defaultCacheLibrary $defaultArtifact
-    Run-Identity $default $defaultArtifact $defaultCacheLibrary 'default' ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) 'present' ''
-    Assert-OnlySelectedArtifactZip 'default/'
+    Run-Identity $default $defaultArtifact $defaultCacheLibrary 'default' ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) 'present' '' $defaultArtifact.Payload
+    Assert-OnlySelectedArtifactZip 'default/cold/'
+    Assert-ConsumerModuleUnchanged $default 'default'
     Move-CacheAside $default 'default'
 
     $namespace = New-Mode 'namespace'
     $null = Invoke-Go $namespace.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
-    Save-ModuleCacheSnapshot 'namespace/go-get'
-    Assert-RootZip 'namespace/'
+    Save-ModuleCacheSnapshot 'namespace/setup/go-get' $namespace.SetupModCache
     $namespaceSource = Join-Path $script:PublicConsumerDir 'namespace-consumer/main.go'
     if (-not (Test-Path -LiteralPath $namespaceSource)) {
         Fail "namespace fixture is missing: $namespaceSource"
     }
     Copy-Item -LiteralPath $namespaceSource -Destination (Join-Path $namespace.Consumer 'main.go')
+    Write-CommandLog $namespace.Consumer @('copy', $namespaceSource, (Join-Path $namespace.Consumer 'main.go'))
+    Add-IdentityHelperSource 'namespace' $namespace
+    Assert-RootZip 'namespace/setup/'
+    Assert-SetupArtifactZips 'namespace' 'namespace/setup/'
+
+    Enter-ColdTargetPhase $namespace
+    $null = Resolve-ColdRoot $namespace $rootZip $nested.ToArray()
+
     $namespaceBinary = Join-Path $namespace.Dir 'namespace-consumer.exe'
     $null = Invoke-Go $namespace.Consumer @('build', '-o', $namespaceBinary, '.') $script:CommandsLog
     Assert-BinaryPE $namespaceBinary 'namespace'
-    Save-ModuleCacheSnapshot 'namespace/build'
+    Save-ModuleCacheSnapshot 'namespace/cold/build' $namespace.ModCache
     $namespaceMetaFile = Get-GoVersionMetadata $namespace $namespaceBinary 'namespace'
     Assert-NoTag $namespaceMetaFile 'lance_external_lib'
     $namespaceSelected = Assert-SelectedArtifactFromMetadata $namespaceMetaFile 'namespace'
     Assert-Equal 'namespace selected artifact' ('{0}@{1}' -f $namespaceSelected.Path, $namespaceSelected.Version) ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion)
     $namespaceArtifact = Download-ArtifactModule $namespace $namespaceSelected.Path $namespaceSelected.Version 'namespace'
     Compare-ArtifactModules $script:SelectedMeta $namespaceArtifact
+    Assert-RootZip 'namespace/cold/build'
+    Assert-OnlySelectedArtifactZip 'namespace/cold/build'
     $namespaceDeps = Join-Path $namespace.Dir 'namespace-deps.txt'
     $null = Invoke-GoCapture $namespace.Consumer @('list', '-deps', '.') $namespaceDeps $script:CommandsLog
-    Save-ModuleCacheSnapshot 'namespace/deps'
-    Assert-RootZip 'namespace/'
-    Assert-OnlySelectedArtifactZip 'namespace/'
-    $namespaceArtifactMods = @(Get-ArtifactMods 'namespace/')
+    Save-ModuleCacheSnapshot 'namespace/cold/deps' $namespace.ModCache
+    Assert-RootZip 'namespace/cold/'
+    Assert-OnlySelectedArtifactZip 'namespace/cold/'
+    $namespaceArtifactMods = @(Get-ArtifactMods 'namespace/cold/')
     Write-Summary ("namespace.artifact_mods_downloaded=" + ($namespaceArtifactMods -join ','))
     Assert-NamespaceDeps $namespaceDeps
     Assert-BinaryMetadata -Mode $namespace -Binary $namespaceBinary -MetadataFile $namespaceMetaFile `
-        -Payload $script:DefaultPayload -ExpectedArtifact ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) `
+        -Payload $namespaceArtifact.Payload -ExpectedArtifact ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) `
         -ExpectedPayload 'present' -ExpectedTag '' -ArtifactMeta $namespaceArtifact -Label 'namespace'
     Assert-CacheAbsent $namespace 'namespace/before-runtime'
     $namespaceRoot = Join-Path $namespace.Dir 'namespace-root'
@@ -1340,40 +1587,50 @@ try {
     Run-Consumer $namespace $namespaceBinary 'namespace' @('-root', $namespaceRoot) '' '^namespace id=".+" namespaces=0$'
     $namespaceCacheLibrary = Assert-CachePresent $namespace $namespaceArtifact 'namespace'
     Assert-CachePE $namespaceCacheLibrary 'namespace'
-    Run-Identity $namespace $namespaceArtifact $namespaceCacheLibrary 'namespace' ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) 'present' ''
-    Assert-OnlySelectedArtifactZip 'namespace/'
+    Run-Identity $namespace $namespaceArtifact $namespaceCacheLibrary 'namespace' ('{0}@{1}' -f $script:SelectedPath, $script:SelectedVersion) 'present' '' $namespaceArtifact.Payload
+    Assert-OnlySelectedArtifactZip 'namespace/cold/'
+    Assert-ConsumerModuleUnchanged $namespace 'namespace'
     Move-CacheAside $namespace 'namespace'
 
     $external = New-Mode 'external'
     $null = Invoke-Go $external.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
-    Save-ModuleCacheSnapshot 'external/go-get'
-    Assert-RootZip 'external/'
+    Save-ModuleCacheSnapshot 'external/setup/go-get' $external.SetupModCache
+    Add-IdentityHelperSource 'external' $external
+    Assert-RootZip 'external/setup/'
+    Assert-SetupArtifactZips 'external' 'external/setup/'
+
+    Enter-ColdTargetPhase $external
+    $null = Resolve-ColdRoot $external $rootZip $nested.ToArray()
+
     $externalBinary = Join-Path $external.Dir 'roundtrip-external.exe'
     $null = Invoke-Go $external.Consumer @('build', '-tags', 'lance_external_lib', '-o', $externalBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog
     Assert-BinaryPE $externalBinary 'external'
-    Save-ModuleCacheSnapshot 'external/build'
+    Save-ModuleCacheSnapshot 'external/cold/build' $external.ModCache
     $externalMetaFile = Get-GoVersionMetadata $external $externalBinary 'external'
     Assert-BinaryMetadata -Mode $external -Binary $externalBinary -MetadataFile $externalMetaFile `
         -Payload $script:DefaultPayload -ExpectedArtifact 'none' -ExpectedPayload 'absent' `
         -ExpectedTag 'lance_external_lib' -ArtifactMeta $null -Label 'external'
     $externalDeps = Join-Path $external.Dir 'external-deps.txt'
     $null = Invoke-GoCapture $external.Consumer @('list', '-deps', '-tags', 'lance_external_lib', ($RootModule + '/examples/roundtrip')) $externalDeps $script:CommandsLog
-    Save-ModuleCacheSnapshot 'external/deps'
+    Save-ModuleCacheSnapshot 'external/cold/deps' $external.ModCache
     Assert-ExternalDeps $externalDeps
-    $externalArtifactZips = @(Get-ArtifactZips 'external/')
-    $externalArtifactMods = @(Get-ArtifactMods 'external/')
-    Write-Summary "external.artifact_zips_downloaded=$($externalArtifactZips -join ',')"
-    Write-Summary "external.artifact_mods_downloaded=$($externalArtifactMods -join ',')"
+    $externalBuildZips = @(Get-ArtifactZips 'external/cold/build')
+    $externalArtifactZips = @(Get-ArtifactZips 'external/cold/')
+    $externalArtifactMods = @(Get-ArtifactMods 'external/cold/')
+    Write-Summary "external.cold_build_artifact_zips=$($externalBuildZips -join ',')"
+    Write-Summary "external.cold_artifact_zips=$($externalArtifactZips -join ',')"
+    Write-Summary "external.cold_artifact_mods=$($externalArtifactMods -join ',')"
     Assert-CacheAbsent $external 'external/before-runtime'
     $env:LANCE_LIB_PATH = $script:SuppliedLib
     Run-Consumer $external $externalBinary 'external' @() 'Created, reopened and scanned 3 rows: [10 20 30]' ''
     Assert-CacheAbsent $external 'external/after-roundtrip'
-    Run-Identity $external $script:SelectedMeta $script:SuppliedLib 'external' 'none' 'absent' 'lance_external_lib'
+    Run-Identity $external $script:SelectedMeta $script:SuppliedLib 'external' 'none' 'absent' 'lance_external_lib' $script:DefaultPayload
     Remove-Item -Path Env:LANCE_LIB_PATH -ErrorAction SilentlyContinue
     if (Test-Path Env:LANCE_LIB_PATH) {
         Fail 'LANCE_LIB_PATH is still set after the supplied-DLL consumer'
     }
     Assert-CacheAbsent $external 'external/after-identity'
+    Assert-ConsumerModuleUnchanged $external 'external'
 
     Write-Summary 'windows_cache_contract=inherited_localappdata_acl'
     Write-Summary 'posix_modes_claimed=false'

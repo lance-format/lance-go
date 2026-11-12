@@ -45,20 +45,51 @@ the published module bytes.
 
 ## Consumers
 
-Each mode receives a fresh module cache, build cache, `LOCALAPPDATA`, and
-temporary directory:
+Each mode receives separate setup and cold target module/build caches, plus an
+isolated `LOCALAPPDATA` and temporary directory. The consumer module directory
+itself is never replaced or recreated after setup:
 
 - **default**: the ordinary roundtrip example, with `LANCE_LIB_PATH` unset. The
-  cache must be cold before the run and must contain the selected DLL after
-  extraction. The literal oracle is `Created, reopened and scanned 3 rows: [10
-  20 30]`.
+  cache must be cold before the target build and must contain the selected DLL
+  after extraction. The literal oracle is `Created, reopened and scanned 3
+  rows: [10 20 30]`.
 - **namespace**: imports only `namespace`, calls `NewDirectory`, `ID`,
   `ListNamespaces`, and `Close`, and must not pull in the root Go package. The
-  cache is cold before the run and contains the same selected artifact after
-  extraction.
+  target cache is cold before the build and contains the same selected
+  artifact after extraction.
 - **external**: builds with `lance_external_lib`. It may download the artifact
   module, but must not link, embed, or extract it. The supplied DLL is copied
   from the verified default cache and passed with `LANCE_LIB_PATH`.
+
+## Setup and cold target caches
+
+Each mode performs the public-consumer setup first:
+
+1. `go mod init` in the consumer directory.
+2. A real `go get <root>@<resolved version>` against the public root version.
+3. Preparation of the identity helper source and its `golang.org/x/sys`
+   dependency at the version required by the downloaded root `go.mod`.
+
+The setup phase keeps its own module and build caches, its command log, the
+generated consumer `go.mod` and `go.sum` (the module files stay in place and
+setup copies are saved in the evidence directory), and module-cache inventory
+rows. Go 1.23 resolves imports with `imports.AnyTags` during `go get`, so setup
+is
+expected to download every artifact archive pinned by the root module. The
+driver validates those setup archive identities and versions against the
+downloaded root requirements. A missing pinned archive, a foreign archive, or a
+wrong version fails the lane; setup downloads are never treated as evidence
+about the target build.
+
+After all setup dependency-resolution commands have finished, the driver
+checks that the setup and cold caches are distinct, populated and empty as
+appropriate, records the consumer module fingerprint, and switches to a new,
+empty target module cache and build cache. The target build, dependency
+listing, artifact download, and identity-helper build all run in that cold
+scope. The retained `go.mod` and `go.sum` must be unchanged at the end, and the
+cold archive snapshots must show exactly the selected artifact for default and
+namespace builds. External builds record their actual setup and cold download
+scopes without claiming that no artifact module was downloaded.
 
 The identity helper in `windows-consumer/` uses `x/sys/windows` to enumerate
 loaded modules. For default and namespace runs, the loaded `lance_c.dll` must
@@ -97,7 +128,10 @@ pwsh -File scripts/public-consumer/windows-harness-test.ps1
 ```
 
 The Python tests exercise PE and cache acceptance/rejection. The PowerShell
-test parses the real driver, checks the command boundary, and invokes the real
-`verify.py` PE and cache paths with synthetic files. Actual Windows runtime
-acceptance only happens on the hosted Windows runners; local static checks
-cannot substitute for it.
+test parses the real driver, checks the setup/cold command boundary, extracts
+the real cache-scope helpers for synthetic regressions (setup archive identity
+validation, empty and distinct cold caches, selected-only cold snapshots, and
+late `go get` / cache-copy priming), and invokes the real `verify.py` PE and
+cache paths with synthetic files. Actual Windows runtime acceptance only
+happens on the hosted Windows runners; local static checks cannot substitute
+for it.
