@@ -11,7 +11,7 @@ tracked.
 The root module requires the published data-only module:
 
 ```text
-require github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111213734-a779f4a15524
+require github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0
 ```
 
 Its sources and payload are also tracked under `artifacts/linux-amd64/`. Because
@@ -24,12 +24,12 @@ archive.
 | --- | --- |
 | Target | `linux/amd64` |
 | Library | `liblance_c.so` |
-| Compressed size | 85642384 bytes |
-| Compressed SHA-256 | `892be9602cf09f791cc62ed7e05002d5f4bd377113a8e0b414a03a90fd069927` |
-| Uncompressed size | 322169936 bytes |
-| Uncompressed SHA-256 | `20b2b63598fbca3f83146061f8ef4d2f616effb359af9ae4a01fd9afe9dad1d8` |
-| Upstream commit | `88c07cf8ccafebf579e769416251be370b45180e` |
-| Header SHA-256 | `c23406d5c683133eb647cfeb150fa05182ffc8ba7da283b3902dbb4bf0926c6c` |
+| Compressed size | 85696976 bytes |
+| Compressed SHA-256 | `e933fc867b2a9ee404d01959aaef8dc8378ddf0b582d7bb2367ed3dbfe46c5b5` |
+| Uncompressed size | 322099824 bytes |
+| Uncompressed SHA-256 | `e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` |
+| Upstream commit | `ac2634c553b450c7787577ffe964fc2b283b8334` |
+| Header SHA-256 | `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b` |
 
 `internal/bundled/lance_bundle_linux_amd64.go` is the generated selector.
 Its build constraint is `!lance_external_lib && linux && amd64`. The `init`
@@ -115,7 +115,7 @@ The commit and header hash written into the generated module are
 packaging-time provenance claims. lance-c exposes no runtime version symbol,
 so the loader cannot prove from the shared library which commit built it. The
 packaging host and the release process must supply a library built from the
-pinned commit. The active bundle was packaged from `88c07cf8ccafebf579e769416251be370b45180e`;
+pinned commit. The active bundle was packaged from `ac2634c553b450c7787577ffe964fc2b283b8334`;
 its `artifact.go` records the values in the table above.
 
 ## Runtime cache
@@ -172,8 +172,8 @@ generator uses only that same compression package plus the standard library.
 The root requirement for the artifact module adds these `go.sum` entries:
 
 ```text
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111213734-a779f4a15524 h1:/qgBNBo3mxbjIzEf/xRot8I5fHXWDMkRxw8BKvPiNug=
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111213734-a779f4a15524/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0 h1:tOJ/owlrb9wrZ1Yr18N3yXakU0+JCuSNutOu3sREkJ4=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
 ```
 
 `lance_external_lib` builds compile out `bundle.go`, `cache.go`,
@@ -183,14 +183,18 @@ where the platform needs them.
 
 ## Verification status and remaining gates
 
-The native build and 15 C/C++ consumer runs at the pinned commit succeeded on
-NieR, covering ordinary index progress, commit locks, native write options,
-custom namespaces, fragment creation, raw files, and index-name escaping.
-Fragment mutation consumers were not run. The library exports all 876 declared
-symbols. Packaging round-tripped the
-compressed payload to the stripped native input. The public proxy archive
-was downloaded and its payload compared byte-for-byte with the tracked module.
-The runtime baseline is Ubuntu 24.04.5 with glibc 2.39.
+The pinned ac2634c native build exports exactly all 878 declared C symbols.
+The full committed C11 and C++17 fragment mutation consumers passed on NieR,
+including both bulk-offset APIs, invalid-entry errors and independent result
+ownership. Their ten independent fixtures were produced using the previously
+accepted native88 library and audited after the producer exited. Other native88
+consumer results remain historical evidence; they were not all rerun at ac2634c.
+
+Packaging round-tripped the compressed payload to the stripped native input.
+The exact published module was resolved through the public Go proxy and sumdb;
+its payload matched the tracked module byte-for-byte. The runtime baseline
+remains Ubuntu 24.04.5 with glibc 2.39. Full Go SDK, race/checkptr, fresh-bundle
+and public-consumer acceptance for this paired update is pending.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
