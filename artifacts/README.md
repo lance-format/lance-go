@@ -1,30 +1,47 @@
 # Packaged lance-c artifacts
 
-This directory contains the published `linux/amd64` artifact module and
-documents the packaging interface between the loader and release artifacts.
-The tracked `artifacts/linux-amd64/liblance_c.so.zst` is the production
-compressed payload; no raw shared library, static archive, or build evidence is
-tracked. Windows companion candidates are generated outside the checkout by the
-native evidence lane and are not tracked or published.
+This directory contains the published Unix artifact modules and documents the
+packaging interface between the loader and release artifacts. The tracked
+`artifacts/<target>/liblance_c.so.zst` or `liblance_c.dylib.zst` files are the
+production compressed payloads; no raw shared library, static archive, or build
+evidence is tracked. Windows companion candidates are generated outside the
+checkout by the native evidence lane and are not tracked or published.
 
-The Unix native workflow separately produces unpublished production-path
-candidates from the accepted native library. Candidate modules are workflow
-artifacts only: they are not tracked here, not required by the root module,
-and not activated by a selector. See "Native Unix validation workflow".
+The Unix native workflow separately produces staging candidates from the
+accepted native library. Staging candidates are workflow artifacts only; after
+review and publication, accepted payloads are tracked here, required by the
+root module, and paired with generated selectors. See "Native Unix validation
+workflow" and "Public-consumer acceptance".
 
-## Active linux/amd64 bundle
+## Active Unix bundles
 
-The root module requires the published data-only module:
+The root module requires four published data-only modules:
 
 ```text
-require github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0
+github.com/lance-format/lance-go/artifacts/linux-amd64   v0.0.0-20261111235843-ac5955a095d0
+github.com/lance-format/lance-go/artifacts/linux-arm64   v0.0.0-20261112064406-43fcbbee5161
+github.com/lance-format/lance-go/artifacts/darwin-amd64  v0.0.0-20261112064406-43fcbbee5161
+github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.0.0-20261112064406-43fcbbee5161
 ```
 
-Its sources and payload are also tracked under `artifacts/linux-amd64/`. Because
-that directory is a nested module, the root module ignores it and resolves the
-requirement through the Go module proxy; the published module is authoritative
-for builds. The tracked payload must stay byte-identical to the published
-archive.
+Their sources and payloads are also tracked under `artifacts/<target>/`.
+Because those directories are nested modules, the root module ignores them and
+resolves each requirement through the Go module proxy; the published modules
+are authoritative for builds. The tracked payloads must stay byte-identical to
+the published archives.
+
+All four published Unix companions passed default, namespace-only and external
+cold public consumers at root `b8132c7ca5df4237c8c8324af2ec0fa148901926`
+([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)).
+The twelve consumer executions and final cleanup passed on native hosts with
+Go 1.23.0 and `CGO_ENABLED=0`. This accepts those published bytes and the tested
+runtime environments; final release tags require their own public checks.
+
+### linux/amd64 payload
+
+The published `linux/amd64` module is
+`github.com/lance-format/lance-go/artifacts/linux-amd64` at
+`v0.0.0-20261111235843-ac5955a095d0`.
 
 | Property | Value |
 | --- | --- |
@@ -36,6 +53,24 @@ archive.
 | Uncompressed SHA-256 | `e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` |
 | Upstream commit | `ac2634c553b450c7787577ffe964fc2b283b8334` |
 | Header SHA-256 | `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b` |
+
+### Published Unix companion payloads
+
+All three companions use `UpstreamCommit`
+`ac2634c553b450c7787577ffe964fc2b283b8334` and `HeaderSHA256`
+`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`.
+
+| Target | Module version | Compressed size | Compressed SHA-256 | Uncompressed size | Uncompressed SHA-256 |
+| --- | --- | --- | --- | --- | --- |
+| `linux/arm64` | `v0.0.0-20261112064406-43fcbbee5161` | 82574957 | `4bb00ab7cc52a6f693b0fd79daf2b94bf5afa1e17ffc65a6b634747609eb1fdb` | 286825888 | `c03b4d69f4597d71d99971606f250e2b11bb69f50a01492cdf82c02c8413d879` |
+| `darwin/amd64` | `v0.0.0-20261112064406-43fcbbee5161` | 81328057 | `c44cccfe51d70d955e9ee1887f20994bb7a5ac8deca39e0f80f781fa779b0805` | 293866120 | `e377468f7d0f5afd13a6ab4d18f9cf17dc544a38a68da04fb1a5557839260bc7` |
+| `darwin/arm64` | `v0.0.0-20261112064406-43fcbbee5161` | 76784146 | `80e2e23985ec20955ce8ab67e6267a206de16af9dfab7b32296157455f7b395d` | 272228496 | `f214c238b890bd02427ecc260231f4f886997a396e050c951978f81270e25200` |
+
+The generated selectors are
+`internal/bundled/lance_bundle_linux_arm64.go`,
+`internal/bundled/lance_bundle_darwin_amd64.go`, and
+`internal/bundled/lance_bundle_darwin_arm64.go`. Their build constraints are
+`!lance_external_lib && <goos> && <goarch>`.
 
 `internal/bundled/lance_bundle_linux_amd64.go` is the generated selector.
 Its build constraint is `!lance_external_lib && linux && amd64`. The `init`
@@ -106,21 +141,40 @@ pending.
 
 ## Platform and runtime scope
 
-`linux/amd64` is the only published target bundle. The packaged library was
-built on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and
-the dynamic loader. Do not assume it works on older glibc, musl, Windows, or
-other architectures; no bundle or runtime support is claimed for them.
+Four Unix targets have published bundles. The `linux/amd64` library was built
+on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
+dynamic loader. The companion payloads use the same pin and header; their
+cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x hosts. Do not
+assume any payload works on older glibc/macOS, musl, Windows, or other architectures;
+no such runtime support is claimed.
 
 The cross-build matrix in `ci.yml` compiles other targets but does not run them
-and does not publish artifacts. The Unix native workflow produces unpublished
-candidates for the four native Unix targets; they do not change the published
-target set. Each additional published target needs its own accepted payload,
-selector, runtime validation, and platform documentation.
+and does not publish artifacts. The Unix native workflow rebuilds candidate
+libraries; publication and selector adoption are separate release steps.
+Windows remains `BLOCKED` and has no published module or selector.
 
-The bundle is fetched through the normal Go module proxy when a default
-`linux/amd64` build compiles the artifact package. This is not a zero-download
-installation. Commands that load all modules, including `go mod tidy`, may
-download archives that the final build does not embed.
+A bundle is fetched through the normal Go module proxy when a default build for
+a published Unix target compiles its artifact package. This is not a
+zero-download installation. Commands that load all modules, including `go get`
+and `go mod tidy`, may download every companion archive because Go can load
+packages for all build tags. The public-consumer lane records that installation
+set separately, then measures each default and namespace target build from
+fresh empty caches.
+
+## Public-consumer acceptance
+
+`scripts/public-consumer/run.sh` resolves an exact root revision from the
+public proxy and builds standalone default, namespace-only, and external
+consumers on one native runner. It verifies the root archive and source tree,
+the artifact selected by the built binary, payload and extracted-library bytes,
+safe cache modes, and the roundtrip output. It records the complete `go get`
+download set against the root module graph, then requires each default and
+namespace target build to fetch only the selected artifact payload archive from
+fresh empty caches. External target downloads are recorded without a
+zero-download claim. The four hosted matrix entries are Linux and macOS on
+amd64 and arm64. The lane is public-distribution acceptance, not a
+native rebuild or a full runtime regression. See
+[scripts/public-consumer/README.md](../scripts/public-consumer/README.md).
 
 ## External build contract
 
@@ -295,8 +349,10 @@ consumer results remain historical evidence; they were not all rerun at ac2634c.
 Packaging round-tripped the compressed payload to the stripped native input.
 The exact published module was resolved through the public Go proxy and sumdb;
 its payload matched the tracked module byte-for-byte. The runtime baseline
-remains Ubuntu 24.04.5 with glibc 2.39. Full Go SDK, race/checkptr, fresh-bundle
-and public-consumer acceptance for this paired update is pending.
+remains Ubuntu 24.04.5 with glibc 2.39. The linux/amd64 paired update has
+accepted default, external, race/checkptr, strip, and roundtrip evidence. The
+companion payloads use the same pin and header; all four published Unix targets
+have cold public-consumer acceptance at `b8132c7`, as recorded above.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -310,13 +366,21 @@ Independent default/external consumers were previously accepted with the
 of this updated native payload. The integrated Go native/race/checkptr, fresh-bundle and public consumer gates
 must run against this revision before delivery.
 
-In the earlier consumer checks, `go get` downloaded the artifact archive before
-the target build in both modes. External mode is not a zero-download contract.
-Only one artifact target is published, so these checks do not establish archive
-selection across a multi-platform release. Broader glibc/musl coverage, macOS
-runtime support, Windows module publication, selector activation, and hosted
-Windows cold-cache loading remain pending. Windows native execution evidence and
-an unpublished candidate are not a supported Windows distribution.
+In the earlier consumer checks, `go get` downloaded every companion artifact
+archive before the target build; `go get` loads packages for all build tags, so
+that is installation behavior, not target selection. External mode is not a
+zero-download contract. Those checks used one target, so they do not establish
+archive selection across a multi-platform release. The public-consumer lane
+records installation and each fresh-cache target build separately; default and
+namespace target builds must fetch only the selected archive, while external
+target downloads are recorded without that assertion. Run 43193825133 verified
+this boundary on all four Unix targets: setup fetched four archives, each
+default/namespace target build fetched one, and external target builds fetched
+none in that run. Broader glibc/musl and older-macOS coverage, Windows module
+publication and selector activation, and hosted Windows cold-cache loading
+remain unaccepted.
+Windows native execution evidence and an unpublished candidate are not a
+supported Windows distribution.
 
 ## Native Unix validation workflow
 
@@ -371,17 +435,20 @@ export evidence fails verification.
 
 The candidate module and evidence are uploaded as
 `unix-native-candidate-<slug>` and `unix-native-evidence-<slug>` with seven-day
-retention. These are unpublished candidates, not a published target or an
-accepted default bundle. The workflow publishes the validated install cache
-only after the stripped candidate is staged and verified and all consumers of
-the cache staging path finish; the cache continues to hold the unstripped
+retention. These workflow candidates remain unpublished. The tracked companion
+modules were published after review and their selectors are active; their cold
+public-consumer acceptance at `b8132c7` is recorded above. The workflow publishes
+the validated install cache only after the
+stripped candidate is staged and verified and all consumers of the cache
+staging path finish; the cache continues to hold the unstripped
 accepted library, and candidates are never cached. The workflow asserts that
 the checkout is unchanged, so it cannot activate a selector.
 
 A successful run establishes native build, test, strip, and candidate
 verification results for that commit only. Public proxy and sumdb
 verification, cold default/external/namespace consumers of a published module,
-selector activation, release/tag creation, and acceptance of the candidate
-bundles remain pending and are owned by the release process. macOS runtime
-support, a deployment floor, and completion of the platform roadmap are not
-claimed.
+selector activation, release/tag creation, and acceptance of any newly built
+candidate remain separate release responsibilities. Existing published Unix
+module acceptance does not automatically accept different workflow candidates.
+The tested macOS runtime versions do not establish an older deployment floor
+or completion of the platform roadmap.
