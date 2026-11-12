@@ -29,6 +29,10 @@ Windows DLL belongs to the lance-c release process. Remaining API parity and
 platform distribution work is tracked in
 [issue #1](https://github.com/lance-format/lance-go/issues/1).
 
+Maintainers preparing a native bundle release should follow
+[RELEASING.md](RELEASING.md); that guide records the current `linux/amd64`
+bundle limits and is not release authorization.
+
 Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
 creates a temporary dataset, closes and reopens it, and checks the scanned rows:
 
