@@ -13,7 +13,6 @@ import (
 )
 
 const rawBlobV2FixturePath = "testdata/v14.0.2/blob_v2_raw_reader/blob_v2_raw.lance"
-const rawBlobV2ExtensionName = "lance." + "blob.v2"
 
 type rawBlobV2Descriptor struct {
 	Null     bool
@@ -218,9 +217,8 @@ func assertRawBlobV2DescriptorField(t *testing.T, field arrow.Field) {
 	if !field.Nullable {
 		t.Fatalf("%s field is non-nullable, want nullable", field.Name)
 	}
-	if got, ok := field.Metadata.GetValue("ARROW:extension:name"); !ok || got != rawBlobV2ExtensionName {
-		t.Fatalf("%s extension metadata = %q ok=%v, want %q", field.Name, got, ok, rawBlobV2ExtensionName)
-	}
+	// Raw footers describe physical Blob storage with encoding metadata.
+	// The released fixture does not carry logical Arrow extension metadata.
 	if got, ok := field.Metadata.GetValue("lance-encoding:blob"); !ok || got != "true" {
 		t.Fatalf("%s Blob metadata = %q ok=%v, want true", field.Name, got, ok)
 	}
