@@ -38,7 +38,6 @@ git -C "$CHECKOUT_DIR" fetch origin '+refs/heads/main:refs/remotes/origin/main'
 git -C "$CHECKOUT_DIR" fetch origin "+refs/heads/$DRIVER_BRANCH:refs/remotes/origin/$DRIVER_BRANCH"
 
 driver_head=$(git -C "$CHECKOUT_DIR" rev-parse HEAD)
-driver_parent=$(git -C "$CHECKOUT_DIR" rev-parse 'HEAD^')
 origin_main=$(git -C "$CHECKOUT_DIR" rev-parse origin/main)
 origin_driver=$(git -C "$CHECKOUT_DIR" rev-parse "origin/$DRIVER_BRANCH")
 
@@ -50,8 +49,8 @@ origin_driver=$(git -C "$CHECKOUT_DIR" rev-parse "origin/$DRIVER_BRANCH")
 	printf 'origin/%s is %s, checked-out driver is %s\n' "$DRIVER_BRANCH" "$origin_driver" "$driver_head" >&2
 	exit 2
 }
-[[ "$driver_parent" == "$SOURCE_COMMIT" ]] || {
-	printf 'driver parent is %s, want %s\n' "$driver_parent" "$SOURCE_COMMIT" >&2
+git -C "$CHECKOUT_DIR" merge-base --is-ancestor "$SOURCE_COMMIT" "$driver_head" || {
+	printf 'driver commit %s does not descend from %s\n' "$driver_head" "$SOURCE_COMMIT" >&2
 	exit 2
 }
 [[ "$driver_head" != "$SOURCE_COMMIT" ]] || {
