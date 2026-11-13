@@ -25,12 +25,36 @@ float32 bit patterns for floats. No float JSON representation is used.
 
 ## Storage format
 
-The common storage format selected for this suite is Lance 2.1. Runtime
-compatibility remains unverified until the complete matrix passes. Every SDK
+The common storage format selected for this suite is Lance 2.1. Acceptance
+requires the complete matrix; the tested revision is recorded below. Every SDK
 receives an explicit format; no SDK is allowed to fall back to its own default.
 The runner records the requested format in `metadata.txt`. The same bounded
 fixture is wired for an opt-in `--storage-version 2.2` run, but 2.2 is outside
 the accepted scope of this change until that run has actually been executed.
+
+## Accepted execution
+
+On 2026-11-13, SDK `807cb84305302dc3ff3b40809d817a876efd2909` passed all 56
+storage 2.1 cells on Linux amd64 (Ubuntu 24.04.5, Go 1.23.12, CGO disabled,
+external-library mode). The Go fixture loaded the published linux-amd64
+`ac5955a` library from native source
+`ac2634c553b450c7787577ffe964fc2b283b8334`: 322099824 bytes, SHA-256
+`e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378`.
+
+The run used the four SDK pins above. Rust and Java fixture binaries were
+reused after their source identities were checked; Python 3.12.3 used pylance
+14.0.2 and pyarrow 22.0.0 in an isolated environment matching the accepted
+package freeze. The Go fixture was rebuilt from the exact tested SDK source.
+All four producers, 16 cross-reader cells and six bidirectional append paths
+passed. Independent recount of all 56 cell logs found no missing cells,
+nonzero exits, empty reports or literal-golden mismatches.
+
+Retained evidence on NieR is
+`/home/xuanwo/Code/lance-go-acceptance/artifacts/compat-ac263-807cb84/`
+(`RESULT.md`, per-cell logs, tool/library provenance and `MANIFEST.sha256`).
+This result does not cover storage 2.2, other operating systems, cloud storage
+or a released root tag. It supplements the earlier native88 result rather
+than changing that result's provenance.
 
 ## Prerequisites
 
@@ -44,7 +68,10 @@ static-inspection host.
 - Rust 1.96.1 (the acceptance toolchain), with the lance core git revision above
   available to Cargo. The committed lockfile requires at least Rust 1.95;
   the core crate's lower MSRV alone does not satisfy this dependency graph.
-- The repository's existing native07 bundle for lance-go.
+- The native library paired with the tested SDK revision. The current pin is
+  `ac2634c553b450c7787577ffe964fc2b283b8334`; verify the selected library hash
+  against the corresponding artifact metadata. Historical native07/native88
+  compatibility results do not establish execution against a different library.
 
 ### Python
 

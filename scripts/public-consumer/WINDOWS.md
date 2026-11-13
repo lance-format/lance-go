@@ -6,8 +6,14 @@
 report the module that the loader actually mapped.
 
 The Windows modules are published at `v0.0.0-20261112113154-9496baf852b1`
-and adopted by this branch. Native candidate acceptance passed at `c8373c9`;
-this public-consumer lane still requires hosted runtime acceptance.
+and adopted by this branch. Native candidate acceptance passed at `c8373c9`.
+Both native hosts passed all three public-consumer modes at root `807cb84` in
+[run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526):
+Windows Server 2022 amd64 and Windows 11 ARM64, with Go 1.23.0 and CGO disabled.
+The default and namespace consumers loaded the published DLL from a cold cache;
+the external consumer loaded that verified DLL without artifact linkage or
+extraction. All loaded-module guards passed. This exact-revision acceptance
+does not substitute for post-tag checks or establish older Windows support.
 
 ## Prerequisite
 
