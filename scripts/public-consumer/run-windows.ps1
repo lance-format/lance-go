@@ -383,10 +383,18 @@ function Resolve-TagCommit([string]$Tag) {
     return ($selected -split '\s+')[0]
 }
 
+function Get-PseudoVersionCommitPrefix([string]$Version) {
+    if ($Version -match '^v[0-9]+\.(0\.0-|[0-9]+\.[0-9]+-([^+]*\.)?0\.)[0-9]{14}-(?<rev>[0-9a-f]{12})(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+        return $Matches['rev']
+    }
+    return $null
+}
+
 function Assert-VersionIdentity([string]$ProxyVersion, [string]$Source, [string]$Revision) {
     if ($Revision -match '^[0-9a-f]{40}$') {
-        if ($ProxyVersion -match '-([0-9a-f]{12})$') {
-            Assert-Equal 'proxy pseudo-version commit' $Matches[1] $Source.Substring(0, 12)
+        $pseudoPrefix = Get-PseudoVersionCommitPrefix $ProxyVersion
+        if ($pseudoPrefix) {
+            Assert-Equal 'proxy pseudo-version commit' $pseudoPrefix $Source.Substring(0, 12)
             return
         }
         $tagCommit = Resolve-TagCommit $ProxyVersion

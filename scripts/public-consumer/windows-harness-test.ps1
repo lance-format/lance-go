@@ -3,8 +3,9 @@
 #
 # This test does not run Go or a native consumer. It parses the real driver with
 # PowerShell's parser, checks the command boundary that must not fetch every
-# platform, extracts the real cache-scope helpers for synthetic boundary checks,
-# and exercises the real verify.py payload/PE/cache failure paths with synthetic files.
+# platform, extracts the real cache-scope and version-identity helpers for
+# synthetic boundary checks, and exercises the real verify.py payload/PE/cache
+# failure paths with synthetic files.
 
 [CmdletBinding()]
 param()
@@ -191,6 +192,8 @@ try {
         'Write-Summary',
         'Get-FileSha256',
         'Assert-Equal',
+        'Get-PseudoVersionCommitPrefix',
+        'Assert-VersionIdentity',
         'Get-CacheRows',
         'Get-ArtifactZips',
         'Get-ArtifactMods',
@@ -206,6 +209,41 @@ try {
             Fail "driver helper is missing: $name"
         }
         . $functions[$name]
+    }
+
+    $script:SyntheticTagCommit = ''
+    $script:ResolvedTags = New-Object System.Collections.Generic.List[string]
+    function Resolve-TagCommit([string]$Tag) {
+        $script:ResolvedTags.Add($Tag)
+        return $script:SyntheticTagCommit
+    }
+
+    $pseudoSource = '976c6ddc6358c5058b2496ff982047093eceb788'
+    foreach ($version in @(
+        'v0.0.0-20261113175157-976c6ddc6358',
+        'v0.1.1-0.20261113175157-976c6ddc6358',
+        'v2.0.1-0.20261113175157-976c6ddc6358+incompatible',
+        'v0.1.0-preview.1.0.20261113175157-976c6ddc6358',
+        'v2.0.0-preview.1.0.20261113175157-976c6ddc6358+incompatible'
+    )) {
+        $script:ResolvedTags.Clear()
+        Assert-VersionIdentity $version $pseudoSource $pseudoSource
+        if ($script:ResolvedTags.Count -ne 0) {
+            Fail "pseudo-version $version was resolved as a tag"
+        }
+    }
+    Assert-ThrowsLike {
+        Assert-VersionIdentity 'v0.1.0-preview.1.0.20261113175157-000000000000' $pseudoSource $pseudoSource
+    } 'does not match commit prefix' 'wrong pseudo-version prefix'
+
+    $script:SyntheticTagCommit = $pseudoSource
+    foreach ($version in @('v1.2.3-deadbeefcafe', 'v1.2.3')) {
+        $revision = if ($version -eq 'v1.2.3') { $version } else { $pseudoSource }
+        $script:ResolvedTags.Clear()
+        Assert-VersionIdentity $version $pseudoSource $revision
+        if ($script:ResolvedTags.Count -ne 1 -or $script:ResolvedTags[0] -cne $version) {
+            Fail "real tag $version did not use tag resolution"
+        }
     }
 
     $script:RootModule = 'example.com/root'
