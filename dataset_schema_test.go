@@ -718,25 +718,36 @@ func (failingBatchUDFStore) InsertFragment(uint64, string) error { return nil }
 
 type batchUDFHitStore struct {
 	mu             sync.Mutex
-	batch          arrow.RecordBatch
+	batches        map[lance.BatchInfo]arrow.RecordBatch
 	getBatch       int
-	insertBatch    int
+	hits           []lance.BatchInfo
+	insertBatch    []lance.BatchInfo
 	getFragment    int
 	insertFragment int
 }
 
-func (s *batchUDFHitStore) GetBatch(lance.BatchInfo) (arrow.RecordBatch, bool, error) {
+func (s *batchUDFHitStore) GetBatch(info lance.BatchInfo) (arrow.RecordBatch, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.getBatch++
-	s.batch.Retain()
-	return s.batch, true, nil
+	batch, ok := s.batches[info]
+	if !ok {
+		return nil, false, nil
+	}
+	s.hits = append(s.hits, info)
+	batch.Retain()
+	return batch, true, nil
 }
 
-func (s *batchUDFHitStore) InsertBatch(lance.BatchInfo, arrow.RecordBatch) error {
+func (s *batchUDFHitStore) InsertBatch(info lance.BatchInfo, batch arrow.RecordBatch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.insertBatch++
+	s.insertBatch = append(s.insertBatch, info)
+	if _, ok := s.batches[info]; ok {
+		return fmt.Errorf("duplicate batch checkpoint %+v", info)
+	}
+	batch.Retain()
+	s.batches[info] = batch
 	return nil
 }
 
@@ -754,58 +765,146 @@ func (s *batchUDFHitStore) InsertFragment(uint64, string) error {
 	return nil
 }
 
-func TestBatchUDFCheckpointBatchHitSkipsMapper(t *testing.T) {
-	requireNative(t)
-	ctx := context.Background()
-	uri := filepath.Join(t.TempDir(), "hit.lance")
-	schema := testSchema()
-	record := makeRecord(t, schema, []int64{1, 2, 3, 4}, []string{"a", "b", "c", "d"}, []bool{true, true, true, true})
-	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, record), lance.WithWriteParams(lance.WriteParams{MaxRowsPerFile: 2}))
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+func (s *batchUDFHitStore) resetCounts() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.getBatch = 0
+	s.hits = nil
+	s.insertBatch = nil
+	s.getFragment = 0
+	s.insertFragment = 0
+}
+
+func (s *batchUDFHitStore) release() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, batch := range s.batches {
+		batch.Release()
 	}
-	defer dataset.Close()
+	s.batches = nil
+}
+
+func TestBatchUDFCheckpointBatchHitSkipsMapper(t *testing.T) {
+	dataset, _, _ := newMutationDataset(t)
+	ctx := context.Background()
+	baseVersion := mutationVersion(t, dataset)
 
 	outputSchema := arrow.NewSchema([]arrow.Field{
 		{Name: "doubled", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
 	}, nil)
-	values := array.NewInt64Builder(memory.DefaultAllocator)
-	values.AppendValues([]int64{9, 9}, nil)
-	hitColumn := values.NewArray()
-	hitBatch := array.NewRecordBatch(outputSchema, []arrow.Array{hitColumn}, 2)
-	hitColumn.Release()
-	values.Release()
-	defer hitBatch.Release()
 
-	store := &batchUDFHitStore{batch: hitBatch}
+	makeOutput := func(input arrow.RecordBatch, offset int64) (arrow.RecordBatch, error) {
+		if input.NumCols() != 1 {
+			return nil, fmt.Errorf("mapper input columns = %d, want 1", input.NumCols())
+		}
+		ids, ok := input.Column(0).(*array.Int64)
+		if !ok {
+			return nil, fmt.Errorf("mapper input type = %T, want *array.Int64", input.Column(0))
+		}
+		builder := array.NewRecordBuilder(memory.DefaultAllocator, outputSchema)
+		defer builder.Release()
+		values := builder.Field(0).(*array.Int64Builder)
+		for i := 0; i < int(input.NumRows()); i++ {
+			values.Append(ids.Value(i) + offset)
+		}
+		return builder.NewRecordBatch(), nil
+	}
+
+	const interruption = "interrupt after first cached batch"
+	store := &batchUDFHitStore{batches: make(map[lance.BatchInfo]arrow.RecordBatch)}
+	defer store.release()
 	mapperCalls := 0
-	next, err := dataset.AddColumnsBatchUDF(ctx, lance.BatchUDF{
-		Mapper: func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
-			mapperCalls++
-			return nil, fmt.Errorf("mapper must not run on a checkpoint hit")
-		},
+	seeding := true
+	mapper := func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
+		mapperCalls++
+		if seeding && mapperCalls == 2 {
+			return nil, errors.New(interruption)
+		}
+		if seeding {
+			return makeOutput(input, 100)
+		}
+		return makeOutput(input, 200)
+	}
+	batchSize := uint32(2)
+	udf := lance.BatchUDF{
+		Mapper:       mapper,
 		OutputSchema: outputSchema,
+		ReadColumns:  []string{"id"},
+		BatchSize:    &batchSize,
 		Store:        store,
-	})
+	}
+
+	seeded, err := dataset.AddColumnsBatchUDF(ctx, udf)
+	if seeded != nil {
+		seeded.Close()
+	}
+	if err == nil {
+		t.Fatal("seeding AddColumnsBatchUDF succeeded, want an interrupted run")
+	}
+	if !strings.Contains(err.Error(), interruption) {
+		t.Fatalf("seeding AddColumnsBatchUDF error = %v, want %q", err, interruption)
+	}
+	if got := mutationVersion(t, dataset); got != baseVersion {
+		t.Fatalf("version after interrupted seeding run = %d, want %d", got, baseVersion)
+	}
+	if mapperCalls != 2 {
+		t.Fatalf("seeding mapper calls = %d, want 2", mapperCalls)
+	}
+
+	store.mu.Lock()
+	seedGetBatch := store.getBatch
+	seedHits := len(store.hits)
+	seedInserts := len(store.insertBatch)
+	seedFragmentReads := store.getFragment
+	seedFragments := store.insertFragment
+	seedBatches := len(store.batches)
+	var cachedInfo lance.BatchInfo
+	for info := range store.batches {
+		cachedInfo = info
+	}
+	store.mu.Unlock()
+	if seedGetBatch != 2 || seedHits != 0 {
+		t.Fatalf("seeding checkpoint reads = %d, hits = %d, want 2 misses", seedGetBatch, seedHits)
+	}
+	if seedFragmentReads != 1 {
+		t.Fatalf("seeding fragment reads = %d, want 1", seedFragmentReads)
+	}
+	if seedInserts != 1 || seedFragments != 0 || seedBatches != 1 {
+		t.Fatalf("seeding checkpoints = batches %d, fragment writes %d, stored batches %d, want one batch only",
+			seedInserts, seedFragments, seedBatches)
+	}
+
+	store.resetCounts()
+	mapperCalls = 0
+	seeding = false
+	next, err := dataset.AddColumnsBatchUDF(ctx, udf)
 	if err != nil {
-		t.Fatalf("AddColumnsBatchUDF hit: %v", err)
+		t.Fatalf("AddColumnsBatchUDF retry: %v", err)
 	}
 	defer next.Close()
 
 	store.mu.Lock()
-	getBatch, insertBatch, getFragment, insertFragment := store.getBatch, store.insertBatch, store.getFragment, store.insertFragment
+	retryGetBatch := store.getBatch
+	retryHits := append([]lance.BatchInfo(nil), store.hits...)
+	retryInserts := append([]lance.BatchInfo(nil), store.insertBatch...)
+	retryFragments := store.insertFragment
+	retryBatches := len(store.batches)
 	store.mu.Unlock()
-	if getBatch != 2 || getFragment != 2 {
-		t.Fatalf("checkpoint reads = get_batch %d, get_fragment %d, want 2 each", getBatch, getFragment)
+	if retryGetBatch != 2 {
+		t.Fatalf("retry checkpoint reads = %d, want 2", retryGetBatch)
 	}
-	if mapperCalls != 0 {
-		t.Fatalf("mapper calls = %d, want 0 on checkpoint hit", mapperCalls)
+	if len(retryHits) != 1 || retryHits[0] != cachedInfo {
+		t.Fatalf("retry checkpoint hits = %v, want [%+v]", retryHits, cachedInfo)
 	}
-	if insertBatch != 0 {
-		t.Fatalf("insert_batch calls = %d, want 0 on batch hit", insertBatch)
+	if mapperCalls != 1 {
+		t.Fatalf("retry mapper calls = %d, want 1 after one batch hit", mapperCalls)
 	}
-	if insertFragment != 2 {
-		t.Fatalf("insert_fragment calls = %d, want 2 for fragment misses", insertFragment)
+	if len(retryInserts) != 1 || retryInserts[0] == cachedInfo {
+		t.Fatalf("retry batch writes = %v, want the unchecked batch only", retryInserts)
+	}
+	if retryFragments != 1 || retryBatches != 2 {
+		t.Fatalf("retry checkpoints = fragment writes %d, stored batches %d, want 1 and 2",
+			retryFragments, retryBatches)
 	}
 
 	scanner, err := next.Scan()
@@ -813,19 +912,14 @@ func TestBatchUDFCheckpointBatchHitSkipsMapper(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	defer scanner.Close()
-	rows := 0
+	var values []int64
 	for batch, err := range scanner.Records(ctx) {
 		if err != nil {
 			t.Fatalf("Records: %v", err)
 		}
-		for _, value := range collectInt64(t, batch, "doubled") {
-			if value != 9 {
-				t.Fatalf("checkpoint value = %d, want 9", value)
-			}
-			rows++
-		}
+		values = append(values, collectInt64(t, batch, "doubled")...)
 	}
-	if rows != 4 {
-		t.Fatalf("checkpoint rows = %d, want 4", rows)
+	if !equalInt64(values, []int64{101, 102, 203, 204}) {
+		t.Fatalf("checkpointed output = %v, want [101 102 203 204]", values)
 	}
 }

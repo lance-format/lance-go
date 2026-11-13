@@ -388,20 +388,6 @@ func (f *Fragment) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCo
 	adapter := &batchUDFAdapter{mapper: udf.Mapper, store: udf.Store}
 	ctx := handle.New(adapter)
 	defer handle.Remove(ctx)
-	native := &batchUDF{
-		Mapper:       callbackBatchMapper,
-		MapperCtx:    uintptr(ctx),
-		OutputSchema: udf.OutputSchema,
-	}
-	if udf.Store != nil {
-		native.Store = &batchUDFStore{
-			GetBatch:       callbackBatchGet,
-			InsertBatch:    callbackBatchInsert,
-			GetFragment:    callbackFragmentGet,
-			InsertFragment: callbackFragmentInsert,
-			CallbackCtx:    uintptr(ctx),
-		}
-	}
 	readPtrs, readList, err := batchUDFReadColumns(readColumns, readColumnsSet)
 	if err != nil {
 		return nil, nil, err
@@ -413,9 +399,17 @@ func (f *Fragment) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCo
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	rc := f.b.fragmentAddColumnsBatchUDF(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
+	var rc int32
+	if f.b.batchUDFV2.fragmentAddColumnsBatchUDFV2 != nil {
+		native := newBatchUDFV2(uintptr(ctx), udf.OutputSchema, udf.Store)
+		rc = f.b.batchUDFV2.fragmentAddColumnsBatchUDFV2(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
+		runtime.KeepAlive(native)
+	} else {
+		native := newBatchUDF(uintptr(ctx), udf.OutputSchema, udf.Store)
+		rc = f.b.fragmentAddColumnsBatchUDF(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
+		runtime.KeepAlive(native)
+	}
 	runtime.KeepAlive(adapter)
-	runtime.KeepAlive(native)
 	runtime.KeepAlive(readPtrs)
 	runtime.KeepAlive(readList)
 	if rc != 0 {

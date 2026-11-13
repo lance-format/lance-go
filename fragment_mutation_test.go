@@ -131,17 +131,60 @@ func TestFragmentAddColumnsVariantsPublish(t *testing.T) {
 		outputSchema := arrow.NewSchema([]arrow.Field{
 			{Name: "udf_value", Type: arrow.PrimitiveTypes.Int64, Nullable: true},
 		}, nil)
+		store := &batchUDFHitStore{batches: make(map[lance.BatchInfo]arrow.RecordBatch)}
+		defer store.release()
+		mapperCalls := 0
 		mapper := func(input arrow.RecordBatch) (arrow.RecordBatch, error) {
+			mapperCalls++
 			return array.NewRecordBatch(outputSchema, []arrow.Array{input.Column(0)}, input.NumRows()), nil
 		}
-
-		updated, schema, err := fragment.AddColumnsBatchUDF(ctx, lance.BatchUDF{
+		batchSize := uint32(2)
+		udf := lance.BatchUDF{
 			Mapper:       mapper,
 			OutputSchema: outputSchema,
 			ReadColumns:  []string{"id"},
-		})
+			BatchSize:    &batchSize,
+			Store:        store,
+		}
+
+		// The store keeps batch checkpoints but always misses fragment
+		// checkpoints, so the replay below must dispatch through get_batch.
+		seeded, seededSchema, err := fragment.AddColumnsBatchUDF(ctx, udf)
 		if err != nil {
-			t.Fatalf("AddColumnsBatchUDF: %v", err)
+			t.Fatalf("AddColumnsBatchUDF seed: %v", err)
+		}
+		if mapperCalls != 2 {
+			t.Fatalf("seed mapper calls = %d, want 2", mapperCalls)
+		}
+		store.mu.Lock()
+		seedReads := store.getBatch
+		seedHits := len(store.hits)
+		seedWrites := len(store.insertBatch)
+		store.mu.Unlock()
+		if seedReads != 2 || seedHits != 0 || seedWrites != 2 {
+			t.Fatalf("seed checkpoints = reads %d, hits %d, writes %d, want 2, 0, 2",
+				seedReads, seedHits, seedWrites)
+		}
+		seeded.Close()
+		seededSchema.Close()
+
+		store.resetCounts()
+		mapperCalls = 0
+		updated, schema, err := fragment.AddColumnsBatchUDF(ctx, udf)
+		if err != nil {
+			t.Fatalf("AddColumnsBatchUDF replay: %v", err)
+		}
+		if mapperCalls != 0 {
+			t.Fatalf("replay mapper calls = %d, want 0 after two cached batches", mapperCalls)
+		}
+		store.mu.Lock()
+		replayReads := store.getBatch
+		replayHits := len(store.hits)
+		replayWrites := len(store.insertBatch)
+		store.mu.Unlock()
+		if replayReads != 2 || replayHits != 2 || replayWrites != 0 {
+			t.Fatalf("replay checkpoints = reads %d, hits %d, writes %d, want 2, 2, 0",
+				replayReads, replayHits, replayWrites)
 		}
 		requireFieldID(t, schema, "udf_value", 2)
 

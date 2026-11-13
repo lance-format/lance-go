@@ -19,12 +19,17 @@ type BatchInfo struct {
 // checkpoints during a batch UDF. A non-nil store must implement all methods.
 // A nil Store disables native checkpointing.
 //
-// GetBatch returns an owned batch reference with found=true. The adapter
-// exports that batch and then releases the reference, so call Retain before
-// returning a cached batch that must stay alive. GetFragment returns
-// found=false when a fragment has no stored checkpoint. InsertBatch receives a
-// borrowed batch; call Retain before keeping it beyond the method. Strings
-// passed to InsertFragment are copied and may be retained.
+// InsertBatch receives a borrowed batch whose schema includes opaque native
+// schema metadata. Keep the batch and its schema together; call Retain
+// before keeping it beyond the method. GetBatch must return that retained batch
+// with its original schema, including the schema metadata received by
+// InsertBatch. Do not rebuild a cached batch from the declared OutputSchema or
+// synthesize native checkpoint metadata, because native validates the
+// preserved schema before accepting a hit. The adapter exports the returned
+// batch with its own schema and then releases the reference, so call Retain
+// before returning a cached batch that must stay alive. GetFragment returns
+// found=false when a fragment has no stored checkpoint. Strings passed to
+// InsertFragment are copied and may be retained.
 type BatchUDFCheckpointStore interface {
 	GetBatch(info BatchInfo) (arrow.RecordBatch, bool, error)
 	InsertBatch(info BatchInfo, batch arrow.RecordBatch) error

@@ -198,10 +198,14 @@ modes; a nil metadata value deletes a key, while an empty string is stored.
 
 `BatchUDF` supports batch and fragment checkpoints. The mapper borrows a Go-owned
 copy of its native input and returns an owned batch reference. Call `Retain`
-before keeping the input or returning a reference owned elsewhere. Checkpoint
-`GetBatch` also returns an owned reference; `InsertBatch` lends its batch for
-the callback, so retaining it is required to keep it. These operations run
-synchronously and check context cancellation before entering native work.
+before keeping the input or returning a reference owned elsewhere.
+`InsertBatch` receives the exact schema native attached to the checkpoint,
+including opaque native schema metadata. `GetBatch` must return the retained
+batch with that original schema; rebuilding it from `OutputSchema` drops the
+metadata and native rejects the hit. `GetBatch` also returns an owned
+reference; `InsertBatch` lends its batch for the callback, so retaining it is
+required to keep it. These operations run synchronously and check context
+cancellation before entering native work.
 
 A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
