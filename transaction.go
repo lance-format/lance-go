@@ -603,6 +603,9 @@ func (g *DataReplacementGroup) File() (*DataFile, error) {
 func NewDataReplacementOperation(groups ...*DataReplacementGroup) (*Operation, error) {
 	for i, group := range groups {
 		if group == nil {
+			for _, acquired := range groups[:i] {
+				acquired.res.release()
+			}
 			return nil, invalidError("new data replacement operation", "", "group %d must not be nil", i)
 		}
 		if !group.res.acquire() {
@@ -985,6 +988,9 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	defer releaseStorage()
 	for i, tx := range txs {
 		if tx == nil {
+			for _, acquired := range txs[:i] {
+				acquired.res.release()
+			}
 			return nil, nil, invalidError("commit batch", uri, "transaction %d must not be nil", i)
 		}
 		if !tx.res.acquire() {
