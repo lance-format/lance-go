@@ -436,18 +436,24 @@ from fresh target caches.
 
 ### Public-consumer acceptance
 
-Required public-distribution acceptance uses the maintained lane in
-`.github/workflows/unix-public-consumers.yml` with the driver in
-`scripts/public-consumer/run.sh`. It runs on Linux and macOS amd64 and arm64
-runners, resolves one exact root revision through `proxy.golang.org` and
+Required public-distribution acceptance uses both maintained lanes:
+
+- `.github/workflows/unix-public-consumers.yml`, with
+  `scripts/public-consumer/run.sh`, covers Linux and macOS amd64 and arm64.
+- `.github/workflows/windows-public-consumers.yml`, with
+  `scripts/public-consumer/run-windows.ps1`, covers Windows amd64 and arm64.
+  See [the Windows driver contract](scripts/public-consumer/WINDOWS.md) for
+  host requirements, DLL identity checks and Windows cache properties.
+
+Each lane resolves one exact root revision through `proxy.golang.org` and
 `sum.golang.org`, and builds standalone default, namespace-only, and external
 consumers outside the checkout. It verifies the root archive and source tree,
 the artifact selected by the built binary, payload and extracted-library
-bytes, cache modes, and the roundtrip result. It does not rebuild native code.
+bytes, platform cache properties, and the roundtrip result. It does not rebuild native code.
 The manual smoke test above is not a substitute for this driver.
 
 A pull request uses the exact PR head commit; manual dispatch takes a full
-commit SHA or checked-out tag. Run it locally on the matching native host:
+commit SHA or checked-out tag. Run the Unix driver locally on the matching native host:
 
 ```sh
 cd "$REPO_ROOT"
@@ -540,13 +546,25 @@ Create the release for that pushed root tag, mark it as a pre-release when
 appropriate, and attach the evidence. Do not move or reuse a published version
 to hide a mismatch; document the failure and fix forward.
 
-After publication, run the maintained public-consumer driver again with
-`ROOT_REVISION=$ROOT_VERSION` in a new `EVIDENCE_DIR`; do not reuse any pre-tag
-module, build, or runtime cache. Fetch the tagged root and exact artifact
-version through the public proxy, exercise default, namespace-only, and
-external consumers, and re-check the archive payload bytes and
-checksum-database entry. Record those post-publication results with the
-release.
+After publication, dispatch both maintained public-consumer workflows against
+the published tag. Set both the workflow ref and its revision input to that
+tag so the checked-out driver and publicly resolved root identify the release:
+
+```sh
+: "${ROOT_VERSION:?authorized published root version}"
+gh workflow run unix-public-consumers.yml --repo lance-format/lance-go \
+  --ref "$ROOT_VERSION" -f "revision=$ROOT_VERSION"
+gh workflow run windows-public-consumers.yml --repo lance-format/lance-go \
+  --ref "$ROOT_VERSION" -f "revision=$ROOT_VERSION"
+```
+
+Both workflows create fresh evidence, module, build and runtime caches; do not
+reuse pre-tag caches. Require all six targets and all 18 default,
+namespace-only and external consumer modes, including cleanup, to pass. They
+must fetch the tagged root and exact artifact versions through the public
+proxy and verify archive bytes, checksum-database identity, extraction and
+runtime behavior. Preserve both runs and their checksummed evidence with the
+release; an accepted pseudo-version does not satisfy this post-tag gate.
 
 ## 7. Reusing existing evidence
 

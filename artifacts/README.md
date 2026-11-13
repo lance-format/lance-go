@@ -342,11 +342,11 @@ consumer results remain historical evidence; they were not all rerun at ac2634c.
 
 Packaging round-tripped the compressed payload to the stripped native input.
 The exact published module was resolved through the public Go proxy and sumdb;
-its payload matched the tracked module byte-for-byte. The runtime baseline
+its payload matched the accepted candidate byte-for-byte. The runtime baseline
 remains Ubuntu 24.04.5 with glibc 2.39. The linux/amd64 paired update has
 accepted default, external, race/checkptr, strip, and roundtrip evidence. The
-companion payloads use the same pin and header; all four published Unix targets
-have cold public-consumer acceptance at `b8132c7`, as recorded above.
+companion payloads use the same pin and header. All six published targets have
+cold public-consumer acceptance at `807cb84`, as recorded above.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -355,26 +355,20 @@ cache entry's SHA-256. Loader and generator unit tests cover cache reuse and
 corruption, cross-process locking, environment precedence, descriptor
 validation, and synthetic target headers.
 
-Independent default/external consumers were previously accepted with the
-07cd7d0 artifact. Those results establish the distribution contract, not acceptance
-of this updated native payload. The integrated Go native/race/checkptr, fresh-bundle and public consumer gates
-must run against this revision before delivery.
+`go get` loads packages for all build tags, so its companion downloads measure
+installation behavior, not target selection. The public-consumer lanes record
+installation and each fresh-cache target build separately. At `807cb84`,
+[Unix run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211)
+and [Windows run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)
+passed all six targets and 18 consumer modes. Setup fetched all six companion
+archives; each default and namespace target build fetched only its selected
+archive. External target downloads were recorded without a zero-download
+assertion; the binaries excluded artifact linkage and runtime extraction.
 
-In the earlier consumer checks, `go get` downloaded every companion artifact
-archive before the target build; `go get` loads packages for all build tags, so
-that is installation behavior, not target selection. External mode is not a
-zero-download contract. Those checks used one target, so they do not establish
-archive selection across a multi-platform release. The public-consumer lane
-records installation and each fresh-cache target build separately; default and
-namespace target builds must fetch only the selected archive, while external
-target downloads are recorded without that assertion. Run 43193825133 verified
-this boundary on all four Unix targets: setup fetched four archives, each
-default/namespace target build fetched one, and external target builds fetched
-none in that run. Broader glibc/musl and older-macOS coverage, Windows module
-publication and selector activation, and hosted Windows cold-cache loading
-remain unaccepted.
-Windows native execution evidence and an unpublished candidate are not a
-supported Windows distribution.
+Windows module publication, selector activation and hosted cold-cache loading
+are accepted for the Windows hosts listed above. Broader glibc/musl,
+older-macOS and older-Windows runtime coverage remain unaccepted. These
+pseudo-version results do not replace post-tag public-consumer acceptance.
 
 ## Native Unix validation workflow
 
