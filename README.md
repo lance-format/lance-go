@@ -21,9 +21,9 @@ proxy; it is not a download-free installation. `go get` can download all six
 companion archives because it resolves packages for all build tags; a
 fresh-cache default target build is expected to fetch only the selected one.
 Windows amd64 and arm64 modules are also published, with selectors activated.
-Their native and packaging validation passed; cold public-consumer acceptance
-is pending. Targets without a selector need an explicit `LANCE_LIB_PATH` or a
-system `liblance_c`.
+Their native, packaging and cold public-consumer validation passed on both
+architectures at `807cb84`. Targets without a selector need an explicit
+`LANCE_LIB_PATH` or a system `liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s and the dynamic loader. The three companion
@@ -85,8 +85,12 @@ passed the loaded-module CRT guard and supplied-library roundtrip.
 The exact verified Windows bytes are published at
 `v0.0.0-20261112113154-9496baf852b1`, with paired root requirements and selectors.
 Fresh public proxy and checksum-database verification passed for both modules.
-Hosted cold default, namespace-only and external consumers remain pending;
-publication and native tests do not establish a supported Windows release.
+Hosted cold default, namespace-only and external consumers passed on Windows
+Server 2022 amd64 and Windows 11 ARM64 at `807cb84`
+([run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)).
+The consumers verified the public module, extracted DLL identity and loaded-module
+closure. This establishes these tested hosts, not older Windows versions or a
+released SDK version. See the [unpublished preview notes](PREVIEW.md).
 See [Windows public consumers](scripts/public-consumer/WINDOWS.md).
 The Unix public-consumer lane and its cache boundaries are described in
 [scripts/public-consumer/README.md](scripts/public-consumer/README.md).

@@ -122,11 +122,13 @@ prerequisite, or loader sidecar is included. The native workflow still
 produces unpublished candidates and refuses non-OS dependency closures; it
 does not publish modules or activate selectors itself.
 
-Publication, proxy verification and native supplied-library acceptance do not
-establish cold public Windows acceptance. The maintained
-[Windows public-consumer lane](../scripts/public-consumer/WINDOWS.md) must
-verify default, namespace-only and external consumers on both native hosts.
-That acceptance is pending; no older-Windows runtime floor is inferred.
+The maintained [Windows public-consumer lane](../scripts/public-consumer/WINDOWS.md)
+passed default, namespace-only and external consumers on both native hosts at
+root `807cb84305302dc3ff3b40809d817a876efd2909` in
+[run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526).
+The published DLL identities, cold extraction and loaded-module closure were
+verified on Windows Server 2022 amd64 and Windows 11 ARM64. No older-Windows
+runtime floor or released SDK version is inferred.
 
 ## Platform and runtime scope
 
@@ -134,8 +136,8 @@ Four Unix targets have published bundles. The `linux/amd64` library was built
 on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
 dynamic loader. The companion payloads use the same pin and header; their
 cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x hosts. Do not
-assume any payload works on older glibc/macOS, musl, Windows, or other architectures;
-no such runtime support is claimed.
+assume these Unix payloads work on older glibc/macOS, musl or other architectures.
+Windows uses separately validated PE DLLs, as recorded below.
 
 The cross-build matrix in `ci.yml` compiles other targets but does not run them
 and does not publish artifacts. The Unix native workflow rebuilds candidate
@@ -143,7 +145,7 @@ libraries; publication and selector adoption are separate release steps.
 Windows static-CRT candidates passed native and packaging validation at
 `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
 Their exact bytes are now published and selectors activated. Windows cold
-public-consumer acceptance remains pending.
+public-consumer acceptance passed at `807cb84` as recorded above.
 
 A bundle is fetched through the normal Go module proxy when a default build for
 a published target compiles its artifact package. This is not a
@@ -340,11 +342,11 @@ consumer results remain historical evidence; they were not all rerun at ac2634c.
 
 Packaging round-tripped the compressed payload to the stripped native input.
 The exact published module was resolved through the public Go proxy and sumdb;
-its payload matched the tracked module byte-for-byte. The runtime baseline
+its payload matched the accepted candidate byte-for-byte. The runtime baseline
 remains Ubuntu 24.04.5 with glibc 2.39. The linux/amd64 paired update has
 accepted default, external, race/checkptr, strip, and roundtrip evidence. The
-companion payloads use the same pin and header; all four published Unix targets
-have cold public-consumer acceptance at `b8132c7`, as recorded above.
+companion payloads use the same pin and header. All six published targets have
+cold public-consumer acceptance at `807cb84`, as recorded above.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -353,26 +355,20 @@ cache entry's SHA-256. Loader and generator unit tests cover cache reuse and
 corruption, cross-process locking, environment precedence, descriptor
 validation, and synthetic target headers.
 
-Independent default/external consumers were previously accepted with the
-07cd7d0 artifact. Those results establish the distribution contract, not acceptance
-of this updated native payload. The integrated Go native/race/checkptr, fresh-bundle and public consumer gates
-must run against this revision before delivery.
+`go get` loads packages for all build tags, so its companion downloads measure
+installation behavior, not target selection. The public-consumer lanes record
+installation and each fresh-cache target build separately. At `807cb84`,
+[Unix run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211)
+and [Windows run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)
+passed all six targets and 18 consumer modes. Setup fetched all six companion
+archives; each default and namespace target build fetched only its selected
+archive. External target downloads were recorded without a zero-download
+assertion; the binaries excluded artifact linkage and runtime extraction.
 
-In the earlier consumer checks, `go get` downloaded every companion artifact
-archive before the target build; `go get` loads packages for all build tags, so
-that is installation behavior, not target selection. External mode is not a
-zero-download contract. Those checks used one target, so they do not establish
-archive selection across a multi-platform release. The public-consumer lane
-records installation and each fresh-cache target build separately; default and
-namespace target builds must fetch only the selected archive, while external
-target downloads are recorded without that assertion. Run 43193825133 verified
-this boundary on all four Unix targets: setup fetched four archives, each
-default/namespace target build fetched one, and external target builds fetched
-none in that run. Broader glibc/musl and older-macOS coverage, Windows module
-publication and selector activation, and hosted Windows cold-cache loading
-remain unaccepted.
-Windows native execution evidence and an unpublished candidate are not a
-supported Windows distribution.
+Windows module publication, selector activation and hosted cold-cache loading
+are accepted for the Windows hosts listed above. Broader glibc/musl,
+older-macOS and older-Windows runtime coverage remain unaccepted. These
+pseudo-version results do not replace post-tag public-consumer acceptance.
 
 ## Native Unix validation workflow
 
