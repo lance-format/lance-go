@@ -118,8 +118,9 @@ jobs:
           echo "native target: $TARGET_GOOS/$TARGET_GOARCH on $actual_uname"
           echo "go: $go_version"
           python3 --version
-          # Fixture checks for verify.py itself; they never build or run Go.
+          # Harness fixture checks; they never build or run Go.
           python3 -B scripts/public-consumer/binary_metadata_test.py
+          python3 -B scripts/public-consumer/verify_test.py -v
 
       - name: Run public-consumer acceptance
         env:
