@@ -25,7 +25,7 @@ func TestFTSAppendOptimizeIndicesPreservesMatchesAfterReopen(t *testing.T) {
 	defer appended.Close()
 
 	optimized, err := appended.OptimizeIndices(ctx, &compaction.OptimizeOptions{
-		NumIndicesToMerge: compaction.Some(uint64(0)),
+		NumIndicesToMerge: compaction.Some(uint64(1)),
 		IndexNames:        compaction.Some([]string{"name_fts"}),
 	})
 	if err != nil {
@@ -33,14 +33,21 @@ func TestFTSAppendOptimizeIndicesPreservesMatchesAfterReopen(t *testing.T) {
 	}
 	defer optimized.Close()
 
-	query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})
-	if err != nil {
-		t.Fatalf("NewFTSMatchQuery: %v", err)
+	assertIndexedMatches := func(dataset *lance.Dataset, stage string) {
+		t.Helper()
+		// Strict preparation rules out a flat scan of unindexed appended rows.
+		prepared, err := dataset.PrepareFTSMatchQuery(ctx, "name", "alpha", lance.FTSMatchPrepareOptions{
+			Coverage: lance.FTSCoverageStrict,
+		})
+		if err != nil {
+			t.Fatalf("%s strict FTS preparation: %v", stage, err)
+		}
+		defer prepared.Close()
+		if ids := scanIDs(t, dataset, lance.WithFTSQueryContext(prepared)); !equalIDs(ids, 1, 2, 4, 6, 7) {
+			t.Fatalf("%s indexed FTS ids = %v, want [1 2 4 6 7]", stage, ids)
+		}
 	}
-	defer query.Close()
-	if ids := scanIDs(t, optimized, lance.WithFTSQuery(query)); !equalIDs(ids, 1, 2, 4, 6, 7) {
-		t.Fatalf("optimized FTS ids = %v, want [1 2 4 6 7]", ids)
-	}
+	assertIndexedMatches(optimized, "optimized")
 
 	if err := optimized.Close(); err != nil {
 		t.Fatalf("close optimized dataset: %v", err)
@@ -50,7 +57,5 @@ func TestFTSAppendOptimizeIndicesPreservesMatchesAfterReopen(t *testing.T) {
 		t.Fatalf("reopen optimized dataset: %v", err)
 	}
 	defer reopened.Close()
-	if ids := scanIDs(t, reopened, lance.WithFTSQuery(query)); !equalIDs(ids, 1, 2, 4, 6, 7) {
-		t.Fatalf("reopened FTS ids = %v, want [1 2 4 6 7]", ids)
-	}
+	assertIndexedMatches(reopened, "reopened")
 }
