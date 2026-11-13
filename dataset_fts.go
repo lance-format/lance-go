@@ -39,9 +39,9 @@ const (
 type FTSCoverage int32
 
 const (
-	// FTSCoverageStrict only serves fragments covered by the index.
+	// FTSCoverageStrict rejects preparation if any fragment is not covered by the index.
 	FTSCoverageStrict FTSCoverage = 0
-	// FTSCoverageIndexOnly rejects scans that would need unindexed fragments.
+	// FTSCoverageIndexOnly excludes unindexed fragments from scoring and query results.
 	FTSCoverageIndexOnly FTSCoverage = 1
 )
 
