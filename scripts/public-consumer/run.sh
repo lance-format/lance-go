@@ -667,6 +667,13 @@ validate_revision() {
   record revision_kind "$REVISION_KIND"
 }
 
+pseudo_version_prefix() {
+  local version=$1
+  [[ $version =~ ^v[0-9]+\.(0\.0-|[0-9]+\.[0-9]+-([^+]*\.)?0\.)[0-9]{14}-([0-9a-f]{12})(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]] ||
+    return 1
+  printf '%s\n' "${BASH_REMATCH[3]}"
+}
+
 assert_version_identity() {
   local suffix prefix tag_commit
   VERSION_COMMIT_PREFIX=""
@@ -675,13 +682,9 @@ assert_version_identity() {
       fail "proxy returned $ROOT_VERSION for requested tag $ROOT_REVISION"
     VERSION_KIND=tag
   else
-    case "$ROOT_VERSION" in
-      v[0-9]*.[0-9]*.[0-9]*-[0-9]*-*) suffix=${ROOT_VERSION##*-} ;;
-      *) suffix="" ;;
-    esac
-    if [[ $suffix =~ ^[0-9a-f]{12}$ ]]; then
+    if suffix=$(pseudo_version_prefix "$ROOT_VERSION"); then
       prefix=${SOURCE_COMMIT:0:12}
-      [[ $suffix == "$prefix" ]] || fail "proxy version $ROOT_VERSION does not end in commit prefix $prefix"
+      [[ $suffix == "$prefix" ]] || fail "proxy version $ROOT_VERSION does not match commit prefix $prefix"
       VERSION_KIND=pseudo
       VERSION_COMMIT_PREFIX=$suffix
     else

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Synthetic boundary tests for verify.py.
+"""Synthetic boundary tests for the public-consumer harness.
 
-These tests exercise the real command-line checks with local fixtures. They do
-not build or run Go code, so they can run on a host that is not Windows and do
-not imply that a Windows runtime path was executed.
+These tests exercise the real command-line checks and driver assertions with
+local fixtures. They do not build or run Go code, so they can run on a host that
+is not Windows and do not imply that a Windows runtime path was executed.
 """
 
 import contextlib
@@ -11,7 +11,9 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,6 +21,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import verify  # noqa: E402
+
+RUN_SH = Path(__file__).resolve().parent / "run.sh"
+OBSERVED_PSEUDO_VERSION = "v0.1.0-preview.1.0.20261113175157-976c6ddc6358"
+OBSERVED_SOURCE_COMMIT = "976c6ddc6358c5058b2496ff982047093eceb788"
 
 
 def run_verify(arguments):
@@ -42,6 +48,190 @@ def write_pe(path, machine, characteristics):
     struct.pack_into("<H", data, 0x96, characteristics)
     struct.pack_into("<H", data, 0x98, 0x20B)
     Path(path).write_bytes(bytes(data))
+
+
+def extract_function(text, name):
+    lines = text.splitlines()
+    marker = name + "() {"
+    start = lines.index(marker)
+    end = start + 1
+    while end < len(lines) and lines[end] != "}":
+        end += 1
+    if end == len(lines):
+        raise RuntimeError("unterminated function: " + name)
+    return "\n".join(lines[start : end + 1])
+
+
+def extract_run_sh_functions():
+    text = RUN_SH.read_text(encoding="utf-8")
+    names = ["fail", "record"]
+    if "pseudo_version_prefix() {" in text:
+        names.append("pseudo_version_prefix")
+    names.append("assert_version_identity")
+    return "\n\n".join(extract_function(text, name) for name in names)
+
+
+def synthetic_tag_repository(root):
+    repo = Path(root) / "tag-repo"
+    repo.mkdir()
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "synthetic"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "synthetic@example.com"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "commit.gpgSign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "synthetic",
+        ],
+        check=True,
+    )
+    source = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    for tag in ("v1.2.3", "v1.2.3-deadbeefcafe"):
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "-c",
+                "tag.gpgSign=false",
+                "tag",
+                tag,
+            ],
+            check=True,
+        )
+    return source, repo
+
+
+@unittest.skipIf(
+    os.name == "nt" or shutil.which("bash") is None,
+    "requires bash",
+)
+class VersionIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.work = Path(cls.temporary.name)
+        cls.tag_source, cls.tag_repo = synthetic_tag_repository(cls.work)
+        cls.functions = extract_run_sh_functions()
+
+    def invoke(self, name, revision_kind, root_version, root_revision, source):
+        case_dir = self.work / name
+        case_dir.mkdir()
+        summary = case_dir / "summary.txt"
+        script = case_dir / "case.sh"
+        repo = (
+            self.tag_repo
+            if root_revision in ("v1.2.3", "v1.2.3-deadbeefcafe")
+            else RUN_SH.parents[2]
+        )
+        script.write_text(
+            "\n".join(
+                [
+                    "set -euo pipefail",
+                    self.functions,
+                    "",
+                    "SUMMARY=%r" % str(summary),
+                    "REPO_DIR=%r" % str(repo),
+                    "REVISION_KIND=%r" % revision_kind,
+                    "ROOT_REVISION=%r" % root_revision,
+                    "ROOT_VERSION=%r" % root_version,
+                    "SOURCE_COMMIT=%r" % source,
+                    "assert_version_identity",
+                    "printf 'VERSION_KIND=%s\\n' \"$VERSION_KIND\"",
+                    "printf 'VERSION_COMMIT_PREFIX=%s\\n' \"$VERSION_COMMIT_PREFIX\"",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            ["bash", "--noprofile", "--norc", str(script)],
+            cwd=case_dir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def fields(self, result):
+        return dict(
+            line.split("=", 1)
+            for line in result.stdout.splitlines()
+            if "=" in line
+        )
+
+    def test_supported_pseudo_version_forms_match_exact_source_prefix(self):
+        versions = [
+            "v0.0.0-20261113175157-976c6ddc6358",
+            "v0.1.1-0.20261113175157-976c6ddc6358",
+            "v2.0.1-0.20261113175157-976c6ddc6358+incompatible",
+            OBSERVED_PSEUDO_VERSION,
+            "v2.0.0-preview.1.0.20261113175157-976c6ddc6358+incompatible",
+        ]
+        for index, version in enumerate(versions):
+            with self.subTest(version=version):
+                result = self.invoke(
+                    "pseudo-%d" % index,
+                    "sha",
+                    version,
+                    OBSERVED_SOURCE_COMMIT,
+                    OBSERVED_SOURCE_COMMIT,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fields = self.fields(result)
+                self.assertEqual(fields["VERSION_KIND"], "pseudo")
+                self.assertEqual(fields["VERSION_COMMIT_PREFIX"], "976c6ddc6358")
+
+    def test_wrong_pseudo_version_prefix_fails(self):
+        result = self.invoke(
+            "wrong-prefix",
+            "sha",
+            "v0.1.0-preview.1.0.20261113175157-000000000000",
+            OBSERVED_SOURCE_COMMIT,
+            OBSERVED_SOURCE_COMMIT,
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(
+            "does not match commit prefix 976c6ddc6358",
+            result.stderr,
+        )
+
+    def test_real_tags_are_resolved_instead_of_misclassified_as_pseudo(self):
+        cases = [
+            ("sha", "v1.2.3-deadbeefcafe", self.tag_source),
+            ("tag", "v1.2.3", self.tag_source),
+        ]
+        for index, (revision_kind, version, source) in enumerate(cases):
+            with self.subTest(version=version):
+                result = self.invoke(
+                    "tag-%d" % index,
+                    revision_kind,
+                    version,
+                    version,
+                    source,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fields = self.fields(result)
+                self.assertEqual(fields["VERSION_KIND"], "tag")
+                self.assertEqual(fields["VERSION_COMMIT_PREFIX"], source)
 
 
 class PeTests(unittest.TestCase):
