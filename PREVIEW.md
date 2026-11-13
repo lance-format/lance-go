@@ -2,8 +2,9 @@
 
 This is the release preparation record, not a published SDK release. The
 validated SDK candidate is `807cb84305302dc3ff3b40809d817a876efd2909` (PR #47).
-Its public pseudo-version is `v0.0.0-20261112185256-807cb8430530`. A release
-version and final merged commit have not been selected or tagged.
+Its public pseudo-version is `v0.0.0-20261112185256-807cb8430530`. PR #47 was
+merged as `0e0d0ef4f898f5baf461e6a66ec3eea96629e491`, with an identical source
+tree. The final release source and version have not been selected or tagged.
 
 ## Delivered behavior
 
@@ -53,8 +54,6 @@ not complete publishable modules.
 
 ## Remaining release gates and limitations
 
-- PR #47 requires a maintainer's approval of its latest head before merge,
-  alongside green CI and GitHub `MERGEABLE/CLEAN`.
 - Storage 2.1 compatibility passed all 56 cells on Linux amd64 at SDK
   `807cb84`, using the published ac5955a library built from ac263. All four
   producers, 16 cross-reader cells and six bidirectional Go/foreign append
@@ -78,5 +77,5 @@ not complete publishable modules.
   public-consumer workflows against that tag with fresh evidence/cache roots.
   A successful pseudo-version run does not prove the tag resolves correctly.
 
-Release preparation and compatibility validation can proceed while the PR
-awaits approval. Tag publication and post-tag acceptance remain separate steps.
+Tag publication and post-tag acceptance remain separate steps from source
+integration and compatibility validation.
