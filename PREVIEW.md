@@ -55,9 +55,14 @@ not complete publishable modules.
 
 - PR #47 requires a maintainer's approval of its latest head before merge,
   alongside green CI and GitHub `MERGEABLE/CLEAN`.
-- Storage 2.1 compatibility has a retained 56-cell four-SDK result against
-  native88. The corresponding current ac263 compatibility result is pending.
-  Storage 2.2 is not part of that accepted matrix.
+- Storage 2.1 compatibility passed all 56 cells on Linux amd64 at SDK
+  `807cb84`, using the published ac5955a library built from ac263. All four
+  producers, 16 cross-reader cells and six bidirectional Go/foreign append
+  paths matched the committed literal reports. Foreign SDK pins are pylance
+  14.0.2 / pyarrow 22.0.0, lance-java 14.0.2 / Arrow 18.3.0, and Rust core
+  `40f15ed1b71b66950961b175829fdf17a763f108` / Arrow 58.3.0. This is Linux
+  storage 2.1 evidence; it does not establish storage 2.2 or a cross-platform
+  compatibility matrix. See [the suite record](compat/README.md#accepted-execution).
 - The current ac263 Linux lifecycle/RSS run completed 30 measured minutes
   with zero workload errors and zero sampled callback-handle delta. RSS grew;
   the measurement does not establish leak absence or a memory budget.
