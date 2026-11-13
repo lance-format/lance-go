@@ -234,7 +234,7 @@ try {
     }
     Assert-ThrowsLike {
         Assert-VersionIdentity 'v0.1.0-preview.1.0.20261113175157-000000000000' $pseudoSource $pseudoSource
-    } 'does not match commit prefix' 'wrong pseudo-version prefix'
+    } 'proxy pseudo-version commit' 'wrong pseudo-version prefix'
 
     $script:SyntheticTagCommit = $pseudoSource
     foreach ($version in @('v1.2.3-deadbeefcafe', 'v1.2.3')) {
