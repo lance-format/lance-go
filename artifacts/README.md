@@ -1,21 +1,27 @@
 # Packaged lance-c artifacts
 
-This directory contains the published Unix artifact modules and documents the
-packaging interface between the loader and release artifacts. The tracked
-`artifacts/<target>/liblance_c.so.zst` or `liblance_c.dylib.zst` files are the
-production compressed payloads; no raw shared library, static archive, or build
-evidence is tracked. Windows companion candidates are generated outside the
-checkout by the native evidence lane and are not tracked or published.
+This directory records metadata snapshots for the published artifact modules.
+Each `artifacts/<target>/` snapshot contains `artifact.go`, `go.mod`, and
+`LICENSE`, byte-identical to its pinned publication. Compressed payloads live
+only in the complete modules at their publication commits; those commits and
+branches must remain reachable. The root SDK tree does not duplicate them.
 
-The Unix native workflow separately produces staging candidates from the
-accepted native library. Staging candidates are workflow artifacts only; after
-review and publication, accepted payloads are tracked here, required by the
-root module, and paired with generated selectors. See "Native Unix validation
-workflow" and "Public-consumer acceptance".
+The snapshots are not independently buildable or publishable without their
+payloads. SDK builds resolve the complete modules through the root `go.mod`
+requirements. Public-consumer checks compare the downloaded metadata to these
+snapshots and verify payload size and SHA-256 against that metadata, as well
+as the public module checksum and actual loaded-library identity.
+
+Keeping payloads out of the SDK tree limits the Git data the public Go proxy
+must fetch before it can create the small root-module archive. Native workflows
+produce complete, unpublished candidate modules separately; publish an accepted
+candidate on its artifact branch, then adopt its metadata, requirement and
+selector without merging the payload into the SDK tree.
 
 ## Active Unix bundles
 
-The root module requires four published data-only modules:
+The root module requires these four published Unix data-only modules, plus
+the two Windows modules described below:
 
 ```text
 github.com/lance-format/lance-go/artifacts/linux-amd64   v0.0.0-20261111235843-ac5955a095d0
@@ -24,11 +30,10 @@ github.com/lance-format/lance-go/artifacts/darwin-amd64  v0.0.0-20261112064406-4
 github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.0.0-20261112064406-43fcbbee5161
 ```
 
-Their sources and payloads are also tracked under `artifacts/<target>/`.
-Because those directories are nested modules, the root module ignores them and
-resolves each requirement through the Go module proxy; the published modules
-are authoritative for builds. The tracked payloads must stay byte-identical to
-the published archives.
+The metadata snapshots are nested modules, so root builds resolve requirements
+through the Go module proxy rather than using the local directories. Complete
+sources and payloads remain at publication commits `ac5955a095d0` and
+`43fcbbee5161`, respectively.
 
 All four published Unix companions passed default, namespace-only and external
 cold public consumers at root `b8132c7ca5df4237c8c8324af2ec0fa148901926`
@@ -83,61 +88,45 @@ the bundle module in the error; the loader does not fall back to a system copy.
 The compressed payload is data. Importing the artifact module does not link,
 load, or execute native code; the loader decompresses and maps it on first use.
 
-## Windows production companion candidates
+## Published Windows companions
 
-No Windows target is published. `internal/bundled` has no Windows selector, the
-root `go.mod` has no Windows artifact requirement, and no Windows module is
-available through the proxy. The Windows native lane may produce an unpublished
-candidate at `github.com/lance-format/lance-go/artifacts/windows-<arch>` only after
-the DLL, header, public ABI, dependency staging, native C consumer, and selected
-Go external-library tests all pass.
+The root module requires `artifacts/windows-amd64` and
+`artifacts/windows-arm64` at `v0.0.0-20261112113154-9496baf852b1`.
+Both public proxy archives and checksum-database entries match publication
+commit `9496baf852b1b3ffa7570eaad53f91dbd112e48f`. The four-file modules
+contain `artifact.go`, `go.mod`, `LICENSE`, and `lance_c.dll.zst`.
 
-The candidate uses the exact staged DLL bytes. No Unix-style strip is applied,
-and dependency bytes or install names are not modified. The read-only captured
-Windows DLL reviewed for this work, from native source evidence rather than the
-current pin, has a zero COFF symbol table pointer and count, no `.debug`
-sections, and a `.pdata` unwind section. `.pdata` is runtime unwind
-metadata, not debug data, so it remains in the packaged bytes. The PDB and MSVC
-import library are native build evidence; they do not belong in a data-only
-module.
+| Target | Compressed size | Compressed SHA-256 | DLL size | DLL SHA-256 |
+| --- | --- | --- | --- | --- |
+| `windows/amd64` | 97196491 | `4ef5995d123eb0d99b93e50e775148b0a74b654579720ec65457128d99e7b2af` | 375912448 | `cb037c4ce8fba99e7d1abbe6f1a64b4ccb46d94a4cf9530af217a07e83a4c3ef` |
+| `windows/arm64` | 87342219 | `95743d5e4c7c2878029136400ac1b3238167926b0fa266086c69de9de3cfaf6a` | 308929024 | `92bf49041f94df45dc5114303c0236a8bbd1aa1e487db11e54a51c791924609f` |
 
-The generator writes `module/artifact.go`, `module/go.mod`,
-`module/lance_c.dll.zst`, and a `selector/lance_bundle_windows_<arch>.go` file
-with build constraint `!lance_external_lib && windows && <arch>`. The selector is
-not copied into `internal/bundled`. The shared verifier checks target, module
-path, upstream repository/commit, header hash, payload size and hash, decoded
-size and hash, byte equality, embed layout, and file set. The exact staged DLL
-is hashed before and after generation. A compressed payload larger than the
-ordinary 100 MiB GitHub blob limit blocks the candidate; this repository does
-not introduce chunking for it.
+Both use the same ac263 upstream commit and header hash as the Unix modules.
+Their generated selectors are `internal/bundled/lance_bundle_windows_<arch>.go`,
+with build constraint `!lance_external_lib && windows && <arch>`.
+`LANCE_LIB_PATH` retains precedence over a registered bundle.
 
-Dependency eligibility is classified by module name, not by the directory where
-a hosted runner happens to find the file. The single-DLL companion requires a
-reviewed OS-only dependency closure. The captured native DLL imports
-`VCRUNTIME140.dll`, which is a separately deployed VC Runtime; its presence in
-the hosted `System32` is not OS-only availability. Redistributable and
-unclassified dependencies therefore block candidate generation explicitly
-after the native evidence, and the workflow records `BLOCKED` with actionable
-provenance. Upstream
-[#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
-Windows deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
-tracks dependency exports and is distinct. No System32 files are copied into the
-module, no installer prerequisite or loader sidecar is added, and no license
-assumption is made.
+The payloads are byte-identical to the accepted candidates from `c8373c9`
+([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
+Both native hosts passed the full C lifecycle and loaded-module guards,
+external and supplied-default SDK suites with checkptr, candidate verifier,
+and supplied-library roundtrip. The amd64 race suite passed; Go does not
+support Windows arm64 race. The DLLs have 16 OS-only direct imports and no
+delay imports. The static CRT configuration follows upstream
+[#215](https://github.com/lance-format/lance-c/issues/215); dependency export policy
+[#214](https://github.com/lance-format/lance-c/issues/214) is separate.
 
-If the closure is OS-only, the candidate is verified and then exercised by
-`go run -tags lance_external_lib ./examples/roundtrip` with `LANCE_LIB_PATH`
-pointing at the exact staged DLL. The required output is
-`Created, reopened and scanned 3 rows: [10 20 30]`. This is a supplied-library
-check, not a cold default, cold external, or public consumer, and it does not
-establish zero-config Windows distribution. The candidate manifest records
-`candidate_status=verified-unpublished`, `selector_activated=false`,
-`module_requirement_added=false`, `publication_attempted=false`, and
-`cold_default_consumer=not_run`, `cold_external_consumer=not_run`, and
-`public_consumer=not_run`. Candidate and native evidence are uploaded as
-separate architecture-scoped CI artifacts. Windows publication, selector
-activation, hosted cold-cache loading, and supported distribution remain
-pending.
+Packaging preserves the staged DLL byte-for-byte, including runtime unwind
+metadata. No Unix strip, PDB, import library, redistributable CRT, installer
+prerequisite, or loader sidecar is included. The native workflow still
+produces unpublished candidates and refuses non-OS dependency closures; it
+does not publish modules or activate selectors itself.
+
+Publication, proxy verification and native supplied-library acceptance do not
+establish cold public Windows acceptance. The maintained
+[Windows public-consumer lane](../scripts/public-consumer/WINDOWS.md) must
+verify default, namespace-only and external consumers on both native hosts.
+That acceptance is pending; no older-Windows runtime floor is inferred.
 
 ## Platform and runtime scope
 
@@ -153,11 +142,11 @@ and does not publish artifacts. The Unix native workflow rebuilds candidate
 libraries; publication and selector adoption are separate release steps.
 Windows static-CRT candidates passed native and packaging validation at
 `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
-They remain unpublished, with no active Windows selector or cold public-consumer
-acceptance.
+Their exact bytes are now published and selectors activated. Windows cold
+public-consumer acceptance remains pending.
 
 A bundle is fetched through the normal Go module proxy when a default build for
-a published Unix target compiles its artifact package. This is not a
+a published target compiles its artifact package. This is not a
 zero-download installation. Commands that load all modules, including `go get`
 and `go mod tidy`, may download every companion archive because Go can load
 packages for all build tags. The public-consumer lane records that installation

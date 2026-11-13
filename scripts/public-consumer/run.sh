@@ -335,12 +335,14 @@ verify_artifact_module() {
   assert_file_identity "$META_PAYLOAD" "$META_COMPRESSED_SIZE" "$META_COMPRESSED_SHA" "$label payload"
 
   local tracked="$REPO_DIR/artifacts/${path##*/}" tracked_file
-  for tracked_file in artifact.go go.mod LICENSE "$LIBRARY_NAME.zst"; do
+  # The SDK tree retains metadata; payload bytes live at the pinned publication
+  # commit. Matching artifact.go binds the payload hash checked above to HEAD.
+  for tracked_file in artifact.go go.mod LICENSE; do
     require_file "$tracked/$tracked_file"
     cmp "$tracked/$tracked_file" "$dir/$tracked_file" ||
       fail "$label published $tracked_file differs from tracked artifacts/${path##*/}/$tracked_file"
   done
-  record "${label}_tracked_artifacts_match" yes
+  record "${label}_tracked_artifact_metadata_match" yes
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" "$path" "$META_TARGET" "$META_LIBRARY" "$META_COMPRESSED_SIZE" \
@@ -753,6 +755,8 @@ resolve_root() {
       --nested-module artifacts/linux-arm64 \
       --nested-module artifacts/darwin-amd64 \
       --nested-module artifacts/darwin-arm64 \
+      --nested-module artifacts/windows-amd64 \
+      --nested-module artifacts/windows-arm64 \
       --out "$EVIDENCE_DIR/root-archive.json"; then
     fail "root archive does not match the checked-out source tree"
   fi

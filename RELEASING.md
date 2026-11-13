@@ -17,8 +17,9 @@ macOS 15.x; it does not replace final tag acceptance. Windows amd64 and arm64
 static-CRT candidates passed native C, full SDK, OS-only import closure,
 loaded-module guards, packaging verification and supplied-library roundtrip
 at `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
-amd64 race/checkptr also passed. Windows module publication, selector adoption
-and cold public consumers are still pending. Real AWS S3 refresh passed in both
+amd64 race/checkptr also passed. Those Windows modules are published at
+`v0.0.0-20261112113154-9496baf852b1` and their requirements/selectors are active.
+Windows cold public consumers remain pending. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
@@ -46,7 +47,7 @@ selector             internal/bundled/lance_bundle_linux_amd64.go
 root requirement     $ROOT_MODULE/artifacts/linux-amd64   $ARTIFACT_VERSION
 ```
 
-Repeat the artifact/selector/requirement rows for each published Unix target.
+Repeat the artifact/selector/requirement rows for each published target.
 The current companion versions and payload facts are recorded in
 [artifacts/README.md](artifacts/README.md). Publish in this order: verify the
 native source and header, build and validate the library, generate and verify
@@ -248,7 +249,7 @@ The maintained Unix workflow generates its candidate with the real
 `--module-path "$ARTIFACT_MODULE"` and uploads it with seven-day retention. The
 candidate is unpublished review evidence, not a published target, and its
 selector must not be activated. Before release, regenerate and verify the
-tracked `artifacts/$SLUG` module from the recorded library and header, then
+complete generated module from the recorded library and header, then
 publish that exact module.
 
 Inspect the generated module before publishing:
@@ -283,7 +284,7 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The tracked payload is the compressed archive. The current `linux/amd64`
+The artifact publication commit tracks the compressed archive. The current `linux/amd64`
 payload is 85,696,976 bytes (81.7 MiB) compressed and 322,099,824 bytes
 (307.2 MiB) uncompressed; exact hashes and counts are recorded in
 [artifacts/README.md](artifacts/README.md). The raw library is never committed. GitHub rejects
@@ -292,13 +293,19 @@ compressed payload below that hard limit. A future target whose compressed
 payload exceeds it needs a separate storage decision; do not silently switch
 formats or move the payload outside the module contract.
 
-The tracked payload under `artifacts/$SLUG/` must stay byte-identical to the
+The payload at the artifact publication commit must stay byte-identical to the
 published module archive. Preserve and record both sizes and both hashes.
+The root SDK tree retains only the three metadata files (`artifact.go`,
+`go.mod`, and `LICENSE`); it does not duplicate compressed payloads. These
+metadata snapshots are not standalone buildable or publishable modules.
 
 ## 4. Publish the artifact and resolve its exact version
 
-Commit the generated `artifacts/$SLUG` module on the task branch and push the
-branch. Record that full SHA as `ARTIFACT_COMMIT`. Publish the companion module
+Commit the complete generated `artifacts/$SLUG` module on a dedicated artifact
+publication branch and push that branch. Keep the publication branch reachable;
+do not merge its payload into the root SDK tree. Adopt only its three metadata
+files, generated selector and root requirement. Record the full publication SHA
+as `ARTIFACT_COMMIT`. Publish the companion module
 with a nested tag, or resolve a pseudo-version from that pushed commit. For the
 tagged path:
 
@@ -333,8 +340,8 @@ cd "$REPO_ROOT"
 
 Record `Version`, `Sum`, `GoModSum`, and `Zip` from that output. A missing
 checksum entry or a version that only resolves from a local cache is a stop
-condition. Download the public archive and compare its payload with the tracked
-payload; the zip entry is under the module and version prefix:
+condition. Download the public archive and compare its payload with the generated
+module payload; the zip entry is under the module and version prefix:
 
 ```sh
 PAYLOAD=$(find "$ARTIFACT_OUT/module" -type f -name '*.zst' -print -quit)
@@ -342,12 +349,12 @@ ZIP=$(sed -n 's/.*"Zip": "\([^"]*\)".*/\1/p' "$PROBE_WORK/artifact.json")
 PAYLOAD_NAME=$(basename "$PAYLOAD")
 test -n "$ZIP"
 unzip -p "$ZIP" "$ARTIFACT_MODULE@$ARTIFACT_VERSION/$PAYLOAD_NAME" > "$PROBE_WORK/published.zst"
-cmp "$PROBE_WORK/published.zst" "artifacts/$SLUG/$PAYLOAD_NAME"
+cmp "$PROBE_WORK/published.zst" "$PAYLOAD"
 sha256sum "$PROBE_WORK/published.zst"
 ```
 
 The compressed payload hash must match both the module metadata and the
-tracked file.
+generated file verified before publication.
 
 ## 5. Activate the selector and root requirement
 
