@@ -334,7 +334,6 @@ func batchUDFGetBatchCallback(ctx uintptr, info *batchInfo, output *cdata.ArrowA
 	}
 	defer batch.Release()
 	if err := cdata.ExportRecordBatch(batch, output); err != nil {
-		clearBatchUDFV2Output(output, outputSchema)
 		setCallbackError(cbErr, err)
 		return ^uintptr(0)
 	}
@@ -379,6 +378,7 @@ func batchUDFGetBatchV2Callback(ctx uintptr, info *batchInfo, output *cdata.Arro
 	}
 	defer batch.Release()
 	if err := cdata.ExportRecordBatch(batch, output); err != nil {
+		clearBatchUDFV2Output(output, outputSchema)
 		setCallbackError(cbErr, err)
 		return ^uintptr(0)
 	}
