@@ -6,8 +6,12 @@ import "sync"
 // Cond.Wait. Install it before starting concurrent operations on the dataset.
 // This test-only adapter distinguishes a waiting Close from an unscheduled one.
 func ObserveDatasetCloseWait(d *Dataset) <-chan struct{} {
+	return observeResourceCloseWait(d.res)
+}
+
+func observeResourceCloseWait(r *resource) <-chan struct{} {
 	waiting := make(chan struct{})
-	d.res.cond.L = &observedCloseWaitLocker{Locker: d.res.cond.L, waiting: waiting}
+	r.cond.L = &observedCloseWaitLocker{Locker: r.cond.L, waiting: waiting}
 	return waiting
 }
 
