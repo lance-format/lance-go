@@ -13,6 +13,8 @@ EVIDENCE_DIR=$2
 
 SOURCE_COMMIT=0e186d62d0fe3758e190502f9273df7dd7409c55
 SOURCE_TREE=8816f47b6112dbf9812a978cbae2e0f56862ecb7
+CANDIDATE_SOURCE=382ed25ad79f86378901b781e2a2ffd1346e6c07
+CORE_PIN=98f84091db531775ab03fa7edb3d34c86937fbf5
 GO_BIN=/home/xuanwo/Code/tools/go/bin/go
 EXPECTED_GO_VERSION='go version go1.23.12 linux/amd64'
 
@@ -97,7 +99,7 @@ cargo_lock_sha=$(sha256_of "$CARGO_LOCK")
 [[ "$cargo_lock_sha" == "$EXPECTED_CARGO_LOCK_SHA" ]] ||
 	fail "Cargo.lock sha256 is $cargo_lock_sha, want $EXPECTED_CARGO_LOCK_SHA"
 
-grep -Fq "$SOURCE_COMMIT" "$IDENTITY" || fail 'IDENTITY.txt does not name the candidate source commit'
+grep -Fq "$CANDIDATE_SOURCE" "$IDENTITY" || fail 'IDENTITY.txt does not name the candidate source commit'
 grep -Fq "$EXPECTED_LIBRARY_SHA" "$IDENTITY" || fail 'IDENTITY.txt does not record the expected library digest'
 grep -Fq "$EXPECTED_CARGO_LOCK_SHA" "$IDENTITY" || fail 'IDENTITY.txt does not record the expected Cargo.lock digest'
 grep -Fq "$EXPECTED_HEADER_SHA" "$IDENTITY" || fail 'IDENTITY.txt does not record the expected C header digest'
@@ -125,6 +127,8 @@ printf '%s\n' "$command_text" >"$EVIDENCE_DIR/command.txt"
 	printf 'source_root=%s\n' "$SOURCE_ROOT"
 	printf 'source_head=%s\n' "$source_head"
 	printf 'source_tree=%s\n' "$source_tree"
+	printf 'candidate_source=%s\n' "$CANDIDATE_SOURCE"
+	printf 'core_pin=%s\n' "$CORE_PIN"
 	printf 'go_bin=%s\n' "$GO_BIN"
 	printf 'go_version=%s\n' "$go_version"
 	uname -srmo
