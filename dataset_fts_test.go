@@ -312,6 +312,45 @@ func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {
 	}
 }
 
+func TestFTSPreparedIndexOnlyExcludesUnindexedFragment(t *testing.T) {
+	requireNative(t)
+	_, uri := ftsTestDataset(t)
+	ctx := context.Background()
+
+	schema := testSchema()
+	dataset, err := lance.Append(ctx, uri, makeReader(t, schema, makeRecord(t, schema,
+		[]int64{6, 7},
+		[]string{"alpha beta", "alpha gamma"},
+		[]bool{true, true},
+	)))
+	if err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	defer dataset.Close()
+
+	strict, err := dataset.PrepareFTSMatchQuery(ctx, "name", "alpha", lance.FTSMatchPrepareOptions{
+		Coverage: lance.FTSCoverageStrict,
+	})
+	if err == nil {
+		strict.Close()
+		t.Fatal("strict prepared query accepted an unindexed fragment")
+	}
+	if !strings.Contains(err.Error(), "unindexed fragments") {
+		t.Fatalf("strict prepared query error = %v, want unindexed fragment rejection", err)
+	}
+
+	prepared, err := dataset.PrepareFTSMatchQuery(ctx, "name", "alpha", lance.FTSMatchPrepareOptions{
+		Coverage: lance.FTSCoverageIndexOnly,
+	})
+	if err != nil {
+		t.Fatalf("PrepareFTSMatchQuery index-only: %v", err)
+	}
+	defer prepared.Close()
+	if ids := scanIDs(t, dataset, lance.WithFTSQueryContext(prepared)); !equalIDs(ids, 1, 2, 4) {
+		t.Fatalf("index-only ids = %v, want indexed matches [1 2 4]", ids)
+	}
+}
+
 func TestMinHashLSHScan(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
