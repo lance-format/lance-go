@@ -122,11 +122,13 @@ prerequisite, or loader sidecar is included. The native workflow still
 produces unpublished candidates and refuses non-OS dependency closures; it
 does not publish modules or activate selectors itself.
 
-Publication, proxy verification and native supplied-library acceptance do not
-establish cold public Windows acceptance. The maintained
-[Windows public-consumer lane](../scripts/public-consumer/WINDOWS.md) must
-verify default, namespace-only and external consumers on both native hosts.
-That acceptance is pending; no older-Windows runtime floor is inferred.
+The maintained [Windows public-consumer lane](../scripts/public-consumer/WINDOWS.md)
+passed default, namespace-only and external consumers on both native hosts at
+root `807cb84305302dc3ff3b40809d817a876efd2909` in
+[run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526).
+The published DLL identities, cold extraction and loaded-module closure were
+verified on Windows Server 2022 amd64 and Windows 11 ARM64. No older-Windows
+runtime floor or released SDK version is inferred.
 
 ## Platform and runtime scope
 
@@ -134,8 +136,8 @@ Four Unix targets have published bundles. The `linux/amd64` library was built
 on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
 dynamic loader. The companion payloads use the same pin and header; their
 cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x hosts. Do not
-assume any payload works on older glibc/macOS, musl, Windows, or other architectures;
-no such runtime support is claimed.
+assume these Unix payloads work on older glibc/macOS, musl or other architectures.
+Windows uses separately validated PE DLLs, as recorded below.
 
 The cross-build matrix in `ci.yml` compiles other targets but does not run them
 and does not publish artifacts. The Unix native workflow rebuilds candidate
@@ -143,7 +145,7 @@ libraries; publication and selector adoption are separate release steps.
 Windows static-CRT candidates passed native and packaging validation at
 `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
 Their exact bytes are now published and selectors activated. Windows cold
-public-consumer acceptance remains pending.
+public-consumer acceptance passed at `807cb84` as recorded above.
 
 A bundle is fetched through the normal Go module proxy when a default build for
 a published target compiles its artifact package. This is not a

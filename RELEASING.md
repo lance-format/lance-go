@@ -19,7 +19,12 @@ loaded-module guards, packaging verification and supplied-library roundtrip
 at `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
 amd64 race/checkptr also passed. Those Windows modules are published at
 `v0.0.0-20261112113154-9496baf852b1` and their requirements/selectors are active.
-Windows cold public consumers remain pending. Real AWS S3 refresh passed in both
+Windows cold public default, namespace-only and external consumers passed at
+`807cb84` ([run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526));
+the four Unix targets passed the same modes at that head in
+[run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211).
+These 18 executions cover the published modules and exact root pseudo-version;
+post-tag validation is still required. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
@@ -209,8 +214,10 @@ validates the bound subset; it does not establish runtime coverage of every
 native export.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
-requires libc, libm, libgcc_s, and the dynamic loader. Older glibc, musl,
-Windows, and other architectures have no compatible bundle claim. The real S3
+requires libc, libm, libgcc_s, and the dynamic loader. That ELF payload is
+specific to Linux amd64. The other five targets use their own bundles; their
+accepted hosts are listed in [the preview notes](PREVIEW.md). Older glibc and
+musl compatibility have not been established. The real S3
 acceptance above is scoped to Linux amd64 and the historical `native88` library
 at source `59a427e`; it is not evidence for the `ac2634c` native payload.
 Source review is a separate state: it can justify understanding of the native
@@ -503,7 +510,9 @@ The published companion versions, payload sizes, and hashes are listed in
 [artifacts/README.md](artifacts/README.md), together with exact-root cold public
 acceptance. A new release tag still requires the tag-based gates above.
 
-Prepare release notes from that record. Include the artifact version, payload
+The [unpublished preview notes](PREVIEW.md) collect the current evidence and
+remaining release gates. Finalize those notes from the release record. Include
+the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,
 the default and external behavior, and what remains pending. Do not claim
 Windows or other Unix runtime support or completion of issue #1 without the

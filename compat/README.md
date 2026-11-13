@@ -44,7 +44,10 @@ static-inspection host.
 - Rust 1.96.1 (the acceptance toolchain), with the lance core git revision above
   available to Cargo. The committed lockfile requires at least Rust 1.95;
   the core crate's lower MSRV alone does not satisfy this dependency graph.
-- The repository's existing native07 bundle for lance-go.
+- The native library paired with the tested SDK revision. The current pin is
+  `ac2634c553b450c7787577ffe964fc2b283b8334`; verify the selected library hash
+  against the corresponding artifact metadata. Historical native07/native88
+  compatibility results do not establish execution against a different library.
 
 ### Python
 
