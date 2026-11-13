@@ -106,8 +106,11 @@ func TestOpenWithBaseStoreParamsRequiresOptionalSymbol(t *testing.T) {
 	_, err := lance.Open(ctx, filepath.Join(t.TempDir(), "missing.lance"),
 		lance.WithBaseStoreParams(map[string]lance.BaseStoreParams{}))
 	if hasBaseStoreParamsOpen(t) {
-		if err == nil || errors.Is(err, lance.ErrNotSupported) {
-			t.Fatalf("Open with the optional symbol = %v, want an ordinary missing-dataset error", err)
+		if err == nil {
+			t.Fatal("Open with the optional symbol unexpectedly succeeded")
+		}
+		if strings.Contains(err.Error(), "is not available in the loaded lance-c library") {
+			t.Fatalf("exported optional symbol was not bound: %v", err)
 		}
 		return
 	}
