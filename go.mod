@@ -10,6 +10,8 @@ require (
 	github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.0.0-20261112064406-43fcbbee5161
 	github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0
 	github.com/lance-format/lance-go/artifacts/linux-arm64 v0.0.0-20261112064406-43fcbbee5161
+	github.com/lance-format/lance-go/artifacts/windows-amd64 v0.0.0-20261112113154-9496baf852b1
+	github.com/lance-format/lance-go/artifacts/windows-arm64 v0.0.0-20261112113154-9496baf852b1
 	golang.org/x/sys v0.35.0
 )
 

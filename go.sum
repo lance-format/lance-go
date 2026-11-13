@@ -32,6 +32,10 @@ github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5
 github.com/lance-format/lance-go/artifacts/linux-amd64 v0.0.0-20261111235843-ac5955a095d0/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
 github.com/lance-format/lance-go/artifacts/linux-arm64 v0.0.0-20261112064406-43fcbbee5161 h1:6+r4uU8wQO1pX1EBr3ntyJ/O2Ors5tQL5JE01Cu1+I0=
 github.com/lance-format/lance-go/artifacts/linux-arm64 v0.0.0-20261112064406-43fcbbee5161/go.mod h1:/PZX6MQ09uUxT+97jTAFTnOmBb8Eaya+Fo6/Cx8oR10=
+github.com/lance-format/lance-go/artifacts/windows-amd64 v0.0.0-20261112113154-9496baf852b1 h1:uKNwfL0ytkCRfT0Y97krIpFTyX6MFt1iBBMuu1k589I=
+github.com/lance-format/lance-go/artifacts/windows-amd64 v0.0.0-20261112113154-9496baf852b1/go.mod h1:poapOGoG8Ov6b55dD9mnGnIvYAtPMZorCUDbhiWhodQ=
+github.com/lance-format/lance-go/artifacts/windows-arm64 v0.0.0-20261112113154-9496baf852b1 h1:/RMEB1MVif5TE3S83Vm/TnSZsBr5vtO3T+5aexOfcS8=
+github.com/lance-format/lance-go/artifacts/windows-arm64 v0.0.0-20261112113154-9496baf852b1/go.mod h1:0TJauP68uQ0eNmpLzDvdN9HDjzS1DzYQXcElTM/mqYE=
 github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 h1:AMFGa4R4MiIpspGNG7Z948v4n35fFGB3RR3G/ry4FWs=
 github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8/go.mod h1:mC1jAcsrzbxHt8iiaC+zU4b1ylILSosueou12R++wfY=
 github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 h1:+n/aFZefKZp7spd8DFdX7uMikMLXX4oubIzJF4kv/wI=
