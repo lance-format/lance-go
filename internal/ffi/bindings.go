@@ -12,6 +12,14 @@ import (
 	"github.com/lance-format/lance-go/internal/loader"
 )
 
+// batchUDFV2Bindings holds the additive schema-aware BatchUDF entries. They
+// are absent from libraries that predate the V2 ABI, so they are resolved
+// opportunistically and must not join the mandatory symbols() set.
+type batchUDFV2Bindings struct {
+	datasetAddColumnsBatchUDFV2  func(dataset uintptr, udf *batchUDFV2, readColumns *uintptr, batchSize *uint32) int32
+	fragmentAddColumnsBatchUDFV2 func(fragment uintptr, udf *batchUDFV2, readColumns *uintptr, batchSize *uint32, outFragment, outSchema *uintptr) int32
+}
+
 // bindings holds the resolved C function pointers. A nil field would panic on
 // call, so bind returns a fully populated value or an error.
 type bindings struct {
@@ -84,6 +92,7 @@ type bindings struct {
 	datasetAddColumnsNulls          func(dataset uintptr, schema *cdata.ArrowSchema) int32
 	datasetAddColumnsStream         func(dataset uintptr, stream *cdata.ArrowArrayStream, batchSize uint64) int32
 	datasetAddColumnsBatchUDF       func(dataset uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32) int32
+	batchUDFV2                      batchUDFV2Bindings
 	datasetConfig                   func(dataset uintptr) uintptr
 	datasetConfigCount              func(config uintptr) uint64
 	datasetConfigKeyAt              func(config uintptr, index uint64) *byte
@@ -1345,5 +1354,18 @@ func bind(lib *loader.Library) (*bindings, error) {
 			lib.Path(), strings.Join(missing, ", "), upstreamRepo, upstreamCommit,
 		)
 	}
+	bindOptionalBatchUDFV2(lib, b)
 	return b, nil
+}
+
+// bindOptionalBatchUDFV2 keeps the schema-aware entries out of the mandatory
+// symbol set. Older published libraries leave both fields nil and continue to
+// use the array-only checkpoint path.
+func bindOptionalBatchUDFV2(lib *loader.Library, b *bindings) {
+	if addr, err := lib.Lookup("lance_dataset_add_columns_batch_udf_v2"); err == nil {
+		purego.RegisterFunc(&b.batchUDFV2.datasetAddColumnsBatchUDFV2, addr)
+	}
+	if addr, err := lib.Lookup("lance_fragment_add_columns_batch_udf_v2"); err == nil {
+		purego.RegisterFunc(&b.batchUDFV2.fragmentAddColumnsBatchUDFV2, addr)
+	}
 }

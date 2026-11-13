@@ -21,9 +21,14 @@ type BatchInfo struct {
 }
 
 // BatchUDFStore is the checkpoint store used by a batch UDF. Every method is
-// required. Batches passed to InsertBatch are borrowed for the call; retain a
-// batch before keeping it beyond the return. Batches returned by GetBatch are
-// owned by the adapter and released after the callback exports them.
+// required. InsertBatch receives the exact native batch schema, including
+// opaque schema metadata that native uses to validate cached batches. Keep the
+// batch and its schema together and return the retained batch from GetBatch;
+// rebuilding it from the declared output schema drops the opaque metadata and
+// native rejects the hit. Batches passed to InsertBatch are borrowed for the
+// call; retain a batch before keeping it beyond the return. Batches returned by
+// GetBatch are owned by the adapter and released after the callback exports
+// them.
 type BatchUDFStore interface {
 	GetBatch(info BatchInfo) (arrow.RecordBatch, bool, error)
 	InsertBatch(info BatchInfo, batch arrow.RecordBatch) error
@@ -53,6 +58,7 @@ type callbackError struct {
 	Message ownedString
 }
 
+// batchUDFStore is the original array-only checkpoint callback table.
 type batchUDFStore struct {
 	GetBatch       uintptr
 	InsertBatch    uintptr
@@ -61,11 +67,31 @@ type batchUDFStore struct {
 	CallbackCtx    uintptr
 }
 
+// batchUDFStoreV2 has the same argument layout as batchUDFStore, but its first
+// callback returns the cached batch schema alongside the array.
+type batchUDFStoreV2 struct {
+	GetBatch       uintptr
+	InsertBatch    uintptr
+	GetFragment    uintptr
+	InsertFragment uintptr
+	CallbackCtx    uintptr
+}
+
+// batchUDF is the original LanceBatchUDF layout.
 type batchUDF struct {
 	Mapper       uintptr
 	MapperCtx    uintptr
 	OutputSchema *cdata.ArrowSchema
 	Store        *batchUDFStore
+}
+
+// batchUDFV2 is the LanceBatchUDFV2 layout with a schema-aware checkpoint
+// store.
+type batchUDFV2 struct {
+	Mapper       uintptr
+	MapperCtx    uintptr
+	OutputSchema *cdata.ArrowSchema
+	Store        *batchUDFStoreV2
 }
 
 type batchUDFAdapter struct {
@@ -78,6 +104,7 @@ var (
 	ownedReleaseOnce       sync.Once
 	callbackBatchMapper    uintptr
 	callbackBatchGet       uintptr
+	callbackBatchGetV2     uintptr
 	callbackBatchInsert    uintptr
 	callbackFragmentGet    uintptr
 	callbackFragmentInsert uintptr
@@ -88,6 +115,7 @@ func initBatchUDFCallbacks() {
 	batchUDFCallbacksOnce.Do(func() {
 		callbackBatchMapper = purego.NewCallback(batchUDFMapperCallback)
 		callbackBatchGet = purego.NewCallback(batchUDFGetBatchCallback)
+		callbackBatchGetV2 = purego.NewCallback(batchUDFGetBatchV2Callback)
 		callbackBatchInsert = purego.NewCallback(batchUDFInsertBatchCallback)
 		callbackFragmentGet = purego.NewCallback(batchUDFGetFragmentCallback)
 		callbackFragmentInsert = purego.NewCallback(batchUDFInsertFragmentCallback)
@@ -130,21 +158,6 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 	ctx := handle.New(adapter)
 	defer handle.Remove(ctx)
 
-	native := &batchUDF{
-		Mapper:       callbackBatchMapper,
-		MapperCtx:    uintptr(ctx),
-		OutputSchema: udf.OutputSchema,
-	}
-	if udf.Store != nil {
-		native.Store = &batchUDFStore{
-			GetBatch:       callbackBatchGet,
-			InsertBatch:    callbackBatchInsert,
-			GetFragment:    callbackFragmentGet,
-			InsertFragment: callbackFragmentInsert,
-			CallbackCtx:    uintptr(ctx),
-		}
-	}
-
 	var readPtr *uintptr
 	if readPtrs != nil {
 		readPtr = &readPtrs[0]
@@ -158,7 +171,17 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	if rc := b.datasetAddColumnsBatchUDF(handleID, native, readPtr, batchSize); rc != 0 {
+	var rc int32
+	if b.batchUDFV2.datasetAddColumnsBatchUDFV2 != nil {
+		native := newBatchUDFV2(uintptr(ctx), udf.OutputSchema, udf.Store)
+		rc = b.batchUDFV2.datasetAddColumnsBatchUDFV2(handleID, native, readPtr, batchSize)
+		runtime.KeepAlive(native)
+	} else {
+		native := newBatchUDF(uintptr(ctx), udf.OutputSchema, udf.Store)
+		rc = b.datasetAddColumnsBatchUDF(handleID, native, readPtr, batchSize)
+		runtime.KeepAlive(native)
+	}
+	if rc != 0 {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nativeErr
 		}
@@ -167,8 +190,43 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 	runtime.KeepAlive(adapter)
 	runtime.KeepAlive(readPtrs)
 	runtime.KeepAlive(readList)
-	runtime.KeepAlive(native)
 	return nil
+}
+
+func newBatchUDF(ctx uintptr, outputSchema *cdata.ArrowSchema, store BatchUDFStore) *batchUDF {
+	native := &batchUDF{
+		Mapper:       callbackBatchMapper,
+		MapperCtx:    ctx,
+		OutputSchema: outputSchema,
+	}
+	if store != nil {
+		native.Store = &batchUDFStore{
+			GetBatch:       callbackBatchGet,
+			InsertBatch:    callbackBatchInsert,
+			GetFragment:    callbackFragmentGet,
+			InsertFragment: callbackFragmentInsert,
+			CallbackCtx:    ctx,
+		}
+	}
+	return native
+}
+
+func newBatchUDFV2(ctx uintptr, outputSchema *cdata.ArrowSchema, store BatchUDFStore) *batchUDFV2 {
+	native := &batchUDFV2{
+		Mapper:       callbackBatchMapper,
+		MapperCtx:    ctx,
+		OutputSchema: outputSchema,
+	}
+	if store != nil {
+		native.Store = &batchUDFStoreV2{
+			GetBatch:       callbackBatchGetV2,
+			InsertBatch:    callbackBatchInsert,
+			GetFragment:    callbackFragmentGet,
+			InsertFragment: callbackFragmentInsert,
+			CallbackCtx:    ctx,
+		}
+	}
+	return native
 }
 
 func batchUDFReadColumns(columns []string, present bool) ([]uintptr, *cStringList, error) {
@@ -280,6 +338,74 @@ func batchUDFGetBatchCallback(ctx uintptr, info *batchInfo, output *cdata.ArrowA
 		return ^uintptr(0)
 	}
 	return 1
+}
+
+func batchUDFGetBatchV2Callback(ctx uintptr, info *batchInfo, output *cdata.ArrowArray, outputSchema *cdata.ArrowSchema, cbErr *callbackError) (ret uintptr) {
+	if output == nil || outputSchema == nil {
+		setCallbackError(cbErr, errors.New("batch UDF get_batch v2 received a nil output slot"))
+		return ^uintptr(0)
+	}
+	*output = cdata.ArrowArray{}
+	*outputSchema = cdata.ArrowSchema{}
+	clearCallbackError(cbErr)
+	defer func() {
+		if r := recover(); r != nil {
+			clearBatchUDFV2Output(output, outputSchema)
+			setCallbackError(cbErr, fmt.Errorf("batch UDF get_batch v2 panic: %v", r))
+			ret = ^uintptr(0)
+		}
+	}()
+	adapter, ok := lookupBatchUDFAdapter(ctx)
+	if !ok {
+		setCallbackError(cbErr, errors.New("batch UDF adapter is no longer available"))
+		return ^uintptr(0)
+	}
+	if info == nil {
+		setCallbackError(cbErr, errors.New("batch UDF get_batch v2 received nil info"))
+		return ^uintptr(0)
+	}
+	batch, found, err := adapter.store.GetBatch(BatchInfo{FragmentID: info.FragmentID, BatchIndex: info.BatchIndex})
+	if err != nil {
+		setCallbackError(cbErr, err)
+		return ^uintptr(0)
+	}
+	if !found {
+		return 0
+	}
+	if batch == nil {
+		setCallbackError(cbErr, errors.New("batch UDF store returned a nil batch with found=true"))
+		return ^uintptr(0)
+	}
+	defer batch.Release()
+	if err := cdata.ExportRecordBatch(batch, output); err != nil {
+		clearBatchUDFV2Output(output, outputSchema)
+		setCallbackError(cbErr, err)
+		return ^uintptr(0)
+	}
+	// The schema is part of the checkpoint value. Export the batch's own
+	// schema so opaque native metadata round-trips instead of being rebuilt
+	// from the declared output schema.
+	if err := cdata.ExportSchema(batch.Schema(), outputSchema); err != nil {
+		clearBatchUDFV2Output(output, outputSchema)
+		setCallbackError(cbErr, fmt.Errorf("export checkpoint batch schema: %w", err))
+		return ^uintptr(0)
+	}
+	return 1
+}
+
+func clearBatchUDFV2Output(output *cdata.ArrowArray, outputSchema *cdata.ArrowSchema) {
+	if output != nil {
+		if output.Release != 0 {
+			cdata.ReleaseArray(output)
+		}
+		*output = cdata.ArrowArray{}
+	}
+	if outputSchema != nil {
+		if outputSchema.Release != 0 {
+			cdata.ReleaseSchema(outputSchema)
+		}
+		*outputSchema = cdata.ArrowSchema{}
+	}
 }
 
 func batchUDFInsertBatchCallback(ctx uintptr, info *batchInfo, batch *cdata.ArrowArray, batchSchema *cdata.ArrowSchema, cbErr *callbackError) (ret uintptr) {
