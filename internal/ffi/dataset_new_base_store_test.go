@@ -12,7 +12,7 @@ func TestOpenDatasetWithBaseStoreParamsPreservesNilAndEmpty(t *testing.T) {
 	var legacyCalls, baseCalls int
 	var gotHeader *baseStoreParamsListHeader
 	b := &bindings{
-		datasetOpen:  func(string, []uintptr, uint64) uintptr {
+		datasetOpen: func(string, []uintptr, uint64) uintptr {
 			legacyCalls++
 			return 0x1111
 		},
@@ -50,7 +50,7 @@ func TestOpenWithoutBaseStoreParamsDoesNotRequireOptionalSymbol(t *testing.T) {
 	var gotURI string
 	var gotVersion uint64
 	b := &bindings{
-		datasetOpen:  func(uri string, storageOpts []uintptr, version uint64) uintptr {
+		datasetOpen: func(uri string, storageOpts []uintptr, version uint64) uintptr {
 			gotURI = uri
 			gotVersion = version
 			if len(storageOpts) == 0 {

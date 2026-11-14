@@ -23,6 +23,26 @@ func hasBaseStoreParamsOpen(t *testing.T) bool {
 	return err == nil
 }
 
+// verifyBaseStoreParamsOpenCapability exercises the unsupported public boundary
+// on older libraries. A true result requires the real reopen path below.
+func verifyBaseStoreParamsOpenCapability(t *testing.T) bool {
+	t.Helper()
+	if hasBaseStoreParamsOpen(t) {
+		return true
+	}
+	dataset, err := lance.Open(context.Background(), filepath.Join(t.TempDir(), "missing.lance"),
+		lance.WithBaseStoreParams(map[string]lance.BaseStoreParams{}))
+	if dataset != nil {
+		dataset.Close()
+		t.Fatal("unsupported per-base open returned a dataset")
+	}
+	if !errors.Is(err, lance.ErrNotSupported) || !strings.Contains(err.Error(), baseStoreParamsOpenSymbol) {
+		t.Fatalf("per-base open without its optional symbol = %v, want ErrNotSupported naming the symbol", err)
+	}
+	t.Log("verified ErrNotSupported; this library cannot exercise native per-base reopen")
+	return false
+}
+
 func scanIDsErr(dataset *lance.Dataset) error {
 	scanner, err := dataset.Scan(lance.WithColumns("id"))
 	if err != nil {
@@ -124,8 +144,8 @@ func TestOpenWithBaseStoreParamsRequiresOptionalSymbol(t *testing.T) {
 
 func TestOpenWithBaseStoreParamsBridgesStaticOptionsPresence(t *testing.T) {
 	requireNative(t)
-	if !hasBaseStoreParamsOpen(t) {
-		t.Skip("loaded lance-c lacks the optional per-base open symbol")
+	if !verifyBaseStoreParamsOpenCapability(t) {
+		return
 	}
 	ctx := context.Background()
 	uri := filepath.Join(t.TempDir(), "data.lance")
@@ -174,8 +194,8 @@ func TestOpenWithBaseStoreParamsBridgesStaticOptionsPresence(t *testing.T) {
 
 func TestOpenWithBaseStoreParamsReopenExactPaths(t *testing.T) {
 	requireNative(t)
-	if !hasBaseStoreParamsOpen(t) {
-		t.Skip("loaded lance-c lacks the optional per-base open symbol")
+	if !verifyBaseStoreParamsOpenCapability(t) {
+		return
 	}
 	ctx := context.Background()
 	root := t.TempDir()
@@ -196,8 +216,8 @@ func TestOpenWithBaseStoreParamsReopenExactPaths(t *testing.T) {
 		makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})),
 		lance.WithWriteSession(session),
 		lance.WithWriteParams(lance.WriteParams{
-			InitialBases:    []lance.BasePath{{ID: 1, Path: base, IsDatasetRoot: false}},
-			TargetBases:     []uint32{1},
+			InitialBases: []lance.BasePath{{ID: 1, Path: base, IsDatasetRoot: false}},
+			TargetBases:  []uint32{1},
 			BaseStoreParams: map[string]lance.BaseStoreParams{
 				base: {StorageOptionsAccessor: writeAccessor},
 			},
