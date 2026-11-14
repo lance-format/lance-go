@@ -206,11 +206,11 @@ func TestOpenDatasetWithBaseStoreParamsForwardsSessionAndAccessor(t *testing.T) 
 func TestOpenDatasetWithBaseStoreParamsCapturesNativeError(t *testing.T) {
 	message := []byte("base params rejected\x00")
 	b := &bindings{
-		lastErrorCode:    func() int32 { return int32(CodeInvalidArgument) },
+		lastErrorCode: func() int32 { return int32(CodeInvalidArgument) },
 		lastErrorMessage: func() *byte {
 			return &message[0]
 		},
-		freeString:       func(*byte) {},
+		freeString: func(*byte) {},
 	}
 	b.baseStoreOpen.datasetOpenWithBaseStoreParams = func(string, *datasetOpenOptions, uintptr, *baseStoreParamsListHeader) uintptr {
 		return 0
