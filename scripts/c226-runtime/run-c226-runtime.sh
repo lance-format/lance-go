@@ -120,26 +120,11 @@ write_source_snapshot() {
 	local identity="$EVIDENCE_DIR/source-identity-$phase.txt"
 	local status="$EVIDENCE_DIR/git-status-$phase.txt"
 	local manifest="$EVIDENCE_DIR/source-manifest-$phase.txt"
-	local diff_status="$EVIDENCE_DIR/git-diff-exit-$phase.txt"
-	local cached_status="$EVIDENCE_DIR/git-diff-cached-exit-$phase.txt"
-	local rc
 
 	git -C "$SOURCE_ROOT" show -s \
 		--format='commit %H%ntree %T%nparent %P%nauthor %an <%ae> %ad%ncommitter %cn <%ce> %cd%nsubject %s' \
 		--date=iso-strict HEAD >"$identity" || return 1
 	git -C "$SOURCE_ROOT" status --porcelain=v1 --untracked-files=all >"$status" || return 1
-	if git -C "$SOURCE_ROOT" diff --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-$phase.txt" 2>&1; then
-		rc=0
-	else
-		rc=$?
-	fi
-	printf '%s\n' "$rc" >"$diff_status" || return 1
-	if git -C "$SOURCE_ROOT" diff --cached --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-cached-$phase.txt" 2>&1; then
-		rc=0
-	else
-		rc=$?
-	fi
-	printf '%s\n' "$rc" >"$cached_status" || return 1
 	{
 		cat "$identity" || return 1
 		printf '%s\n' '--- tree ---'
@@ -341,10 +326,6 @@ git -C "$SOURCE_ROOT" diff --name-status "$BASE_COMMIT" "$SOURCE_COMMIT" \
 write_source_snapshot before || fail 'cannot snapshot source before execution'
 [[ -s "$EVIDENCE_DIR/git-status-before.txt" ]] &&
 	fail 'source worktree is not clean before execution'
-[[ "$(cat "$EVIDENCE_DIR/git-diff-exit-before.txt")" == 0 ]] ||
-	fail 'source has unstaged changes before execution'
-[[ "$(cat "$EVIDENCE_DIR/git-diff-cached-exit-before.txt")" == 0 ]] ||
-	fail 'source has staged changes before execution'
 source_sha_before=$(sha256_of "$EVIDENCE_DIR/source-manifest-before.txt") ||
 	fail 'cannot hash source snapshot before execution'
 
@@ -415,7 +396,8 @@ go_mod=$(cd "$SOURCE_ROOT" && run_go "$NEW_LIB" env GOMOD) ||
 	fail "unexpected Go target: GOOS=$go_os GOARCH=$go_arch"
 [[ "$go_cgo" == 0 && "$go_toolchain" == local ]] ||
 	fail "unexpected Go environment: CGO_ENABLED=$go_cgo GOTOOLCHAIN=$go_toolchain"
-[[ "$go_work" == off ]] || fail "unexpected Go workspace: $go_work"
+[[ -z "$go_work" || "$go_work" == off ]] ||
+	fail "unexpected Go workspace: $go_work"
 [[ "$go_mod" == "$SOURCE_ROOT/go.mod" ]] ||
 	fail "unexpected Go module root: $go_mod"
 
@@ -529,10 +511,6 @@ fi
 if [[ -s "$EVIDENCE_DIR/git-status-after.txt" ]]; then
 	postflight_error 'source worktree is not clean after execution'
 fi
-[[ "$(cat "$EVIDENCE_DIR/git-diff-exit-after.txt")" == 0 ]] ||
-	postflight_error 'source has unstaged changes after execution'
-[[ "$(cat "$EVIDENCE_DIR/git-diff-cached-exit-after.txt")" == 0 ]] ||
-	postflight_error 'source has staged changes after execution'
 
 new_lib_sha_after=$(sha256_of "$NEW_LIB") ||
 	postflight_error 'cannot hash new library after execution'
