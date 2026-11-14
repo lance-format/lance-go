@@ -139,21 +139,12 @@ func nativeWriteOptionsSpec(op, uri string, config writeConfig, session *ffi.Ses
 	}
 
 	if config.params.BaseStoreParams != nil {
-		spec.BaseStoreParams = make(map[string]ffi.BaseStoreParams, len(config.params.BaseStoreParams))
-		for path, params := range config.params.BaseStoreParams {
-			baseAccessor, release, err := acquireStorageOptionsAccessor(op, uri, params.StorageOptionsAccessor)
-			if err != nil {
-				return spec, releases, err
-			}
-			releases = append(releases, release)
-			spec.BaseStoreParams[path] = ffi.BaseStoreParams{
-				StorageOptionsAccessor:     baseAccessor,
-				BlockSize:                  params.BlockSize,
-				S3CredentialsRefreshOffset: params.S3CredentialsRefreshOffset,
-				UseConstantSizeUploadParts: params.UseConstantSizeUploadParts,
-				ListIsLexicallyOrdered:     params.ListIsLexicallyOrdered,
-			}
+		converted, baseReleases, err := nativeBaseStoreParams(op, uri, config.params.BaseStoreParams)
+		releases = append(releases, baseReleases...)
+		if err != nil {
+			return spec, releases, err
 		}
+		spec.BaseStoreParams = converted
 	}
 
 	if config.params.FileWriterOptions != nil {
