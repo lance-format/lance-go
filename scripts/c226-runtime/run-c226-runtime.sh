@@ -122,15 +122,24 @@ write_source_snapshot() {
 	local manifest="$EVIDENCE_DIR/source-manifest-$phase.txt"
 	local diff_status="$EVIDENCE_DIR/git-diff-exit-$phase.txt"
 	local cached_status="$EVIDENCE_DIR/git-diff-cached-exit-$phase.txt"
+	local rc
 
 	git -C "$SOURCE_ROOT" show -s \
 		--format='commit %H%ntree %T%nparent %P%nauthor %an <%ae> %ad%ncommitter %cn <%ce> %cd%nsubject %s' \
 		--date=iso-strict HEAD >"$identity" || return 1
 	git -C "$SOURCE_ROOT" status --porcelain=v1 --untracked-files=all >"$status" || return 1
-	git -C "$SOURCE_ROOT" diff --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-$phase.txt" 2>&1
-	printf '%s\n' "$?" >"$diff_status" || return 1
-	git -C "$SOURCE_ROOT" diff --cached --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-cached-$phase.txt" 2>&1
-	printf '%s\n' "$?" >"$cached_status" || return 1
+	if git -C "$SOURCE_ROOT" diff --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-$phase.txt" 2>&1; then
+		rc=0
+	else
+		rc=$?
+	fi
+	printf '%s\n' "$rc" >"$diff_status" || return 1
+	if git -C "$SOURCE_ROOT" diff --cached --exit-code HEAD -- >"$EVIDENCE_DIR/git-diff-cached-$phase.txt" 2>&1; then
+		rc=0
+	else
+		rc=$?
+	fi
+	printf '%s\n' "$rc" >"$cached_status" || return 1
 	{
 		cat "$identity" || return 1
 		printf '%s\n' '--- tree ---'
@@ -384,8 +393,10 @@ nm -D --defined-only -- "$LEGACY_LIB" |
 		>"$EVIDENCE_DIR/legacy-library-optional-symbol.txt" &&
 	fail 'legacy library unexpectedly exports the optional open symbol'
 printf 'absent\n' >"$EVIDENCE_DIR/legacy-library-optional-symbol-state.txt"
-file -- "$NEW_LIB" "$LEGACY_LIB" >"$EVIDENCE_DIR/library-file.txt" ||
-	fail 'cannot inspect library file types'
+readelf -h -- "$NEW_LIB" >"$EVIDENCE_DIR/library-readelf-header-new.txt" ||
+	fail 'cannot inspect the new library ELF header'
+readelf -h -- "$LEGACY_LIB" >"$EVIDENCE_DIR/library-readelf-header-legacy.txt" ||
+	fail 'cannot inspect the legacy library ELF header'
 
 go_version=$(run_go "$NEW_LIB" version) || fail 'cannot run go version'
 [[ "$go_version" == "$EXPECTED_GO_VERSION" ]] ||
