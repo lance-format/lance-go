@@ -17,6 +17,12 @@ type OpenOptions struct {
 	// StorageOptionsAccessor is a reusable native accessor. It is mutually
 	// exclusive with StorageOptions.
 	StorageOptionsAccessor *StorageOptionsAccessor
+	// BaseStoreParams binds native ObjectStoreParams to exact BasePath.path
+	// keys. A nil map keeps the ordinary open path; a non-nil map, including
+	// an empty one, uses the optional per-base open entry. When non-nil,
+	// StorageOptions must be nil; callers bridge static options to a
+	// StorageOptionsAccessor.
+	BaseStoreParams map[string]BaseStoreParams
 	// Version selects a dataset version. Zero selects the latest version.
 	Version uint64
 	// Session shares caches with other datasets. It may be nil.
@@ -27,8 +33,8 @@ type OpenOptions struct {
 	CommitLock *CommitLock
 }
 
-// OpenDatasetWithOptions opens a dataset with storage options, a version and
-// an optional shared session.
+// OpenDatasetWithOptions opens a dataset with storage options, optional
+// per-base store parameters, a version and an optional shared session.
 func OpenDatasetWithOptions(uri string, opts OpenOptions) (*Dataset, error) {
 	b, err := load()
 	if err != nil {
@@ -46,6 +52,17 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	}
 	if opts.StorageOptionsAccessor != nil && opts.StorageOptionsAccessor.Handle() == 0 {
 		return nil, ErrClosed
+	}
+	if opts.BaseStoreParams != nil {
+		if opts.CommitLock != nil {
+			return nil, &Error{Code: CodeInvalidArgument, Message: "ffi: base store params are not supported with a commit lock"}
+		}
+		if opts.StorageOptions != nil {
+			return nil, &Error{Code: CodeInvalidArgument, Message: "ffi: base store params require a storage options accessor instead of static storage options"}
+		}
+		if b.baseStoreOpen.datasetOpenWithBaseStoreParams == nil {
+			return nil, &Error{Code: CodeNotSupported, Message: "ffi: lance_dataset_open_with_base_store_params is not available in the loaded lance-c library"}
+		}
 	}
 	if opts.CommitLock != nil {
 		if opts.StorageOptions != nil {
@@ -71,7 +88,22 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	defer runtime.UnlockOSThread()
 
 	var handle uintptr
-	if opts.CommitLock != nil {
+	if opts.BaseStoreParams != nil {
+		list, err := newBaseStoreParamsList(opts.BaseStoreParams)
+		if err != nil {
+			return nil, err
+		}
+		rawOptions := datasetOpenOptions{Version: opts.Version}
+		if opts.StorageOptionsAccessor != nil {
+			rawOptions.StorageOptionsAccessor = opts.StorageOptionsAccessor.Handle()
+		}
+		handle = b.baseStoreOpen.datasetOpenWithBaseStoreParams(uri, &rawOptions, sessionHandle, list.header())
+		runtime.KeepAlive(&rawOptions)
+		runtime.KeepAlive(opts.BaseStoreParams)
+		runtime.KeepAlive(opts.StorageOptionsAccessor)
+		runtime.KeepAlive(opts.Session)
+		list.keepAlive()
+	} else if opts.CommitLock != nil {
 		var accessorHandle uintptr
 		if opts.StorageOptionsAccessor != nil {
 			accessorHandle = opts.StorageOptionsAccessor.Handle()
@@ -102,6 +134,9 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	if handle == 0 {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
+		}
+		if opts.BaseStoreParams != nil {
+			return nil, fmt.Errorf("ffi: lance_dataset_open_with_base_store_params returned NULL without setting an error")
 		}
 		return nil, fmt.Errorf("ffi: lance_dataset_open returned NULL without setting an error")
 	}

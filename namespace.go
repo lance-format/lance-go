@@ -58,6 +58,9 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 			return nil, invalidError("open namespace", "", "%v", err)
 		}
 	}
+	if config.baseStoreParams != nil {
+		return nil, invalidError("open namespace", "", "WithBaseStoreParams is not supported for namespace operations")
+	}
 	if config.storageOptionsAccessor != nil {
 		return nil, invalidError("open namespace", "", "WithStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}

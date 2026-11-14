@@ -51,6 +51,7 @@ type openConfig struct {
 	storageOptionsAccessor *StorageOptionsAccessor
 	session                *Session
 	commitLock             *CommitLock
+	baseStoreParams        map[string]BaseStoreParams
 }
 
 // OpenOption configures Open.
@@ -86,6 +87,39 @@ func WithStorageOptionsAccessor(accessor *StorageOptionsAccessor) OpenOption {
 			return fmt.Errorf("storage options accessor must not be nil")
 		}
 		config.storageOptionsAccessor = accessor
+		return nil
+	}
+}
+
+// WithBaseStoreParams binds per-base storage parameters to exact base-path
+// keys from the dataset manifest. Use the path strings returned by
+// BasePaths, normally BasePaths()[id].Path; IDs, names and URI forms are not
+// translated or normalized.
+//
+// A nil map preserves the ordinary Open path. A non-nil map, including an
+// empty one, uses the optional native per-base open entry point and preserves
+// the distinction between native None and Some(empty). The option snapshots
+// the map and every pointed scalar value before Open starts. Storage option
+// accessors are pinned for the native call and may be closed after Open
+// returns; the native dataset retains its own reference.
+// Dataset-level storage options, WithStorageOptionsAccessor, WithVersion and
+// WithSession still apply; an exact per-base binding takes precedence over
+// the dataset-level storage options for that base.
+// Bindings are runtime-only; native does not persist them, so a later reopen
+// must supply them again.
+//
+// WithBaseStoreParams cannot be combined with WithOpenCommitLock because the
+// per-base open entry has no commit-lock parameter. OpenFromNamespace also
+// rejects a non-nil map because namespace opens do not accept per-base store
+// parameters. Libraries that predate the optional symbol return
+// ErrNotSupported naming lance_dataset_open_with_base_store_params.
+func WithBaseStoreParams(params map[string]BaseStoreParams) OpenOption {
+	return func(config *openConfig) error {
+		copied, err := cloneBaseStoreParams(params)
+		if err != nil {
+			return err
+		}
+		config.baseStoreParams = copied
 		return nil
 	}
 }
@@ -153,7 +187,8 @@ const (
 )
 
 // BaseStoreParams configures representable storage parameters for one base
-// path. Pointer fields preserve native absence versus explicit false or zero.
+// path. It is used by WriteParams.BaseStoreParams and WithBaseStoreParams.
+// Pointer fields preserve native absence versus explicit false or zero.
 type BaseStoreParams struct {
 	StorageOptionsAccessor     *StorageOptionsAccessor
 	BlockSize                  *uint64
@@ -283,32 +318,10 @@ func cloneWriteParams(params WriteParams) (WriteParams, error) {
 		copied.TargetAllBases = &value
 	}
 	if params.BaseStoreParams != nil {
-		copied.BaseStoreParams = make(map[string]BaseStoreParams, len(params.BaseStoreParams))
-		for path, base := range params.BaseStoreParams {
-			if err := validateCString(path); err != nil {
-				return WriteParams{}, fmt.Errorf("base store params path: %w", err)
-			}
-			clone := base
-			if base.BlockSize != nil {
-				value := *base.BlockSize
-				clone.BlockSize = &value
-			}
-			if base.S3CredentialsRefreshOffset != nil {
-				if *base.S3CredentialsRefreshOffset < 0 {
-					return WriteParams{}, fmt.Errorf("base store params %q: S3 credentials refresh offset must not be negative", path)
-				}
-				value := *base.S3CredentialsRefreshOffset
-				clone.S3CredentialsRefreshOffset = &value
-			}
-			if base.UseConstantSizeUploadParts != nil {
-				value := *base.UseConstantSizeUploadParts
-				clone.UseConstantSizeUploadParts = &value
-			}
-			if base.ListIsLexicallyOrdered != nil {
-				value := *base.ListIsLexicallyOrdered
-				clone.ListIsLexicallyOrdered = &value
-			}
-			copied.BaseStoreParams[path] = clone
+		var err error
+		copied.BaseStoreParams, err = cloneBaseStoreParams(params.BaseStoreParams)
+		if err != nil {
+			return WriteParams{}, err
 		}
 	}
 	if params.BlobPackFileSizeThreshold != nil {
@@ -334,6 +347,42 @@ func cloneWriteParams(params WriteParams) (WriteParams, error) {
 	if params.Progress != nil {
 		progress := *params.Progress
 		copied.Progress = &progress
+	}
+	return copied, nil
+}
+
+// cloneBaseStoreParams snapshots the map and scalar pointers shared by write
+// parameters and WithBaseStoreParams.
+func cloneBaseStoreParams(params map[string]BaseStoreParams) (map[string]BaseStoreParams, error) {
+	if params == nil {
+		return nil, nil
+	}
+	copied := make(map[string]BaseStoreParams, len(params))
+	for path, base := range params {
+		if err := validateCString(path); err != nil {
+			return nil, fmt.Errorf("base store params path: %w", err)
+		}
+		clone := base
+		if base.BlockSize != nil {
+			value := *base.BlockSize
+			clone.BlockSize = &value
+		}
+		if base.S3CredentialsRefreshOffset != nil {
+			if *base.S3CredentialsRefreshOffset < 0 {
+				return nil, fmt.Errorf("base store params %q: S3 credentials refresh offset must not be negative", path)
+			}
+			value := *base.S3CredentialsRefreshOffset
+			clone.S3CredentialsRefreshOffset = &value
+		}
+		if base.UseConstantSizeUploadParts != nil {
+			value := *base.UseConstantSizeUploadParts
+			clone.UseConstantSizeUploadParts = &value
+		}
+		if base.ListIsLexicallyOrdered != nil {
+			value := *base.ListIsLexicallyOrdered
+			clone.ListIsLexicallyOrdered = &value
+		}
+		copied[path] = clone
 	}
 	return copied, nil
 }

@@ -20,8 +20,16 @@ type batchUDFV2Bindings struct {
 	fragmentAddColumnsBatchUDFV2 func(fragment uintptr, udf *batchUDFV2, readColumns *uintptr, batchSize *uint32, outFragment, outSchema *uintptr) int32
 }
 
-// bindings holds the resolved C function pointers. A nil field would panic on
-// call, so bind returns a fully populated value or an error.
+// baseStoreParamsOpenBindings holds the additive per-base open entry. It is
+// absent from libraries that predate that ABI, so it is resolved
+// opportunistically and must not join the mandatory symbols() set.
+type baseStoreParamsOpenBindings struct {
+	datasetOpenWithBaseStoreParams func(uri string, options *datasetOpenOptions, session uintptr, baseStoreParams *baseStoreParamsListHeader) uintptr
+}
+
+// bindings holds the resolved C function pointers. Mandatory fields are fully
+// populated or bind returns an error; optional nested groups may remain zero
+// when the loaded library predates their ABI.
 type bindings struct {
 	lastErrorCode    func() int32
 	lastErrorMessage func() *byte
@@ -93,6 +101,7 @@ type bindings struct {
 	datasetAddColumnsStream         func(dataset uintptr, stream *cdata.ArrowArrayStream, batchSize uint64) int32
 	datasetAddColumnsBatchUDF       func(dataset uintptr, udf *batchUDF, readColumns *uintptr, batchSize *uint32) int32
 	batchUDFV2                      batchUDFV2Bindings
+	baseStoreOpen                   baseStoreParamsOpenBindings
 	datasetConfig                   func(dataset uintptr) uintptr
 	datasetConfigCount              func(config uintptr) uint64
 	datasetConfigKeyAt              func(config uintptr, index uint64) *byte
@@ -1355,6 +1364,7 @@ func bind(lib *loader.Library) (*bindings, error) {
 		)
 	}
 	bindOptionalBatchUDFV2(lib, b)
+	bindOptionalBaseStoreParamsOpen(lib, b)
 	return b, nil
 }
 
@@ -1367,5 +1377,14 @@ func bindOptionalBatchUDFV2(lib *loader.Library, b *bindings) {
 	}
 	if addr, err := lib.Lookup("lance_fragment_add_columns_batch_udf_v2"); err == nil {
 		purego.RegisterFunc(&b.batchUDFV2.fragmentAddColumnsBatchUDFV2, addr)
+	}
+}
+
+// bindOptionalBaseStoreParamsOpen keeps the per-base open entry out of the
+// mandatory symbol set. Older published libraries leave the field nil and keep
+// using the ordinary open paths.
+func bindOptionalBaseStoreParamsOpen(lib *loader.Library, b *bindings) {
+	if addr, err := lib.Lookup("lance_dataset_open_with_base_store_params"); err == nil {
+		purego.RegisterFunc(&b.baseStoreOpen.datasetOpenWithBaseStoreParams, addr)
 	}
 }

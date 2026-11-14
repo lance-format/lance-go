@@ -42,6 +42,9 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 			return nil, invalidError("open", uri, "%v", err)
 		}
 	}
+	if config.baseStoreParams != nil && config.commitLock != nil {
+		return nil, invalidError("open", uri, "WithBaseStoreParams is not supported with WithOpenCommitLock; the per-base open entry has no commit-lock parameter")
+	}
 
 	var storageAccessor *ffi.StorageOptionsAccessor
 	var releaseStorage func()
@@ -55,6 +58,15 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		return nil, err
 	}
 	defer releaseStorage()
+	if config.baseStoreParams != nil && storageAccessor == nil && (config.storageOptionsSet || config.storageOptions != nil) {
+		// The per-base open entry accepts only an accessor; bridge static
+		// options so nil versus present-empty semantics are preserved.
+		storageAccessor, err = ffi.NewStorageOptionsAccessorWithPresence(config.storageOptions, true, nil)
+		if err != nil {
+			return nil, wrapError("open", uri, err)
+		}
+		defer storageAccessor.Close()
+	}
 
 	releaseLock, err := config.commitLock.pin("open", uri)
 	if err != nil {
@@ -68,15 +80,24 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 	}
 	defer releaseSession()
 
+	baseStoreParams, baseReleases, err := nativeBaseStoreParams("open", uri, config.baseStoreParams)
+	defer releaseAll(baseReleases)
+	if err != nil {
+		return nil, err
+	}
+
 	nativeOptions := ffi.OpenOptions{
 		StorageOptionsAccessor: storageAccessor,
+		BaseStoreParams:        baseStoreParams,
 		Version:                config.version,
 		Session:                session,
 	}
-	if config.commitLock != nil {
-		nativeOptions.CommitLock = config.commitLock.native
-	} else {
-		nativeOptions.StorageOptions = config.storageOptions
+	if config.baseStoreParams == nil {
+		if config.commitLock != nil {
+			nativeOptions.CommitLock = config.commitLock.native
+		} else {
+			nativeOptions.StorageOptions = config.storageOptions
+		}
 	}
 	native, err := ffi.OpenDatasetWithOptions(uri, nativeOptions)
 	if err != nil {
