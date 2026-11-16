@@ -293,9 +293,12 @@ summarize_test() {
   local json="${out}/${id}.json"
   local summary="${out}/${id}.summary.json"
   local tmp="${summary}.tmp.$$"
+  local selected_name="${selected#^}"
+  selected_name="${selected_name%$}"
   if ! "${JQ_BIN}" -s \
     --arg id "${id}" \
-    --arg selected "${selected}" \
+    --arg selector "${selected}" \
+    --arg selected "${selected_name}" \
     --argjson exit_code "${exit_code}" \
     --argjson duration_seconds "${duration_seconds}" \
     '
@@ -307,6 +310,7 @@ summarize_test() {
       (unique_names("skip")) as $skip |
       {
         id: $id,
+        selector: $selector,
         selected_test: $selected,
         exit_code: $exit_code,
         duration_seconds: $duration_seconds,
@@ -391,8 +395,12 @@ run_test() {
   duration_seconds=$((finished_epoch - started_epoch))
   write_value "${exit_file}" "${rc}"
   log "${id} exited ${rc} after ${duration_seconds}s"
-  summarize_test "${id}" "${selector}" "${rc}" "${duration_seconds}" || true
-  return "${rc}"
+  local summary_rc=0
+  summarize_test "${id}" "${selector}" "${rc}" "${duration_seconds}" || summary_rc=$?
+  if [[ "${rc}" -ne 0 ]]; then
+    return "${rc}"
+  fi
+  return "${summary_rc}"
 }
 
 if [[ "${tests_allowed}" == true ]]; then
