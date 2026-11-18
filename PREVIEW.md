@@ -6,6 +6,10 @@ Its public pseudo-version is `v0.0.0-20261112185256-807cb8430530`. PR #47 was
 merged as `0e0d0ef4f898f5baf461e6a66ec3eea96629e491`, with an identical source
 tree. The final release source and version have not been selected or tagged.
 
+Intel macOS support was retired after this candidate. The macOS amd64 row and
+its run are historical evidence for the published `darwin/amd64` module; new
+releases do not require or select that module.
+
 ## Delivered behavior
 
 The SDK provides pure-Go bindings to Lance with `CGO_ENABLED=0`. The API covers
@@ -14,9 +18,9 @@ full-text queries, staged fragments and transactions, Blob reads, raw files,
 table maintenance and directory/REST namespace integration. See
 [README.md](README.md) for API examples and the external-library build option.
 
-Default builds select a published native companion for each of six targets.
-Each companion embeds compressed native bytes that the loader verifies and
-extracts into the user cache. Ordinary `go get` can download all six companion
+Default builds select a published native companion for each of the six
+then-supported targets. Each companion embeds compressed native bytes that the
+loader verifies and extracts into the user cache. Ordinary `go get` can download all six companion
 archives. Cold target builds are measured separately and select only the
 matching archive. `lance_external_lib` excludes artifact linkage and extraction;
 it does not promise that dependency setup downloads no artifact modules.
@@ -32,7 +36,7 @@ target module, build and runtime caches.
 | --- | --- | --- |
 | Linux amd64 | Ubuntu 24.04.5, glibc 2.39 | [Unix run](https://github.com/lance-format/lance-go/actions/runs/43284438211) |
 | Linux arm64 | Ubuntu 24.04.5, glibc 2.39 | [Unix run](https://github.com/lance-format/lance-go/actions/runs/43284438211) |
-| macOS amd64 | macOS 15.x, Darwin 24.6.0 | [Unix run](https://github.com/lance-format/lance-go/actions/runs/43284438211) |
+| macOS amd64 (retired) | macOS 15.x, Darwin 24.6.0 | [Unix run](https://github.com/lance-format/lance-go/actions/runs/43284438211) |
 | macOS arm64 | macOS 15.x, Darwin 24.6.0 | [Unix run](https://github.com/lance-format/lance-go/actions/runs/43284438211) |
 | Windows amd64 | Windows Server 2022 | [Windows run](https://github.com/lance-format/lance-go/actions/runs/43284438526) |
 | Windows arm64 | Windows 11 | [Windows run](https://github.com/lance-format/lance-go/actions/runs/43284438526) |

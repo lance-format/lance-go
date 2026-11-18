@@ -66,12 +66,6 @@ jobs:
             goarch: arm64
             uname: aarch64
             library_name: liblance_c.so
-          - slug: darwin-amd64
-            runner: macos-15-intel
-            goos: darwin
-            goarch: amd64
-            uname: x86_64
-            library_name: liblance_c.dylib
           - slug: darwin-arm64
             runner: macos-15
             goos: darwin
