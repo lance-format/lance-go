@@ -1,8 +1,6 @@
 package ffi
 
 import (
-	"fmt"
-	"strings"
 	"sync"
 	"unsafe"
 
@@ -1344,11 +1342,12 @@ func load() (*bindings, error) {
 	return b, nil
 }
 
-func bind(lib *loader.Library) (*bindings, error) {
+func bind(lib symbolSource) (*bindings, error) {
 	b := &bindings{}
+	required := b.symbols()
 
 	var missing []string
-	for _, s := range b.symbols() {
+	for _, s := range required {
 		addr, err := lib.Lookup(s.name)
 		if err != nil {
 			missing = append(missing, s.name)
@@ -1358,10 +1357,7 @@ func bind(lib *loader.Library) (*bindings, error) {
 	}
 
 	if len(missing) > 0 {
-		return nil, fmt.Errorf(
-			"ffi: %s does not export required symbol(s) %s; rebuild lance-c from %s (%s) or install a build that matches this binding",
-			lib.Path(), strings.Join(missing, ", "), upstreamRepo, upstreamCommit,
-		)
+		return nil, &abiMismatchError{Path: lib.Path(), Required: len(required), Missing: missing}
 	}
 	bindOptionalBatchUDFV2(lib, b)
 	bindOptionalBaseStoreParamsOpen(lib, b)
@@ -1371,7 +1367,7 @@ func bind(lib *loader.Library) (*bindings, error) {
 // bindOptionalBatchUDFV2 keeps the schema-aware entries out of the mandatory
 // symbol set. Older published libraries leave both fields nil and continue to
 // use the array-only checkpoint path.
-func bindOptionalBatchUDFV2(lib *loader.Library, b *bindings) {
+func bindOptionalBatchUDFV2(lib symbolSource, b *bindings) {
 	if addr, err := lib.Lookup("lance_dataset_add_columns_batch_udf_v2"); err == nil {
 		purego.RegisterFunc(&b.batchUDFV2.datasetAddColumnsBatchUDFV2, addr)
 	}
@@ -1383,7 +1379,7 @@ func bindOptionalBatchUDFV2(lib *loader.Library, b *bindings) {
 // bindOptionalBaseStoreParamsOpen keeps the per-base open entry out of the
 // mandatory symbol set. Older published libraries leave the field nil and keep
 // using the ordinary open paths.
-func bindOptionalBaseStoreParamsOpen(lib *loader.Library, b *bindings) {
+func bindOptionalBaseStoreParamsOpen(lib symbolSource, b *bindings) {
 	if addr, err := lib.Lookup("lance_dataset_open_with_base_store_params"); err == nil {
 		purego.RegisterFunc(&b.baseStoreOpen.datasetOpenWithBaseStoreParams, addr)
 	}
