@@ -116,6 +116,31 @@ jobs:
           python3 -B scripts/public-consumer/binary_metadata_test.py
           python3 -B scripts/public-consumer/verify_test.py -v
 
+      - name: Test default-bundle RTree and raw Blob v2 on the public companion
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
+          XDG_CACHE_HOME: ${{ runner.temp }}/rtree-xdg-cache
+        run: |
+          set -euo pipefail
+          if [[ -n ${LANCE_LIB_PATH:-} ]]; then
+            echo "LANCE_LIB_PATH must be unset so the default bundle is exercised" >&2
+            exit 1
+          fi
+          if [[ $(go env CGO_ENABLED) != 0 ]]; then
+            echo "CGO_ENABLED must be 0" >&2
+            exit 1
+          fi
+          mkdir -p "$EVIDENCE_DIR" "$XDG_CACHE_HOME"
+          rm -rf "$XDG_CACHE_HOME/lance-go" "$HOME/Library/Caches/lance-go"
+          go list -m -f 'artifact={{.Path}}@{{.Version}}' \
+            "github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}"
+          log="$EVIDENCE_DIR/default-bundle-regressions.log"
+          go test -tags lance_rtree_native -run '^(TestRTree|TestRawBlobV2)' -count=1 -p 1 -v . ./file 2>&1 | tee "$log"
+          grep -Fq -- '--- PASS: TestRTreeScalarIndexGeometryQueriesAndLifecycle' "$log"
+          grep -Fq -- '--- PASS: TestRawBlobV2ReleasedFixtureSchemaAndValues' "$log"
+          grep -Fq -- '--- PASS: TestRawBlobV2StreamOutlivesReader' "$log"
+          rm -rf "$XDG_CACHE_HOME/lance-go" "$HOME/Library/Caches/lance-go"
+
       - name: Run public-consumer acceptance
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
