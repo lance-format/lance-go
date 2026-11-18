@@ -73,7 +73,7 @@ func (t SegmentIndexType) Vector() (VectorType, bool) {
 
 // Scalar returns the scalar index type named by t and whether t is one.
 func (t SegmentIndexType) Scalar() (ScalarType, bool) {
-	if t >= SegmentIndexType(ScalarBTree) && t <= SegmentIndexType(ScalarMinHashLSH) {
+	if t >= SegmentIndexType(ScalarBTree) && t <= SegmentIndexType(ScalarRTree) {
 		return ScalarType(t), true
 	}
 	return 0, false
@@ -113,6 +113,8 @@ func (t SegmentIndexType) String() string {
 		return "BLOOM_FILTER"
 	case SegmentIndexType(ScalarMinHashLSH):
 		return "MINHASH_LSH"
+	case SegmentIndexType(ScalarRTree):
+		return "RTREE"
 	}
 	return strconv.Itoa(int(t))
 }
