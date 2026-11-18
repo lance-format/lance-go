@@ -18,11 +18,11 @@ var Payload []byte
 const (
 	Target                   = "darwin/arm64"
 	LibraryName              = "liblance_c.dylib"
-	CompressedSize     int64 = 76784146
-	CompressedSHA256         = "80e2e23985ec20955ce8ab67e6267a206de16af9dfab7b32296157455f7b395d"
-	UncompressedSize   int64 = 272228496
-	UncompressedSHA256       = "f214c238b890bd02427ecc260231f4f886997a396e050c951978f81270e25200"
+	CompressedSize     int64 = 76875890
+	CompressedSHA256         = "e34343a21ab26f62d657fb2a521e26526d87c4b933016271f0188c0e194102b4"
+	UncompressedSize   int64 = 288099632
+	UncompressedSHA256       = "221acab4931254991ff22549aac6f439b48ba9f2eac52e79bb43467aebf52385"
 	UpstreamRepo             = "https://github.com/lance-format/lance-c"
-	UpstreamCommit           = "ac2634c553b450c7787577ffe964fc2b283b8334"
-	HeaderSHA256             = "c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b"
+	UpstreamCommit           = "e2564b89be36bb18f5beff6d673daf9dfff8c986"
+	HeaderSHA256             = "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d"
 )
