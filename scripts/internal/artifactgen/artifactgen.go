@@ -358,7 +358,9 @@ func compressLibrary(src, dst string) (compressedSize, uncompressedSize int64, u
 	compressedHash := sha256.New()
 	zw, err := zstd.NewWriter(
 		io.MultiWriter(out, compressedHash),
-		zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
+		// Best compression keeps every generated payload below GitHub's
+		// 100 MiB blob limit without changing the module format.
+		zstd.WithEncoderLevel(zstd.SpeedBestCompression),
 		zstd.WithEncoderConcurrency(1),
 	)
 	if err != nil {
