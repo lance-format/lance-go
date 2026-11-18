@@ -20,13 +20,12 @@ selector without merging the payload into the SDK tree.
 
 ## Active Unix bundles
 
-The root module requires these four published Unix data-only modules, plus
+The root module requires these three published Unix data-only modules, plus
 the two Windows modules described below:
 
 ```text
 github.com/lance-format/lance-go/artifacts/linux-amd64   v0.0.0-20261111235843-ac5955a095d0
 github.com/lance-format/lance-go/artifacts/linux-arm64   v0.0.0-20261112064406-43fcbbee5161
-github.com/lance-format/lance-go/artifacts/darwin-amd64  v0.0.0-20261112064406-43fcbbee5161
 github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.0.0-20261112064406-43fcbbee5161
 ```
 
@@ -35,12 +34,19 @@ through the Go module proxy rather than using the local directories. Complete
 sources and payloads remain at publication commits `ac5955a095d0` and
 `43fcbbee5161`, respectively.
 
-All four published Unix companions passed default, namespace-only and external
-cold public consumers at root `b8132c7ca5df4237c8c8324af2ec0fa148901926`
+The Intel macOS module is retired for new releases. Its metadata snapshot
+remains at `artifacts/darwin-amd64/` and its published module and tags remain
+at their original revisions, but the root module no longer requires it and no
+current selector registers it.
+
+All four then-published Unix companions passed default, namespace-only and
+external cold public consumers at root
+`b8132c7ca5df4237c8c8324af2ec0fa148901926`
 ([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)).
 The twelve consumer executions and final cleanup passed on native hosts with
-Go 1.23.0 and `CGO_ENABLED=0`. This accepts those published bytes and the tested
-runtime environments; final release tags require their own public checks.
+Go 1.23.0 and `CGO_ENABLED=0`. The `darwin/amd64` executions are historical
+evidence for that published module; they do not describe current support.
+Final release tags require their own public checks.
 
 ### linux/amd64 payload
 
@@ -61,9 +67,10 @@ The published `linux/amd64` module is
 
 ### Published Unix companion payloads
 
-All three companions use `UpstreamCommit`
-`ac2634c553b450c7787577ffe964fc2b283b8334` and `HeaderSHA256`
-`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`.
+The two active companions and the historical `darwin/amd64` module use
+`UpstreamCommit` `ac2634c553b450c7787577ffe964fc2b283b8334` and `HeaderSHA256`
+`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`. The
+`darwin/amd64` row is the retired historical module, kept for evidence.
 
 | Target | Module version | Compressed size | Compressed SHA-256 | Uncompressed size | Uncompressed SHA-256 |
 | --- | --- | --- | --- | --- | --- |
@@ -71,9 +78,8 @@ All three companions use `UpstreamCommit`
 | `darwin/amd64` | `v0.0.0-20261112064406-43fcbbee5161` | 81328057 | `c44cccfe51d70d955e9ee1887f20994bb7a5ac8deca39e0f80f781fa779b0805` | 293866120 | `e377468f7d0f5afd13a6ab4d18f9cf17dc544a38a68da04fb1a5557839260bc7` |
 | `darwin/arm64` | `v0.0.0-20261112064406-43fcbbee5161` | 76784146 | `80e2e23985ec20955ce8ab67e6267a206de16af9dfab7b32296157455f7b395d` | 272228496 | `f214c238b890bd02427ecc260231f4f886997a396e050c951978f81270e25200` |
 
-The generated selectors are
-`internal/bundled/lance_bundle_linux_arm64.go`,
-`internal/bundled/lance_bundle_darwin_amd64.go`, and
+The active generated selectors are
+`internal/bundled/lance_bundle_linux_arm64.go` and
 `internal/bundled/lance_bundle_darwin_arm64.go`. Their build constraints are
 `!lance_external_lib && <goos> && <goarch>`.
 
@@ -84,6 +90,9 @@ root package or the standalone namespace package uses the bundle after
 `LANCE_LIB_PATH` is absent and before the system loader. `LANCE_LIB_PATH` still takes precedence when set. Once a bundle
 is registered, verification, extraction, and `dlopen` errors are returned with
 the bundle module in the error; the loader does not fall back to a system copy.
+There is no `darwin/amd64` selector: that target keeps the metadata snapshot
+and published module, but a default build falls back to the explicit or system
+loader path.
 
 The compressed payload is data. Importing the artifact module does not link,
 load, or execute native code; the loader decompresses and maps it on first use.
@@ -132,10 +141,12 @@ runtime floor or released SDK version is inferred.
 
 ## Platform and runtime scope
 
-Four Unix targets have published bundles. The `linux/amd64` library was built
+Three Unix targets have active bundles. The `linux/amd64` library was built
 on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
-dynamic loader. The companion payloads use the same pin and header; their
-cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x hosts. Do not
+dynamic loader. The active companion payloads use the same pin and header;
+their cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x
+hosts. The retired `darwin/amd64` module remains published with its historical
+runtime evidence, but new releases neither require nor select it. Do not
 assume these Unix payloads work on older glibc/macOS, musl or other architectures.
 Windows uses separately validated PE DLLs, as recorded below.
 
@@ -165,10 +176,11 @@ safe cache modes, and the roundtrip output. It records the complete `go get`
 download set against the root module graph, then requires each default and
 namespace target build to fetch only the selected artifact payload archive from
 fresh empty caches. External target downloads are recorded without a
-zero-download claim. The four hosted matrix entries are Linux and macOS on
-amd64 and arm64. The lane is public-distribution acceptance, not a
-native rebuild or a full runtime regression. See
-[scripts/public-consumer/README.md](../scripts/public-consumer/README.md).
+zero-download claim. The three hosted matrix entries are Linux amd64 and arm64
+plus macOS arm64; the `darwin/amd64` executions recorded above are historical
+and old tags keep their original driver revisions. The lane is
+public-distribution acceptance, not a native rebuild or a full runtime
+regression. See [scripts/public-consumer/README.md](../scripts/public-consumer/README.md).
 
 ## External build contract
 
@@ -222,10 +234,10 @@ scripts/sync-lance-c.sh \
 The script reads `upstreamRepo`, `upstreamCommit`, and
 `upstreamHeaderSHA256` from `internal/ffi/upstream.go`. It verifies the header
 hash, target architecture, library format and basename, then refuses to
-overwrite an existing output directory. Supported targets are Linux, macOS
-and Windows on amd64 and arm64. Linux requires a 64-bit ELF shared object,
-macOS a thin 64-bit dylib, and Windows a 64-bit PE DLL with the matching
-machine type.
+overwrite an existing output directory. Supported targets are `linux/amd64`,
+`linux/arm64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`. Linux
+requires a 64-bit ELF shared object, macOS a thin 64-bit arm64 dylib, and
+Windows a 64-bit PE DLL with the matching machine type.
 
 The commit and header hash written into the generated module are
 packaging-time provenance claims. lance-c exposes no runtime version symbol,
@@ -345,8 +357,9 @@ The exact published module was resolved through the public Go proxy and sumdb;
 its payload matched the accepted candidate byte-for-byte. The runtime baseline
 remains Ubuntu 24.04.5 with glibc 2.39. The linux/amd64 paired update has
 accepted default, external, race/checkptr, strip, and roundtrip evidence. The
-companion payloads use the same pin and header. All six published targets have
-cold public-consumer acceptance at `807cb84`, as recorded above.
+active companion payloads use the same pin and header. The six then-published
+targets have cold public-consumer acceptance at `807cb84`, including the
+historical `darwin/amd64` module, as recorded above.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -360,9 +373,9 @@ installation behavior, not target selection. The public-consumer lanes record
 installation and each fresh-cache target build separately. At `807cb84`,
 [Unix run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211)
 and [Windows run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)
-passed all six targets and 18 consumer modes. Setup fetched all six companion
-archives; each default and namespace target build fetched only its selected
-archive. External target downloads were recorded without a zero-download
+passed all six then-published targets and 18 consumer modes. Setup fetched
+all six companion archives; each default and namespace target build fetched
+only its selected archive. External target downloads were recorded without a zero-download
 assertion; the binaries excluded artifact linkage and runtime extraction.
 
 Windows module publication, selector activation and hosted cold-cache loading
@@ -373,10 +386,10 @@ pseudo-version results do not replace post-tag public-consumer acceptance.
 ## Native Unix validation workflow
 
 `.github/workflows/unix-native.yml` builds and tests the pinned lance-c source
-on native runners for `linux/amd64`, `linux/arm64`, `darwin/amd64`, and
-`darwin/arm64`. The runners are `ubuntu-24.04`, `ubuntu-24.04-arm`,
-`macos-15-intel`, and `macos-15`. The workflow runs on pull requests and `main`
-pushes that touch native inputs, and on manual dispatch.
+on native runners for `linux/amd64`, `linux/arm64`, and `darwin/arm64`. The
+runners are `ubuntu-24.04`, `ubuntu-24.04-arm`, and `macos-15`. The workflow
+runs on pull requests and `main` pushes that touch native inputs, and on manual
+dispatch.
 
 Each job restores or builds the exact pinned source through
 `scripts/build-lance-c.sh`, validates the install cache with

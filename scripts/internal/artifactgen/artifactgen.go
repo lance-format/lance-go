@@ -32,7 +32,6 @@ const goModVersion = "1.23.0"
 var supportedTargets = []targetSpec{
 	{goos: "linux", goarch: "amd64", libraryName: "liblance_c.so"},
 	{goos: "linux", goarch: "arm64", libraryName: "liblance_c.so"},
-	{goos: "darwin", goarch: "amd64", libraryName: "liblance_c.dylib"},
 	{goos: "darwin", goarch: "arm64", libraryName: "liblance_c.dylib"},
 	{goos: "windows", goarch: "amd64", libraryName: "lance_c.dll"},
 	{goos: "windows", goarch: "arm64", libraryName: "lance_c.dll"},
@@ -315,12 +314,8 @@ func inspectMachO(path string, spec targetSpec) error {
 	if f.Type != macho.TypeDylib {
 		return fmt.Errorf("Mach-O library %s has type %s, want dylib", path, f.Type)
 	}
-	want := macho.CpuAmd64
-	if spec.goarch == "arm64" {
-		want = macho.CpuArm64
-	}
-	if f.Cpu != want {
-		return fmt.Errorf("Mach-O library %s has CPU %s, want %s", path, f.Cpu, want)
+	if f.Cpu != macho.CpuArm64 {
+		return fmt.Errorf("Mach-O library %s has CPU %s, want arm64", path, f.Cpu)
 	}
 	return nil
 }

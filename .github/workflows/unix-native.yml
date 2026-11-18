@@ -1,4 +1,5 @@
-# Native build and test matrix for the Unix targets lance-c publishes.
+# Native build and test matrix for the supported Unix targets lance-c publishes
+# for new releases. Intel macOS is retired; historical tags keep their evidence.
 #
 # This workflow builds the exact pinned lance-c source on each native runner,
 # tests the Go bindings against the resulting shared library, and stages a
@@ -82,15 +83,6 @@ jobs:
             jobs: "4"
             protoc_archive: protoc-21.12-linux-aarch_64.zip
             protoc_sha256: 2dd17f75d66a682640b136e31848da9fb2eefe68d55303baf8b32617374f6711
-          - slug: darwin-amd64
-            runner: macos-15-intel
-            goos: darwin
-            goarch: amd64
-            uname: x86_64
-            library_name: liblance_c.dylib
-            jobs: "3"
-            protoc_archive: protoc-21.12-osx-x86_64.zip
-            protoc_sha256: 9448ff40278504a7ae5139bb70c962acc78c32d8fc54b4890a55c14c68b9d10a
           - slug: darwin-arm64
             runner: macos-15
             goos: darwin

@@ -6,8 +6,8 @@
 #   scripts/strip-native-library.sh --library PATH --header PATH \
 #     --target GOOS/GOARCH --out DIR
 #
-# The target must be one of linux/amd64, linux/arm64, darwin/amd64, or
-# darwin/arm64. Linux uses `strip --strip-unneeded`; macOS uses `strip -x`.
+# The target must be one of linux/amd64, linux/arm64, or darwin/arm64. Linux
+# uses `strip --strip-unneeded`; macOS uses `strip -x`.
 # The output directory must not already exist and must be outside the
 # repository. Only the copy under <out>/library is modified.
 #
@@ -37,7 +37,7 @@ unchanged. The output must be outside the repository and must not exist.
 Required:
   --library PATH          accepted liblance_c.so or liblance_c.dylib
   --header PATH           matching include/lance/lance.h
-  --target GOOS/GOARCH    linux or darwin on amd64 or arm64
+  --target GOOS/GOARCH    linux/amd64, linux/arm64, or darwin/arm64
   --out DIR               new output directory; its library/ child is created
 
 Evidence is written to stdout. Dependencies, install names, and RPATH are not
@@ -114,7 +114,7 @@ linux/amd64 | linux/arm64)
 	expected_name=liblance_c.so
 	strip_flags=(--strip-unneeded)
 	;;
-darwin/amd64 | darwin/arm64)
+darwin/arm64)
 	expected_name=liblance_c.dylib
 	strip_flags=(-x)
 	;;

@@ -253,7 +253,7 @@ try {
     $script:SummaryFile = Join-Path $work 'synthetic-summary.txt'
     Set-Content -LiteralPath $script:SummaryFile -Value '' -Encoding utf8
     $script:ArtifactRequires = @(
-        [pscustomobject]@{ Path = $script:RootModule + '/artifacts/darwin-amd64'; Version = 'v1.2.3' }
+        [pscustomobject]@{ Path = $script:RootModule + '/artifacts/windows-arm64'; Version = 'v1.2.3' }
         [pscustomobject]@{ Path = $script:RootModule + '/artifacts/darwin-arm64'; Version = 'v1.2.3' }
         [pscustomobject]@{ Path = $script:RootModule + '/artifacts/linux-amd64'; Version = 'v1.2.3' }
         [pscustomobject]@{ Path = $script:RootModule + '/artifacts/linux-arm64'; Version = 'v1.2.3' }
@@ -261,7 +261,7 @@ try {
     $script:SelectedPath = $script:RootModule + '/artifacts/linux-amd64'
     $script:ModuleCacheTsv = Join-Path $work 'synthetic-inventory.tsv'
     $setupRows = @(
-        (New-ArtifactRow 'default/setup/go-get' ($script:RootModule + '/artifacts/darwin-amd64') 'v1.2.3')
+        (New-ArtifactRow 'default/setup/go-get' ($script:RootModule + '/artifacts/windows-arm64') 'v1.2.3')
         (New-ArtifactRow 'default/setup/go-get' ($script:RootModule + '/artifacts/darwin-arm64') 'v1.2.3')
         (New-ArtifactRow 'default/setup/go-get' ($script:RootModule + '/artifacts/linux-amd64') 'v1.2.3')
         (New-ArtifactRow 'default/setup/go-get' ($script:RootModule + '/artifacts/linux-arm64') 'v1.2.3')
@@ -336,7 +336,7 @@ try {
     Assert-ThrowsLike { Assert-OnlySelectedArtifactZip 'default/cold/build' } 'want exactly' 'setup archive standing in for a cold build observation'
     Write-CacheInventory $script:ModuleCacheTsv @(
         (New-ArtifactRow 'default/cold/build' $script:SelectedPath $script:SelectedVersion)
-        (New-ArtifactRow 'default/cold/build' ($script:RootModule + '/artifacts/darwin-amd64') 'v1.2.3')
+        (New-ArtifactRow 'default/cold/build' ($script:RootModule + '/artifacts/windows-arm64') 'v1.2.3')
     )
     Assert-ThrowsLike { Assert-OnlySelectedArtifactZip 'default/cold/build' } 'want exactly' 'foreign cold artifact archive'
 

@@ -21,7 +21,8 @@ generates a platform-constrained selector for internal/bundled.
 Required:
   --library PATH          built liblance_c.so, liblance_c.dylib, or lance_c.dll
   --header PATH           matching include/lance/lance.h
-  --target GOOS/GOARCH    linux, darwin, or windows on amd64 or arm64
+  --target GOOS/GOARCH    linux/amd64, linux/arm64, darwin/arm64, windows/amd64,
+                          or windows/arm64
   --out DIR               new output directory; must not already exist
 
 Optional:
