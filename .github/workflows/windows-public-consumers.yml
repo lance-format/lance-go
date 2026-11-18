@@ -110,6 +110,41 @@ jobs:
           pwsh -NoProfile -File ./scripts/public-consumer/windows-harness-test.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Test default-bundle RTree and raw Blob v2 on the public companion
+        shell: pwsh
+        env:
+          EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not [string]::IsNullOrEmpty($env:LANCE_LIB_PATH)) {
+            throw 'LANCE_LIB_PATH must be unset so the default bundle is exercised'
+          }
+          $cgo = (& go env CGO_ENABLED).Trim()
+          if ($cgo -ne '0') { throw "CGO_ENABLED must be 0, got $cgo" }
+          $evidence = $env:EVIDENCE_DIR
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          $artifact = 'github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}'
+          & go list -m -f 'artifact={{.Path}}@{{.Version}}' $artifact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $cache = Join-Path $env:LOCALAPPDATA 'lance-go'
+          if (Test-Path -LiteralPath $cache) {
+            Remove-Item -LiteralPath $cache -Recurse -Force
+          }
+          $log = Join-Path $evidence 'default-bundle-regressions.log'
+          & go test -tags lance_rtree_native -run '^(TestRTree|TestRawBlobV2)' -count=1 -p 1 -v . ./file 2>&1 | Tee-Object -FilePath $log
+          $testExit = $LASTEXITCODE
+          if ($testExit -ne 0) { exit $testExit }
+          $text = Get-Content -LiteralPath $log -Raw
+          foreach ($pass in @(
+            '--- PASS: TestRTreeScalarIndexGeometryQueriesAndLifecycle',
+            '--- PASS: TestRawBlobV2ReleasedFixtureSchemaAndValues',
+            '--- PASS: TestRawBlobV2StreamOutlivesReader'
+          )) {
+            if (-not $text.Contains($pass)) {
+              throw "default-bundle regression did not pass: $pass"
+            }
+          }
+
       - name: Run Windows public-consumer acceptance
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence

@@ -95,6 +95,10 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.rust_target }}
 
+      - name: Enable Git long paths for Lance dependency checkout
+        shell: pwsh
+        run: git config --global core.longpaths true
+
       - name: Build and verify native Windows ${{ matrix.arch }}
         shell: pwsh
         timeout-minutes: 140

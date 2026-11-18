@@ -18,11 +18,11 @@ var Payload []byte
 const (
 	Target                   = "windows/amd64"
 	LibraryName              = "lance_c.dll"
-	CompressedSize     int64 = 97196491
-	CompressedSHA256         = "4ef5995d123eb0d99b93e50e775148b0a74b654579720ec65457128d99e7b2af"
-	UncompressedSize   int64 = 375912448
-	UncompressedSHA256       = "cb037c4ce8fba99e7d1abbe6f1a64b4ccb46d94a4cf9530af217a07e83a4c3ef"
+	CompressedSize     int64 = 99581215
+	CompressedSHA256         = "0fe6f237ee1e8e2303fb14353d9e9d3539c8051bc859cbfa7cd5525072688769"
+	UncompressedSize   int64 = 402987008
+	UncompressedSHA256       = "fecd7f52765fcefbb80a8157882eae83192485303dcc80c41dcd50c9f6d237f1"
 	UpstreamRepo             = "https://github.com/lance-format/lance-c"
-	UpstreamCommit           = "ac2634c553b450c7787577ffe964fc2b283b8334"
-	HeaderSHA256             = "c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b"
+	UpstreamCommit           = "e2564b89be36bb18f5beff6d673daf9dfff8c986"
+	HeaderSHA256             = "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d"
 )
