@@ -117,8 +117,11 @@ func (d *Dataset) CreateVectorIndexWithParams(ctx context.Context, column string
 }
 
 // CreateScalarIndex builds a scalar index and returns a new Dataset snapshot.
-// params is forwarded verbatim as the native plugin JSON; nil leaves the
-// native parameter string unset. Unknown plugin keys are preserved.
+// indexType selects the native scalar plugin. params is forwarded verbatim as
+// the native plugin JSON; nil leaves the native parameter string unset.
+// RTree requires a GeoArrow geometry column and accepts page_size in params.
+// Native code owns geometry and option validation, defaults and errors.
+// Unknown plugin keys are preserved.
 // WithIndexProgress observes the build. An error can occur after the version is
 // committed, during metadata reload; reopen the dataset to inspect the
 // published state before retrying.

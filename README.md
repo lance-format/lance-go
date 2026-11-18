@@ -675,6 +675,37 @@ prepared descriptors through `FinishArray`. The
 [raw v2.2 projection gap](https://github.com/lance-format/lance-c/issues/167)
 remains an upstream reader limitation; blob reads use native descriptors.
 
+## Scalar indexes
+
+`CreateScalarIndex` creates a native scalar index and returns a new dataset
+snapshot. `indexType` selects the plugin and `params` is forwarded verbatim as
+plugin JSON; nil keeps native defaults. Use the returned dataset or reopen the
+source to query the new index; the receiver keeps its current version.
+
+RTree (`index.ScalarRTree`, native value 9) indexes a GeoArrow geometry column;
+the current SDK coverage exercises LineString. Its optional plugin parameter is
+`page_size`; native code supplies the default and rejects values below 2.
+Filters use native geometry predicates, and native code owns candidate
+generation and exact intersection checks:
+
+```go
+indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
+    json.RawMessage(`{"page_size": 8}`), index.ScalarOptions{},
+    lance.WithIndexName("geometry_rtree"))
+if err != nil {
+    log.Fatal(err)
+}
+scan, err := indexed.Scan(
+    lance.WithColumns("id"),
+    lance.WithSQLFilter("ST_Intersects(geometry, ST_GeomFromText('POINT (0 10)'))"),
+)
+```
+
+RTree uses the generic scalar-index ABI. A native library that predates RTree
+still loads, but rejects the type with a native error. The SDK neither emulates
+RTree nor treats scalar-index symbol presence as proof that enum value 9 is
+supported.
+
 ## Vector search
 
 `WithNearest` performs exact k-nearest-neighbor search when the dataset has no
@@ -1147,6 +1178,24 @@ export LANCE_LIB_PATH="$PWD/dist/lance-c/lib/liblance_c.so"   # or .dylib
 CGO_ENABLED=0 go test -count=1 -v ./...
 CGO_ENABLED=0 go test -count=1 -tags lance_external_lib ./...
 CGO_ENABLED=1 go test -count=1 -race ./...
+```
+
+The RTree regression tests are build-tagged because the default native pin
+predates RTree. Run the public contract test only against a library that
+implements `LANCE_SCALAR_RTREE`:
+
+```console
+export LANCE_LIB_PATH=/path/to/rtree-capable/liblance_c.so
+CGO_ENABLED=0 go test -tags lance_rtree_native -run '^TestRTree' -count=1 -v .
+```
+
+To verify on linux/amd64 that a pre-RTree library still loads and rejects the
+type honestly, run the legacy selector with the pinned default bundle:
+
+```console
+env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
+  CGO_ENABLED=0 go test -tags lance_rtree_legacy \
+  -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
 
 `benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for

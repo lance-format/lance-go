@@ -133,8 +133,8 @@ func (d *Dataset) NewVectorSegmentBuilder(ctx context.Context, column, name stri
 	return newSegmentBuilder(d.uri, native), nil
 }
 
-// NewScalarSegmentBuilder prepares a scalar index segment such as an inverted
-// or bitmap segment for the current dataset snapshot.
+// NewScalarSegmentBuilder prepares a scalar index segment such as an inverted,
+// bitmap or RTree segment for the current dataset snapshot.
 func (d *Dataset) NewScalarSegmentBuilder(ctx context.Context, column, name string, indexType index.ScalarType, params json.RawMessage, options index.ScalarOptions, scope index.SegmentScope) (*SegmentBuilder, error) {
 	const op = "Dataset.NewScalarSegmentBuilder"
 	if err := checkContext(ctx); err != nil {

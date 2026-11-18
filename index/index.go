@@ -28,7 +28,13 @@ const (
 	VectorTypeIVFRQ       VectorType = 107
 )
 
-// ScalarType selects a native scalar index plugin.
+// ScalarType selects a native scalar index plugin. Plugin-specific creation
+// settings travel in the dataset API's params JSON (CreateScalarIndex and
+// NewScalarSegmentBuilder); native code owns option validation and defaults.
+// ScalarRTree indexes a GeoArrow geometry column and accepts page_size in that
+// JSON. Older native libraries still load but reject ScalarRTree with a native
+// error; the generic scalar-index ABI does not advertise which enum values are
+// supported.
 type ScalarType int32
 
 const (
@@ -40,6 +46,7 @@ const (
 	ScalarZoneMap     ScalarType = 6
 	ScalarBloomFilter ScalarType = 7
 	ScalarMinHashLSH  ScalarType = 8
+	ScalarRTree       ScalarType = 9
 )
 
 // Metric selects a vector distance metric.
@@ -143,9 +150,10 @@ type VectorOptions struct {
 	Train *bool
 }
 
-// ScalarOptions controls scalar index creation. Params is forwarded verbatim as
-// the native plugin JSON, so family-specific keys survive even though they are
-// not represented here.
+// ScalarOptions controls scalar index behavior shared by every plugin.
+// Family-specific keys, including RTree's page_size, are passed separately as
+// params JSON to the dataset API's CreateScalarIndex or
+// NewScalarSegmentBuilder.
 type ScalarOptions struct {
 	Train *bool
 }
