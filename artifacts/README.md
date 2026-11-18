@@ -123,13 +123,30 @@ Both use upstream `lance-c v0.2.0-beta.1` at
 `!lance_external_lib && windows && <arch>`. `LANCE_LIB_PATH` retains
 precedence over a registered bundle.
 
-The Windows release archive headers are CRLF copies of the canonical LF
-header. Packaging normalizes them before verification and records the
+For the official `lance-c-v0.2.0-beta.1` Windows assets, both
+`include/lance/lance.h` files are CRLF copies of the canonical LF header.
+`scripts/sync-lance-c.sh` validates the supplied header bytes against the
+canonical pin; it does not normalize them. Create a canonical LF copy before
+packaging and verify it, while leaving the DLL extracted from the archive
+unchanged:
+
+```sh
+python3 - "$src" "$dst" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[2]).write_bytes(Path(sys.argv[1]).read_bytes().replace(b"\r\n", b"\n"))
+PY
+sha256sum "$dst"
+# 90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d
+```
+
+The raw archive header hashes are
+`649e88841ebf09faa97354cae797de1376e0ada2ea69189c6fd4c4c6631aad66` for both
+`lance-c-v0.2.0-beta.1-x86_64-pc-windows-msvc.tar.xz` and
+`lance-c-v0.2.0-beta.1-aarch64-pc-windows-msvc.tar.xz`. Packaging records the
 canonical `HeaderSHA256`
-`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`; the
-uploaded DLL bytes are unchanged. The release archive header hashes are
-`649e88841ebf09faa97354cae797de1376e0ada2ea69189c6fd4c4c6631aad66` for
-both Windows targets before normalization.
+`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
 
 The published payloads decompress byte-for-byte to the DLLs in the official
 `v0.2.0-beta.1` Windows archives. The C release workflow verified the staged
@@ -368,8 +385,10 @@ The five release archives, their `.sha256`/`.sha512` pairs and `SHA512SUMS`
 were verified against the published assets. Each companion payload decompressed
 byte-for-byte to the shared library in the matching official archive, and each
 `v0.1.0-preview.2` module resolved through `proxy.golang.org` and
-`sum.golang.org`. Full per-target digests are recorded in the preview.2 release
-evidence rather than duplicated here.
+`sum.golang.org`. Compressed sizes and hashes in this file come from
+`scripts/verify-lance-c-artifact` and the public module ZIPs, not the earlier
+pre-best-compression intermediate metadata log. Full per-target digests are
+recorded in the preview.2 release evidence rather than duplicated here.
 
 The preview.1 consumer evidence remains historical and records the older
 six-target module set. Preview.2 candidate public-consumer results, including

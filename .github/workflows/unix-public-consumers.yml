@@ -139,6 +139,7 @@ jobs:
           grep -Fq -- '--- PASS: TestRTreeScalarIndexGeometryQueriesAndLifecycle' "$log"
           grep -Fq -- '--- PASS: TestRawBlobV2ReleasedFixtureSchemaAndValues' "$log"
           grep -Fq -- '--- PASS: TestRawBlobV2StreamOutlivesReader' "$log"
+          rm -rf "$XDG_CACHE_HOME/lance-go" "$HOME/Library/Caches/lance-go"
 
       - name: Run public-consumer acceptance
         env:
