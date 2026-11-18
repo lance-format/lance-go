@@ -1,10 +1,17 @@
-# Initial preview notes (unpublished)
+# Historical preview preparation notes
 
-This is the release preparation record, not a published SDK release. The
-validated SDK candidate is `807cb84305302dc3ff3b40809d817a876efd2909` (PR #47).
+These notes are the preparation record for the first Go preview. They are
+historical: the source was published as `v0.1.0-preview.1`, and its
+[release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
+are the release record. Keep this file for provenance and evidence boundaries,
+not as a statement of current release status or support.
+
+The validated SDK candidate is `807cb84305302dc3ff3b40809d817a876efd2909` (PR #47).
 Its public pseudo-version is `v0.0.0-20261112185256-807cb8430530`. PR #47 was
 merged as `0e0d0ef4f898f5baf461e6a66ec3eea96629e491`, with an identical source
-tree. The final release source and version have not been selected or tagged.
+tree. The first preview was later tagged at
+`0e186d62d0fe3758e190502f9273df7dd7409c55`, whose tree matches the
+documentation candidate; the release notes identify the post-tag acceptance.
 
 Intel macOS support was retired after this candidate. The macOS amd64 row and
 its run are historical evidence for the published `darwin/amd64` module; new
@@ -56,7 +63,7 @@ existing published versions, payload hashes and publication branches listed
 in [artifacts/README.md](artifacts/README.md); SDK metadata snapshots alone are
 not complete publishable modules.
 
-## Remaining release gates and limitations
+## Historical release gates and limitations
 
 - Storage 2.1 compatibility passed all 56 cells on Linux amd64 at SDK
   `807cb84`, using the published ac5955a library built from ac263. All four
