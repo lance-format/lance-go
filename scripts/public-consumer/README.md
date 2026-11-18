@@ -29,9 +29,12 @@ bash scripts/public-consumer/run.sh
 is optional; when empty, the driver uses the checked-out `HEAD`. A supplied SHA
 must equal `HEAD`, and a supplied tag must resolve to `HEAD`.
 
-The four hosted matrix entries are `linux/amd64`, `linux/arm64`,
-`darwin/amd64`, and `darwin/arm64`. Their runners and expected `uname -m` and
-library names are in the workflow.
+The three hosted matrix entries are `linux/amd64`, `linux/arm64`, and
+`darwin/arm64`. Their runners and expected `uname -m` and library names are in
+the workflow. Intel macOS is retired for new releases: a `darwin/amd64`
+revision has no selector or artifact requirement, so this driver cannot
+complete a default consumer for it. Historical Intel tags keep the original
+driver revision of their time.
 
 ## What is checked
 

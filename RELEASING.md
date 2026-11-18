@@ -5,26 +5,33 @@ This is the maintainer sequence for a preview release that includes a compiled
 contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
-Four Unix targets now have published artifact modules and active selectors:
-`linux/amd64`, `linux/arm64`, `darwin/amd64`, and `darwin/arm64`. The
-`linux/amd64` artifact is the accepted published artifact and has prior
-native, default, external, and race evidence. The three companion modules are
-published and their selectors are active. All four Unix targets passed cold
-public default, namespace-only and external consumers at root `b8132c7`
+Three Unix targets now have published artifact modules and active selectors:
+`linux/amd64`, `linux/arm64`, and `darwin/arm64`. The `linux/amd64` artifact is
+the accepted published artifact and has prior native, default, external, and
+race evidence. The two companion modules are published and their selectors are
+active. Intel macOS is retired for new releases; its published module and tags
+remain at their original revisions, but no current release requires or selects
+them.
+
+Before the retirement, all four then-published Unix targets passed cold public
+default, namespace-only and external consumers at root `b8132c7`
 ([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)),
-including final cleanup. This evidence covers Go 1.23.0, Linux glibc 2.39 and
-macOS 15.x; it does not replace final tag acceptance. Windows amd64 and arm64
-static-CRT candidates passed native C, full SDK, OS-only import closure,
-loaded-module guards, packaging verification and supplied-library roundtrip
-at `c8373c9` ([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
+including final cleanup; the `darwin/amd64` executions are historical evidence
+for that published module and are not part of current support. This evidence
+covers Go 1.23.0, Linux glibc 2.39 and macOS 15.x; it does not replace final
+tag acceptance. Windows amd64 and arm64 static-CRT candidates passed native C,
+full SDK, OS-only import closure, loaded-module guards, packaging verification
+and supplied-library roundtrip at `c8373c9`
+([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
 amd64 race/checkptr also passed. Those Windows modules are published at
 `v0.0.0-20261112113154-9496baf852b1` and their requirements/selectors are active.
 Windows cold public default, namespace-only and external consumers passed at
 `807cb84` ([run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526));
-the four Unix targets passed the same modes at that head in
+the then-published four Unix targets passed the same modes at that head in
 [run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211).
-These 18 executions cover the published modules and exact root pseudo-version;
-post-tag validation is still required. Real AWS S3 refresh passed in both
+These 18 executions cover the then-published modules and exact root
+pseudo-version; the `darwin/amd64` cells are historical, and post-tag
+validation is still required. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
@@ -33,7 +40,7 @@ for the claimed target. They must not claim completion of issue #1; the
 broader RTree/raw v2.2 official-core work remains outside this preview.
 
 The maintained Unix workflow, `.github/workflows/unix-native.yml`, builds and
-tests four native runners and generates unpublished candidate modules under
+tests three native runners and generates unpublished candidate modules under
 their real `artifacts/$SLUG` module paths. The workflow uploads those
 candidates as review evidence; it does not publish a production module, push
 a tag, or activate a selector. A build/test success is not acceptance:
@@ -201,7 +208,6 @@ these states separate; one does not imply another:
 | --- | --- | --- | --- | --- | --- | --- |
 | `linux/amd64` | record | record | record | record | record | record |
 | `linux/arm64` | record | record | record | record | record | record |
-| `darwin/amd64` | record | record | record | record | record | record |
 | `darwin/arm64` | record | record | record | record | record | record |
 | `windows/amd64` | record | record | record | record | record | record |
 | `windows/arm64` | record | record | record | record or toolchain limitation | record | record |
@@ -215,7 +221,7 @@ native export.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
 requires libc, libm, libgcc_s, and the dynamic loader. That ELF payload is
-specific to Linux amd64. The other five targets use their own bundles; their
+specific to Linux amd64. The other four targets use their own bundles; their
 accepted hosts are listed in [the preview notes](PREVIEW.md). Older glibc and
 musl compatibility have not been established. The real S3
 acceptance above is scoped to Linux amd64 and the historical `native88` library
@@ -439,7 +445,8 @@ from fresh target caches.
 Required public-distribution acceptance uses both maintained lanes:
 
 - `.github/workflows/unix-public-consumers.yml`, with
-  `scripts/public-consumer/run.sh`, covers Linux and macOS amd64 and arm64.
+  `scripts/public-consumer/run.sh`, covers Linux amd64 and arm64 plus macOS
+  arm64.
 - `.github/workflows/windows-public-consumers.yml`, with
   `scripts/public-consumer/run-windows.ps1`, covers Windows amd64 and arm64.
   See [the Windows driver contract](scripts/public-consumer/WINDOWS.md) for
@@ -559,7 +566,7 @@ gh workflow run windows-public-consumers.yml --repo lance-format/lance-go \
 ```
 
 Both workflows create fresh evidence, module, build and runtime caches; do not
-reuse pre-tag caches. Require all six targets and all 18 default,
+reuse pre-tag caches. Require all five targets and all 15 default,
 namespace-only and external consumer modes, including cleanup, to pass. They
 must fetch the tagged root and exact artifact versions through the public
 proxy and verify archive bytes, checksum-database identity, extraction and

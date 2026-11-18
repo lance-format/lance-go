@@ -6,8 +6,8 @@
 #   scripts/check-native-library.sh --library PATH --header PATH \
 #     --target GOOS/GOARCH
 #
-# The target must be one of linux/amd64, linux/arm64, darwin/amd64, or
-# darwin/arm64. The checks are:
+# The target must be one of linux/amd64, linux/arm64, or darwin/arm64. The
+# checks are:
 #   - the header SHA-256 matches internal/ffi/upstream.go
 #   - the library basename, object format, and architecture match the target
 #   - direct dependencies resolve, with no build-prefix or Homebrew paths
@@ -119,7 +119,7 @@ done
 goos=${target%%/*}
 goarch=${target#*/}
 case "$goos/$goarch" in
-linux/amd64 | linux/arm64 | darwin/amd64 | darwin/arm64) ;;
+linux/amd64 | linux/arm64 | darwin/arm64) ;;
 *) die "unsupported target: $target" ;;
 esac
 
@@ -250,7 +250,6 @@ else
 	[[ $file_output == *Mach-O*64-bit*shared\ library* ]] ||
 		die "library is not a 64-bit Mach-O shared library: $file_output"
 	case "$goarch" in
-	amd64) [[ $file_output == *x86_64* ]] || die "library is not x86_64: $file_output" ;;
 	arm64) [[ $file_output == *arm64* ]] || die "library is not arm64: $file_output" ;;
 	esac
 	lipo_output=$(lipo -info "$library")

@@ -12,29 +12,35 @@ fragment inspection, Blob reads, and native directory/REST namespaces with manag
 dataset open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
 or newer.
 
-Published Unix artifact modules now exist for `linux/amd64`, `linux/arm64`,
-`darwin/amd64`, and `darwin/arm64`, with selectors registered for each target.
-Default builds for these targets load their verified compressed `lance-c`
-payload after unpacking it into the user cache. The payload is a normal Go
-module dependency, so building or testing fetches it through the Go module
-proxy; it is not a download-free installation. `go get` can download all six
-companion archives because it resolves packages for all build tags; a
-fresh-cache default target build is expected to fetch only the selected one.
-Windows amd64 and arm64 modules are also published, with selectors activated.
-Their native, packaging and cold public-consumer validation passed on both
-architectures at `807cb84`. Targets without a selector need an explicit
-`LANCE_LIB_PATH` or a system `liblance_c`.
+New releases select published artifact modules for `linux/amd64`,
+`linux/arm64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`. Default
+builds for these targets load their verified compressed `lance-c` payload
+after unpacking it into the user cache. The payload is a normal Go module
+dependency, so building or testing fetches it through the Go module proxy; it
+is not a download-free installation. `go get` can download all five companion
+archives because it resolves packages for all build tags; a fresh-cache
+default target build is expected to fetch only the selected one. Native,
+packaging and cold public-consumer validation for the Windows modules passed on
+both architectures at `807cb84`.
+
+Intel macOS is retired for new releases. The published `darwin/amd64` module
+and its tags remain available for existing consumers, but the root module no
+longer requires it and no selector registers it. As on any target without a
+selector, `darwin/amd64` needs an explicit `LANCE_LIB_PATH` or a system
+`liblance_c`.
 
 The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
-requires libc, libm, libgcc_s and the dynamic loader. The three companion
-modules use the same pinned upstream commit and header. All four Unix targets
-passed cold public default, namespace-only and external consumers at
-`b8132c7`, including independent target caches and final cleanup
-([hosted run](https://github.com/lance-format/lance-go/actions/runs/43193825133)).
-The tested Linux hosts use glibc 2.39; the macOS hosts run 15.x. This does not
-establish support for older runtimes. Linux amd64 has native test
-coverage, including the bundled default path. Linux and macOS on amd64 and
-arm64, plus Windows arm64, are cross-compiled in CI. Windows amd64 runs loader,
+requires libc, libm, libgcc_s and the dynamic loader. The two maintained Unix
+companion modules use the same pinned upstream commit and header. Before the
+Intel retirement, all four then-published Unix targets passed cold public
+default, namespace-only and external consumers at `b8132c7`, including
+independent target caches and final cleanup
+([hosted run](https://github.com/lance-format/lance-go/actions/runs/43193825133));
+the `darwin/amd64` result is historical evidence for that published module and
+is not part of current support. The tested Linux hosts use glibc 2.39; the
+macOS hosts run 15.x. This does not establish support for older runtimes. Linux
+amd64 has native test coverage, including the bundled default path. Linux amd64
+and arm64 plus macOS arm64 are cross-compiled in CI. Windows amd64 runs loader,
 cache and Arrow callback unit tests on `windows-2022`. The separate
 `.github/workflows/windows-native.yml` lane is a manual, path-specific native
 evidence build for Windows amd64 and Windows arm64. Each matrix entry compiles
@@ -120,7 +126,7 @@ CGO_ENABLED=0 go run ./examples/roundtrip
 ## Read a dataset
 
 On a target with a published selector (`linux/amd64`, `linux/arm64`,
-`darwin/amd64`, `darwin/arm64`, `windows/amd64`, or `windows/arm64`),
+`darwin/arm64`, `windows/amd64`, or `windows/arm64`),
 a default build needs no environment
 variable: the first call loads the bundled artifact. Targets without a selector
 need an explicit `LANCE_LIB_PATH` or a system `liblance_c`. Run your Go program
@@ -1076,9 +1082,11 @@ after a successful load has no effect in that process.
 
 Build tags:
 
-- Default builds for `linux/amd64` compile the generated selector, the artifact
-  package, and its compressed payload into the binary. Other targets have no
-  selector, so they use explicit or system discovery.
+- Default builds for the five selected targets compile the generated selector,
+  the artifact package, and its compressed payload into the binary. Other
+  targets, including `darwin/amd64`, have no selector, so they use explicit or
+  system discovery. The loader never falls back to an Intel payload that a new
+  release does not require.
 - `-tags lance_external_lib` excludes the selector, bundle/cache/decompression
   code, and the artifact package from compilation and embedding. The artifact
   module requirement remains in `go.mod` and in the module graph; commands
@@ -1232,8 +1240,8 @@ runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 cache entry's SHA-256. That cache entry can only be created by the registered
 bundle, so the check cannot pass by silently loading a system library. A
 separate job builds the pinned native library, and a race job uses that library
-with Go's race detector. The cross-build matrix checks Linux and macOS on amd64
-and arm64; it does not establish native runtime support on those other
+with Go's race detector. The cross-build matrix checks Linux amd64 and arm64
+plus macOS arm64; it does not establish native runtime support on those other
 platforms. A separate Windows workflow tests Windows amd64 and arm64; its
 native evidence lane builds the pinned DLL and runs the full Go SDK suite
 against it on both hosted runners, with a `CGO 1` race lane on amd64.

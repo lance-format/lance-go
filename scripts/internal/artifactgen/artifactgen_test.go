@@ -296,6 +296,15 @@ func TestGenerateRejectsBadInputs(t *testing.T) {
 			want: "unsupported target",
 		},
 		{
+			name: "retired darwin amd64 target",
+			setup: func(t *testing.T, dir string) Options {
+				opts := validOptions(t, dir, syntheticMachO(macho.CpuAmd64), "liblance_c.dylib")
+				opts.Target = "darwin/amd64"
+				return opts
+			},
+			want: "unsupported target",
+		},
+		{
 			name: "library basename",
 			setup: func(t *testing.T, dir string) Options {
 				opts := validOptions(t, dir, syntheticELF(elf.EM_X86_64), "wrong.so")
