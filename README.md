@@ -3,125 +3,173 @@
 Pure-Go bindings for [Lance](https://lancedb.github.io/lance/), built on the
 official `lance-c` C ABI without cgo.
 
-## Status
+## Quickstart
 
-The core API supports dataset creation, append/overwrite, metadata, shared
-sessions, projected and filtered scans, row selection, vector and full-text search,
-immutable row/schema mutations, version history, tags, branches, staged transactions,
-fragment inspection, Blob reads, and native directory/REST namespaces with managed
-dataset open, write, and transaction commits. It uses Arrow Go v18 and requires Go 1.23
-or newer.
+The latest published SDK is the pre-release
+[v0.1.0-preview.1](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1).
+Its roundtrip example creates a temporary dataset, closes and reopens it,
+scans three rows, and removes the dataset. Run the version-pinned command from
+any empty directory; it needs neither this checkout nor an existing dataset or
+a locally installed `lance-c` library:
 
-New releases select published artifact modules for `linux/amd64`,
-`linux/arm64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`. Default
-builds for these targets load their verified compressed `lance-c` payload
-after unpacking it into the user cache. The payload is a normal Go module
-dependency, so building or testing fetches it through the Go module proxy; it
-is not a download-free installation. `go get` can download all five companion
-archives because it resolves packages for all build tags; a fresh-cache
-default target build is expected to fetch only the selected one. Native,
-packaging and cold public-consumer validation for the Windows modules passed on
-both architectures at `807cb84`.
-
-Intel macOS is retired for new releases. The published `darwin/amd64` module
-and its tags remain available for existing consumers, but the root module no
-longer requires it and no selector registers it. As on any target without a
-selector, `darwin/amd64` needs an explicit `LANCE_LIB_PATH` or a system
-`liblance_c`.
-
-The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
-requires libc, libm, libgcc_s and the dynamic loader. The two maintained Unix
-companion modules use the same pinned upstream commit and header. Before the
-Intel retirement, all four then-published Unix targets passed cold public
-default, namespace-only and external consumers at `b8132c7`, including
-independent target caches and final cleanup
-([hosted run](https://github.com/lance-format/lance-go/actions/runs/43193825133));
-the `darwin/amd64` result is historical evidence for that published module and
-is not part of current support. The tested Linux hosts use glibc 2.39; the
-macOS hosts run 15.x. This does not establish support for older runtimes. Linux
-amd64 has native test coverage, including the bundled default path. Linux amd64
-and arm64 plus macOS arm64 are cross-compiled in CI. Windows amd64 runs loader,
-cache and Arrow callback unit tests on `windows-2022`. The separate
-`.github/workflows/windows-native.yml` lane is a manual, path-specific native
-evidence build for Windows amd64 and Windows arm64. Each matrix entry compiles
-the pinned upstream source with the runner-native MSVC toolchain and target
-(`x86_64-pc-windows-msvc` on `windows-2022`, `aarch64-pc-windows-msvc` on
-`windows-11-vs2026-arm`) with a static CRT. The lane sets
-`CARGO_ENCODED_RUSTFLAGS` to include `-Ctarget-feature=+crt-static`, preserving
-flags from the first active source among `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`,
-and `CARGO_BUILD_RUSTFLAGS`. It records the effective configuration; per-target
-environment and Cargo config-file flags are overridden without being audited. Cargo exposes that
-target feature to native build scripts, so `cc` and AWS-LC select the static
-CRT for their C objects. The lane stages the DLL, MSVC import library and
-public headers, checks the PE machine, PE32+ format, derived exported `lance_*`
-symbols, direct and delay-load imports, and staged dependencies, and runs a
-native C consumer built with `/MT` plus the full Go SDK suite against the
-staged DLL: the external tag at `CGO_ENABLED=0`, the default tag with the DLL
-supplied through `LANCE_LIB_PATH`, and, on amd64, a `CGO 1` `-race` lane with
-the host gcc. The consumer rejects redistributable CRT modules before and
-after native operations; only the exact OS components `msvcp_win.dll`,
-`msvcrt.dll`, and `ucrtbase.dll` are accepted. The full suites enable Go's
-pointer checks, and they fail on any skipped or failing test. The public
-`lance_*` export set must exactly match the
-pinned header. Additional dependency exports are recorded separately; this lane
-does not establish their removal. The pinned `protoc` win64 executable is a build-time
-tool only; on arm64 it may run under OS emulation and is not part of the DLL,
-consumer, or Go runtime evidence.
-
-After those native gates pass, the lane evaluates the actual DLL dependency
-closure by module name. Direct and delay-load imports are both classified. An
-OS-only closure produces an unpublished companion candidate at
-`artifacts/windows-<arch>`; the shared verifier checks provenance, payload bytes
-and layout, and an external-tag roundtrip uses the exact staged DLL. The
-candidate is uploaded separately from native evidence. A redistributable or
-unclassified import blocks the candidate explicitly after native evidence. In
-earlier evidence for the pinned ac263 source, the native DLL imported
-`VCRUNTIME140.dll`, a separately deployed VC Runtime that happens to exist in
-the hosted `System32`; its presence there is not OS-only availability. Upstream
-[#215](https://github.com/lance-format/lance-c/issues/215) tracks the supported
-deployment contract; [#214](https://github.com/lance-format/lance-c/issues/214)
-tracks dependency exports and is distinct. Hosted ac263 static-CRT builds for
-both Windows architectures passed the C consumer, full external and
-supplied-library default SDK suites, and candidate verification at `c8373c9`
-([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510)).
-The amd64 race/checkptr lane also passed; Go does not support Windows arm64
-race builds. Both DLLs have OS-only direct imports, no delay-load imports, and
-passed the loaded-module CRT guard and supplied-library roundtrip.
-
-The exact verified Windows bytes are published at
-`v0.0.0-20261112113154-9496baf852b1`, with paired root requirements and selectors.
-Fresh public proxy and checksum-database verification passed for both modules.
-Hosted cold default, namespace-only and external consumers passed on Windows
-Server 2022 amd64 and Windows 11 ARM64 at `807cb84`
-([run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)).
-The consumers verified the public module, extracted DLL identity and loaded-module
-closure. This establishes these tested hosts, not older Windows versions or a
-released SDK version. See the [unpublished preview notes](PREVIEW.md).
-See [Windows public consumers](scripts/public-consumer/WINDOWS.md).
-The Unix public-consumer lane and its cache boundaries are described in
-[scripts/public-consumer/README.md](scripts/public-consumer/README.md).
-Remaining API parity and platform distribution work is tracked in
-[issue #1](https://github.com/lance-format/lance-go/issues/1).
-
-To produce native Windows evidence, dispatch the **Windows native** workflow
-manually from the Actions tab once it is present on the default branch; the
-workflow also runs for pull requests that touch its listed paths. It uploads
-the staged DLL/import library/headers, its verification logs, and any
-unpublished companion candidate as separate CI artifacts. Those artifacts are
-evidence for review, not a supported release or a published module. A blocked
-production gate is recorded as `BLOCKED` after the native evidence rather than
-as a passing candidate.
-
-Maintainers preparing a native bundle release should follow
-[RELEASING.md](RELEASING.md); that guide records the current Unix bundle
-limits and remaining release gates, and is not release authorization.
-
-Try the self-contained [roundtrip example](examples/roundtrip/main.go), which
-creates a temporary dataset, closes and reopens it, and checks the scanned rows:
-
-```sh
-CGO_ENABLED=0 go run ./examples/roundtrip
+```console
+$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.0-preview.1
+Created, reopened and scanned 3 rows: [10 20 30]
 ```
+
+Use the same tag's
+[examples](https://github.com/lance-format/lance-go/tree/v0.1.0-preview.1/examples)
+and [versioned Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.1)
+with that release. An unversioned example path runs whatever is on `main`,
+which can include APIs and examples that the published native bundle does not
+support.
+
+### Add the SDK to an application
+
+In your application module, install the same version and build with
+`CGO_ENABLED=0`:
+
+```console
+$ go get github.com/lance-format/lance-go@v0.1.0-preview.1
+```
+
+These two workflows download different sets. At preview.1, the versioned
+quickstart resolved only the Linux amd64 companion module (85,682,022 bytes).
+A fresh `go get` resolved packages for all build tags and downloaded all six
+companion archives (510,897,535 bytes total), although the application loads
+only its own target. After that dependency setup, a target build downloads only
+the selected companion. The quickstart uses the host companion; `go get`
+performs dependency setup. Neither command needs Rust, C or a preinstalled
+native library.
+
+## Release status and native mapping
+
+| Release | Go module version | Bundled native input | RTree |
+| --- | --- | --- | --- |
+| Published preview | `v0.1.0-preview.1` | `lance-c` commit `ac2634c553b450c7787577ffe964fc2b283b8334` | no |
+| Unreleased `main` | no release tag | Current pin in `internal/ffi/upstream.go` and the companion requirements; not a release mapping | Go API exists; the preview.1 bundle is not RTree-capable |
+
+The preview's exact native pin is `lance-c`
+`ac2634c553b450c7787577ffe964fc2b283b8334`, with header SHA-256
+`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`.
+It has no matching `lance-c` release tag and is not the `v0.1.9` release.
+The [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
+record the exact tag, companion module versions, payload hashes and post-tag
+acceptance. [`PREVIEW.md`](PREVIEW.md) is the historical preparation record for
+that first preview, not current release status.
+
+Go SDK releases are versioned independently from `lance-c`. Each release
+handoff updates this mapping, the version-pinned examples and the read-only
+deployment example together. Do not infer a mapping from an unversioned
+`main` checkout or from the informational `upstreamRelease` string.
+
+### Bundled platforms
+
+| Target | `v0.1.0-preview.1` | `main` and future releases |
+| --- | --- | --- |
+| `linux/amd64` | bundled | supported, bundled |
+| `linux/arm64` | bundled | supported, bundled |
+| `darwin/arm64` | bundled | supported, bundled |
+| `windows/amd64` | bundled | supported, bundled |
+| `windows/arm64` | bundled | supported, bundled |
+| `darwin/amd64` | bundled and accepted for preview.1 | retired; no new bundle or selector |
+
+The published preview.1 included `darwin/amd64`; after [#54](https://github.com/lance-format/lance-go/pull/54),
+new releases target the five non-Intel rows. The published module and tags
+remain available for preview.1. On a target without a selector, set
+`LANCE_LIB_PATH` to a matching library or provide a system library; see
+[How loading works](#how-loading-works).
+
+The preview.1 Linux amd64 payload was built on Ubuntu 24.04.5 with glibc 2.39
+and requires glibc 2.35 or newer. A glibc 2.34 host fails to load it with
+`GLIBC_2.35 not found`. This is the tested floor for that payload; it does not
+define the floor for a future bundle.
+
+## Supported consumer configuration
+
+For current and future releases, the supported installation path is:
+
+- build the application with `CGO_ENABLED=0`; cgo and source builds of
+  `lance-c` are not supported consumer paths;
+- load one official prebuilt shared library that exactly matches the Go SDK
+  version and running target; the default companion supplies it;
+- use Go 1.23 or newer on one of the five supported targets listed above.
+
+Do not mix a Go SDK with a `lance-c` library from another release or commit.
+`lance-c` has no runtime version symbol, so the loader cannot identify a
+mismatched library at runtime. Use the companion from the same Go version, or
+the exact library from that release's artifact described below.
+
+Default builds extract the selected companion on first use into
+`<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`. The process
+must be able to create and write that cache; setting `XDG_CACHE_HOME` moves it
+on Linux, and Windows uses the per-user `LocalAppData` directory. Later runs
+verify and reuse the cached bytes. See
+[How loading works](#how-loading-works) for the full order and cache contract.
+
+Targets without an official supported binary are outside this policy. Use the
+published platform list in
+[artifacts/README.md](artifacts/README.md#platform-and-runtime-scope) and the
+release notes to choose a target. Source builds and cgo consumers are
+maintainer or development work, not a supported installation.
+
+### Read-only or no-cache deployment
+
+A default build still works when the runtime cache cannot be written: prepare
+the exact official companion library on another host, make it read-only, and
+set `LANCE_LIB_PATH`. The loader checks `LANCE_LIB_PATH` before the bundle, so
+it neither extracts nor writes the cache.
+
+For `v0.1.0-preview.1` on Linux amd64, the matching companion module is
+`github.com/lance-format/lance-go/artifacts/linux-amd64` at
+`v0.0.0-20261111235843-ac5955a095d0`:
+
+```console
+$ module=github.com/lance-format/lance-go/artifacts/linux-amd64
+$ version=v0.0.0-20261111235843-ac5955a095d0
+$ go mod download "$module@$version"
+$ src="$(go env GOMODCACHE)/$module@$version/liblance_c.so.zst"
+$ install -d -m 0755 /opt/lance-go
+$ zstd -d "$src" -o /opt/lance-go/liblance_c.so
+$ chmod 0555 /opt/lance-go/liblance_c.so
+$ sha256sum /opt/lance-go/liblance_c.so
+e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378  /opt/lance-go/liblance_c.so
+```
+
+Then run the application with:
+
+```console
+$ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so CGO_ENABLED=0 go run <your-app>
+```
+
+The preparation host needs `zstd`; the target host needs only the extracted
+library and its normal system dependencies. Preview.1 has no separate
+`lance-c` release asset at its exact commit, so this companion payload is the
+official binary for that release. When a future release adopts a published
+`lance-c` archive, use that archive's exact asset and checksum instead; the
+release handoff records the mapping.
+
+## Platform and distribution evidence
+
+The published preview.1 passed default, namespace-only and external public
+consumers on all six targets, including cold target caches and literal native
+output. The five current targets use Go 1.23, `CGO_ENABLED=0` and the
+verified companion payloads; Windows additionally verified DLL identity,
+OS-only imports and loaded-module closure. Windows amd64 has race/checkptr
+coverage; Go does not support a Windows arm64 race build. These results do not
+establish older OS versions, musl or arbitrary CPU targets.
+
+The Windows native workflow builds pinned DLLs and unpublished companion
+candidates; it does not publish modules or replace the release sequence. The
+cross-build matrix compiles other targets but does not run or publish them.
+The detailed payload hashes, Windows dependency checks and public-consumer
+records are in [artifacts/README.md](artifacts/README.md),
+[scripts/public-consumer/WINDOWS.md](scripts/public-consumer/WINDOWS.md) and
+the [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1).
+RTree and raw storage 2.2 Blob-reader limits remain tracked in
+[issue #6](https://github.com/lance-format/lance-go/issues/6) and
+[lance-c #153](https://github.com/lance-format/lance-c/issues/153) /
+[lance-c #167](https://github.com/lance-format/lance-c/issues/167).
 
 ## Read a dataset
 
@@ -688,11 +736,17 @@ snapshot. `indexType` selects the plugin and `params` is forwarded verbatim as
 plugin JSON; nil keeps native defaults. Use the returned dataset or reopen the
 source to query the new index; the receiver keeps its current version.
 
-RTree (`index.ScalarRTree`, native value 9) indexes a GeoArrow geometry column;
-the current SDK coverage exercises LineString. Its optional plugin parameter is
-`page_size`; native code supplies the default and rejects values below 2.
-Filters use native geometry predicates, and native code owns candidate
-generation and exact intersection checks:
+RTree (`index.ScalarRTree`, native value 9) indexes a GeoArrow geometry
+column; the current SDK coverage exercises LineString. Its optional plugin
+parameter is `page_size`; native code supplies the default and rejects values
+below 2. Filters use native geometry predicates, and native code owns candidate
+generation and exact intersection checks.
+
+The Go API and the native library are versioned separately. The RTree symbol
+exists on `main` and is intended for a future release, but it is not in the
+published `v0.1.0-preview.1` API, and that release's default companion was
+built before native RTree support. The example below therefore requires an
+RTree-capable native library; it does not run against the preview.1 bundle.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -708,9 +762,12 @@ scan, err := indexed.Scan(
 ```
 
 RTree uses the generic scalar-index ABI. A native library that predates RTree
-still loads, but rejects the type with a native error. The SDK neither emulates
-RTree nor treats scalar-index symbol presence as proof that enum value 9 is
-supported.
+still loads, but rejects the type with a native error. Scalar-index symbol
+presence is not proof that enum value 9 is supported; the SDK neither emulates
+RTree nor substitutes a different index. Until a release handoff selects a
+native bundle with RTree, set `LANCE_LIB_PATH` to an RTree-capable library.
+When that release exists, state its Go tag and native bundle together here and
+remove the manual-library requirement.
 
 ## Vector search
 
@@ -1069,16 +1126,29 @@ package activates the same platform bundle as the root package.
 
 The bundle cache is
 `<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`; setting
-`XDG_CACHE_HOME` moves it on Linux. Cached bytes are checked by exact size and
+`XDG_CACHE_HOME` moves it on Linux. The first bundled load must be able to
+create and write this directory. If the cache is read-only or unavailable,
+set `LANCE_LIB_PATH` to the exact library for that SDK release; the environment
+path is checked first, so no cache write is attempted. Cached bytes are checked
+by exact size and
 SHA-256 before `dlopen`. Extraction writes a temporary file, verifies the
 decompressed size and hash, syncs it, and publishes it with an atomic rename
 under a cross-process lock. A corrupt regular entry is replaced; failed
 extraction publishes nothing.
 
+All companion downloads happen through Go module resolution and the build;
+the loader itself does not use the network. A default build embeds the selected
+payload, while an external build expects the operator to supply the library.
+
 The library is never unloaded. `lance-c` owns a Tokio runtime, thread-local
 error state and handles that may outlive a dataset, so unloading while native
 threads or callbacks may still run is not safe. Changing `LANCE_LIB_PATH`
 after a successful load has no effect in that process.
+
+If a bundled load fails with a permission error under the cache path, provide a
+writable cache for the process or set `LANCE_LIB_PATH` to the exact library for
+the installed SDK. Do not substitute a library from another Go or `lance-c`
+release; the loader cannot detect that mismatch before native calls fail.
 
 Build tags:
 
@@ -1100,8 +1170,9 @@ uses `golang.org/x/sys/windows` for `LoadLibrary`, `GetProcAddress` and
 
 ## Building liblance_c
 
-The Go module does not vendor the C header or the native library. To build
-both from the exact upstream revision this binding targets:
+This is maintainer and native-development work, not a supported consumer
+installation path. The Go module does not vendor the C header or the native
+library. To build both from the exact upstream revision this binding targets:
 
 ```console
 ./scripts/build-lance-c.sh
@@ -1221,8 +1292,9 @@ delay-load imports and runs a `/MT` native consumer that rejects redistributable
 CRT modules before and after native operations. On windows/amd64 it also runs
 the full external-tag suite with `-race`; the Go race detector has no
 windows/arm64 support, so that lane is recorded as unsupported rather than
-skipped. CI still does not publish a Windows binary or establish a cold default
-Windows bundle.
+skipped. The CI workflow does not publish modules; published Windows
+companions and their cold public consumers are recorded in
+[artifacts/README.md](artifacts/README.md).
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -1234,7 +1306,12 @@ C layouts, producer ownership, release callbacks and stream reader lifetimes.
 The race lane also enables Go's pointer checks; native Rust internals are outside
 Go's race detector.
 
-The CI workflow runs on pull requests and pushes to `main`. Its default Go lane
+The CI workflow runs on pull requests and pushes to `main`. It also runs
+[`scripts/verify-quickstart.sh`](scripts/verify-quickstart.sh), which executes
+the version-pinned quickstart from an empty directory, checks its literal
+output and selected companion, then reruns the example with the exact companion
+library extracted and a read-only runtime cache. That check uses the published
+modules and does not build Rust or `lance-c`. The default Go lane
 runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered
@@ -1258,7 +1335,7 @@ internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
 benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
-scripts/          build-lance-c.sh, check-abi-symbols.go
+scripts/          build-lance-c.sh, check-abi-symbols.go, verify-quickstart.sh
 ```
 
 The Arrow bridge is independent of the loader and Lance FFI. Native calls and
