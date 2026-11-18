@@ -30,9 +30,12 @@ Windows cold public default, namespace-only and external consumers passed at
 the then-published four Unix targets passed the same modes at that head in
 [run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211).
 These 18 executions cover the then-published modules and exact root
-pseudo-version; the `darwin/amd64` cells are historical, and post-tag
-validation is still required. Real AWS S3 refresh passed in both
-direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
+pseudo-version; the `darwin/amd64` cells are historical. Post-tag acceptance
+later passed for `v0.1.0-preview.1` in
+[Unix run 43404796150](https://github.com/lance-format/lance-go/actions/runs/43404796150)
+and [Windows run 43404798900](https://github.com/lance-format/lance-go/actions/runs/43404798900).
+Each new tag still requires its own post-tag runs. Real AWS S3 refresh passed
+in both direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
 `ac2634c`; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
@@ -82,6 +85,29 @@ set -euo pipefail
 unset GOFLAGS GORACE
 REPO_ROOT=$(pwd)
 ```
+
+## Documentation handoff
+
+Version-specific consumer documentation belongs to the same release handoff
+as the root version and native input. Do not derive it from an unversioned
+`main` checkout or publish it before the exact companion archives exist.
+Update together:
+
+- README Quickstart and application install command to the new root tag;
+- README release/native mapping and the bundled-platform table;
+- README RTree boundary, stating the Go tag and native requirement together;
+- README read-only deployment example's exact companion module, version and
+  library hash;
+- `scripts/verify-quickstart.sh` version, companion module/version and
+  expected library identity;
+- `artifacts/README.md` with the new companion versions, payload facts and
+  accepted evidence.
+
+Keep `PREVIEW.md` as the historical first-preview record. Put new
+preview-specific notes in the release record or a new dated file rather than
+silently rewriting the historical one. The release handoff owns the
+beta/preview version wording; a docs-only change does not weaken the runtime
+acceptance requirements below.
 
 ## 1. Choose and verify the native input
 
@@ -516,16 +542,15 @@ header `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`,
 payload `e933fc867b2a9ee404d01959aaef8dc8378ddf0b582d7bb2367ed3dbfe46c5b5`,
 and uncompressed library
 `e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` are
-current pin examples, not a released preview. The accepted `linux/amd64`
-module is
+the published preview.1 pin examples. The accepted `linux/amd64` module is
 `github.com/lance-format/lance-go/artifacts/linux-amd64@v0.0.0-20261111235843-ac5955a095d0`.
 The published companion versions, payload sizes, and hashes are listed in
 [artifacts/README.md](artifacts/README.md), together with exact-root cold public
 acceptance. A new release tag still requires the tag-based gates above.
 
-The [unpublished preview notes](PREVIEW.md) collect the current evidence and
-remaining release gates. Finalize those notes from the release record. Include
-the artifact version, payload
+The [historical preview preparation notes](PREVIEW.md) record the first
+preview's evidence and release gates. Keep them as history; put a new release's
+notes in its release record. Include the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,
 the default and external behavior, and what remains pending. Do not claim
 Windows or other Unix runtime support or completion of issue #1 without the

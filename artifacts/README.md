@@ -18,6 +18,19 @@ produce complete, unpublished candidate modules separately; publish an accepted
 candidate on its artifact branch, then adopt its metadata, requirement and
 selector without merging the payload into the SDK tree.
 
+## Supported consumer platforms
+
+The supported consumer targets for current and future releases are
+`linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`, and
+`windows/arm64`. Consumers build with `CGO_ENABLED=0` and use the official
+prebuilt library from the companion module for their SDK version and target.
+Source builds and cgo-based consumption are outside the supported installation
+paths. The published `v0.1.0-preview.1` also included `darwin/amd64`; that row
+is historical after [#54](https://github.com/lance-format/lance-go/pull/54) and
+no new release selects it. See the README
+[supported consumer configuration](../README.md#supported-consumer-configuration)
+and [platform and runtime scope](#platform-and-runtime-scope) below.
+
 ## Active Unix bundles
 
 The root module requires these three published Unix data-only modules, plus
@@ -143,10 +156,12 @@ runtime floor or released SDK version is inferred.
 
 Three Unix targets have active bundles. The `linux/amd64` library was built
 on Ubuntu 24.04.5 with glibc 2.39 and requires libc, libm, libgcc_s and the
-dynamic loader. The active companion payloads use the same pin and header;
-their cold runtime behavior is accepted on Linux glibc 2.39 and macOS 15.x
-hosts. The retired `darwin/amd64` module remains published with its historical
-runtime evidence, but new releases neither require nor select it. Do not
+dynamic loader. The published preview.1 Linux amd64 payload requires glibc 2.35
+or newer; a glibc 2.34 host fails with `GLIBC_2.35 not found`. The active
+companion payloads use the same pin and header; their cold runtime behavior is
+accepted on Linux glibc 2.39 and macOS 15.x hosts. The retired `darwin/amd64`
+module remains published with its historical runtime evidence, but new
+releases neither require nor select it. Do not
 assume these Unix payloads work on older glibc/macOS, musl or other architectures.
 Windows uses separately validated PE DLLs, as recorded below.
 
