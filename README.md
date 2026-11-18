@@ -6,20 +6,20 @@ official `lance-c` C ABI without cgo.
 ## Quickstart
 
 The latest published SDK is the pre-release
-[v0.1.0-preview.1](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1).
+[v0.1.0-preview.2](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2).
 Its roundtrip example creates a temporary dataset, closes and reopens it,
 scans three rows, and removes the dataset. Run the version-pinned command from
 any empty directory; it needs neither this checkout nor an existing dataset or
 a locally installed `lance-c` library:
 
 ```console
-$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.0-preview.1
+$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.0-preview.2
 Created, reopened and scanned 3 rows: [10 20 30]
 ```
 
 Use the same tag's
-[examples](https://github.com/lance-format/lance-go/tree/v0.1.0-preview.1/examples)
-and [versioned Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.1)
+[examples](https://github.com/lance-format/lance-go/tree/v0.1.0-preview.2/examples)
+and [versioned Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.2)
 with that release. An unversioned example path runs whatever is on `main`,
 which can include APIs and examples that the published native bundle does not
 support.
@@ -30,39 +30,37 @@ In your application module, install the same version and build with
 `CGO_ENABLED=0`:
 
 ```console
-$ go get github.com/lance-format/lance-go@v0.1.0-preview.1
+$ go get github.com/lance-format/lance-go@v0.1.0-preview.2
 ```
 
-These two workflows download different sets. At preview.1, the versioned
-quickstart resolved only the Linux amd64 companion module (85,682,022 bytes).
-A fresh `go get` resolved packages for all build tags and downloaded all six
-companion archives (510,897,535 bytes total), although the application loads
-only its own target. After that dependency setup, a target build downloads only
-the selected companion. The quickstart uses the host companion; `go get`
-performs dependency setup. Neither command needs Rust, C or a preinstalled
-native library.
+These two workflows download different sets. At preview.2, the versioned
+quickstart resolved only the Linux amd64 companion module (87,186,200 bytes).
+A fresh `go get` resolved packages for all build tags and downloaded all five
+companion archives, although the application loads only its own target. After
+that dependency setup, a target build downloads only the selected companion.
+The quickstart uses the host companion; `go get` performs dependency setup.
+Neither command needs Rust, C or a preinstalled native library.
 
 ## Release status and native mapping
 
 | Release | Go module version | Bundled native input | RTree |
 | --- | --- | --- | --- |
-| Published preview | `v0.1.0-preview.1` | `lance-c` commit `ac2634c553b450c7787577ffe964fc2b283b8334` | no |
-| Unreleased `main` | no release tag | `lance-c v0.2.0-beta.1` at `e2564b89be36bb18f5beff6d673daf9dfff8c986`; companions `v0.1.0-preview.2` | Go API exists; main bundles are RTree-capable |
+| Current preview | `v0.1.0-preview.2` | `lance-c v0.2.0-beta.1` at `e2564b89be36bb18f5beff6d673daf9dfff8c986` | yes |
+| Previous preview | `v0.1.0-preview.1` | `lance-c` commit `ac2634c553b450c7787577ffe964fc2b283b8334` | no |
 
-The published preview's exact native pin is `lance-c`
-`ac2634c553b450c7787577ffe964fc2b283b8334`, with header SHA-256
-`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`.
-It has no matching `lance-c` release tag and is not the `v0.1.9` release.
-The current `main` candidate instead pins `lance-c v0.2.0-beta.1` at
-`e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical header SHA-256
+The current preview's exact native pin is the annotated `lance-c v0.2.0-beta.1`
+tag, peeled to `e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical
+header SHA-256
 `90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
-Its companion modules are published, but the `v0.1.0-preview.2` root tag is
-not; the Quickstart above intentionally remains on the published preview.1
-tag until that release handoff completes.
-The [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
-record the exact tag, companion module versions, payload hashes and post-tag
-acceptance. [`PREVIEW.md`](PREVIEW.md) is the historical preparation record for
-that first preview, not current release status.
+The previous preview's exact pin is `lance-c`
+`ac2634c553b450c7787577ffe964fc2b283b8334`, with header SHA-256
+`c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`;
+it has no matching `lance-c` release tag and is not the `v0.1.9` release.
+The [preview.2 release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2)
+record the current tag, companion module versions, payload hashes and post-tag
+acceptance. The [preview.1 notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
+remain historical. [`PREVIEW.md`](PREVIEW.md) is the historical preparation
+record for the first preview, not current release status.
 
 Go SDK releases are versioned independently from `lance-c`. Each release
 handoff updates this mapping, the version-pinned examples and the read-only
@@ -71,25 +69,25 @@ deployment example together. Do not infer a mapping from an unversioned
 
 ### Bundled platforms
 
-| Target | `v0.1.0-preview.1` | `main` and future releases |
+| Target | `v0.1.0-preview.2` | `v0.1.0-preview.1` |
 | --- | --- | --- |
-| `linux/amd64` | bundled | supported, bundled |
-| `linux/arm64` | bundled | supported, bundled |
-| `darwin/arm64` | bundled | supported, bundled |
-| `windows/amd64` | bundled | supported, bundled |
-| `windows/arm64` | bundled | supported, bundled |
-| `darwin/amd64` | bundled and accepted for preview.1 | retired; no new bundle or selector |
+| `linux/amd64` | bundled | bundled |
+| `linux/arm64` | bundled | bundled |
+| `darwin/arm64` | bundled | bundled |
+| `windows/amd64` | bundled | bundled |
+| `windows/arm64` | bundled | bundled |
+| `darwin/amd64` | retired; no new bundle or selector | bundled and accepted for preview.1 |
 
-The published preview.1 included `darwin/amd64`; after [#54](https://github.com/lance-format/lance-go/pull/54),
-new releases target the five non-Intel rows. The published module and tags
-remain available for preview.1. On a target without a selector, set
-`LANCE_LIB_PATH` to a matching library or provide a system library; see
-[How loading works](#how-loading-works).
+Preview.2 targets the five non-Intel rows. The published `darwin/amd64` module
+and tags from preview.1 remain available at their original revisions. On a
+target without a selector, set `LANCE_LIB_PATH` to a matching library or
+provide a system library; see [How loading works](#how-loading-works).
 
-The preview.1 Linux amd64 payload was built on Ubuntu 24.04.5 with glibc 2.39
-and requires glibc 2.35 or newer. A glibc 2.34 host fails to load it with
-`GLIBC_2.35 not found`. This is the tested floor for that payload; it does not
-define the floor for a future bundle.
+Preview.2 uses the official generic Linux x86_64/AArch64 builds with glibc
+2.28 as the verified floor. The preview.1 Linux amd64 payload was built on
+Ubuntu 24.04.5 with glibc 2.39 and requires glibc 2.35 or newer; a glibc 2.34
+host fails to load it with `GLIBC_2.35 not found`. That older floor applies
+only to preview.1.
 
 ## Supported consumer configuration
 
@@ -126,20 +124,20 @@ the exact official companion library on another host, make it read-only, and
 set `LANCE_LIB_PATH`. The loader checks `LANCE_LIB_PATH` before the bundle, so
 it neither extracts nor writes the cache.
 
-For `v0.1.0-preview.1` on Linux amd64, the matching companion module is
+For `v0.1.0-preview.2` on Linux amd64, the matching companion module is
 `github.com/lance-format/lance-go/artifacts/linux-amd64` at
-`v0.0.0-20261111235843-ac5955a095d0`:
+`v0.1.0-preview.2`:
 
 ```console
 $ module=github.com/lance-format/lance-go/artifacts/linux-amd64
-$ version=v0.0.0-20261111235843-ac5955a095d0
+$ version=v0.1.0-preview.2
 $ go mod download "$module@$version"
 $ src="$(go env GOMODCACHE)/$module@$version/liblance_c.so.zst"
 $ install -d -m 0755 /opt/lance-go
 $ zstd -d "$src" -o /opt/lance-go/liblance_c.so
 $ chmod 0555 /opt/lance-go/liblance_c.so
 $ sha256sum /opt/lance-go/liblance_c.so
-e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378  /opt/lance-go/liblance_c.so
+8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13  /opt/lance-go/liblance_c.so
 ```
 
 Then run the application with:
@@ -149,11 +147,10 @@ $ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so CGO_ENABLED=0 go run <your-app>
 ```
 
 The preparation host needs `zstd`; the target host needs only the extracted
-library and its normal system dependencies. Preview.1 has no separate
-`lance-c` release asset at its exact commit, so this companion payload is the
-official binary for that release. When a future release adopts a published
-`lance-c` archive, use that archive's exact asset and checksum instead; the
-release handoff records the mapping.
+library and its normal system dependencies. In preview.2 this companion payload
+is the exact shared library from the official `lance-c v0.2.0-beta.1` release
+archive; the release record carries the archive checksum and per-target byte
+match. Preview.1 had no matching `lance-c` release asset at its exact commit.
 
 ## Platform and distribution evidence
 
@@ -748,14 +745,12 @@ parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately. The published
-`v0.1.0-preview.1` API and bundle predate RTree. The current `main` candidate
-pins `lance-c v0.2.0-beta.1` and its default companion bundles are
-RTree-capable; the `v0.1.0-preview.2` root tag is not published yet. The
-example below runs on the candidate default bundle or on an explicit
-RTree-capable `LANCE_LIB_PATH` library. Until preview.2 is published, a
-released consumer should continue to use preview.1 or supply an explicit
-RTree-capable library.
+The Go API and the native library are versioned separately.
+`v0.1.0-preview.2` and its default companions pin `lance-c v0.2.0-beta.1`
+(`e2564b89be36bb18f5beff6d673daf9dfff8c986`) and are RTree-capable. The
+previous `v0.1.0-preview.1` API and bundle predate RTree. The example below
+runs on the preview.2 default bundle; use an explicit RTree-capable
+`LANCE_LIB_PATH` library only when testing an older SDK or library.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -773,10 +768,10 @@ scan, err := indexed.Scan(
 RTree uses the generic scalar-index ABI. A native library that predates RTree
 still loads, but rejects the type with a native error. Scalar-index symbol
 presence is not proof that enum value 9 is supported; the SDK neither emulates
-RTree nor substitutes a different index. Until a release handoff selects a
-native bundle with RTree, set `LANCE_LIB_PATH` to an RTree-capable library.
-When that release exists, state its Go tag and native bundle together here and
-remove the manual-library requirement.
+RTree nor substitutes a different index. For `v0.1.0-preview.2`, the native
+requirement is `lance-c v0.2.0-beta.1` at
+`e2564b89be36bb18f5beff6d673daf9dfff8c986`; the preview.1 bundle instead
+rejects enum value 9.
 
 ## Vector search
 
@@ -1269,8 +1264,8 @@ CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
 The RTree regression test is build-tagged so it can be selected explicitly.
-The current `main` default companions are RTree-capable; run it through the
-bundle with no external library:
+The `v0.1.0-preview.2` default companions are RTree-capable; run it through
+the bundle with no external library:
 
 ```console
 env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
