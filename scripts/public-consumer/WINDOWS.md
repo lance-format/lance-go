@@ -5,15 +5,15 @@
 `run.sh`: Windows has a different cache contract, needs a PE check, and can
 report the module that the loader actually mapped.
 
-The Windows modules are published at `v0.0.0-20261112113154-9496baf852b1`
-and adopted by this branch. Native candidate acceptance passed at `c8373c9`.
-Both native hosts passed all three public-consumer modes at root `807cb84` in
-[run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526):
-Windows Server 2022 amd64 and Windows 11 ARM64, with Go 1.23.0 and CGO disabled.
-The default and namespace consumers loaded the published DLL from a cold cache;
-the external consumer loaded that verified DLL without artifact linkage or
-extraction. All loaded-module guards passed. This exact-revision acceptance
-does not substitute for post-tag checks or establish older Windows support.
+The Windows modules are published at `v0.1.0-preview.2` from the official
+`lance-c v0.2.0-beta.1` release at `e2564b89be36bb18f5beff6d673daf9dfff8c986`.
+The payloads decompress byte-for-byte to the official archive DLLs. Candidate
+public-consumer acceptance for preview.2 belongs to the bundle PR and the
+post-tag release record; the preview.1 six-target evidence remains historical.
+The default and namespace consumers must load the published DLL from a cold
+cache; the external consumer must load that verified DLL without artifact
+linkage or extraction. This exact-revision acceptance does not substitute for
+post-tag checks or establish older Windows support.
 
 ## Prerequisite
 

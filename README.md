@@ -47,12 +47,18 @@ native library.
 | Release | Go module version | Bundled native input | RTree |
 | --- | --- | --- | --- |
 | Published preview | `v0.1.0-preview.1` | `lance-c` commit `ac2634c553b450c7787577ffe964fc2b283b8334` | no |
-| Unreleased `main` | no release tag | Current pin in `internal/ffi/upstream.go` and the companion requirements; not a release mapping | Go API exists; the preview.1 bundle is not RTree-capable |
+| Unreleased `main` | no release tag | `lance-c v0.2.0-beta.1` at `e2564b89be36bb18f5beff6d673daf9dfff8c986`; companions `v0.1.0-preview.2` | Go API exists; main bundles are RTree-capable |
 
-The preview's exact native pin is `lance-c`
+The published preview's exact native pin is `lance-c`
 `ac2634c553b450c7787577ffe964fc2b283b8334`, with header SHA-256
 `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`.
 It has no matching `lance-c` release tag and is not the `v0.1.9` release.
+The current `main` candidate instead pins `lance-c v0.2.0-beta.1` at
+`e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical header SHA-256
+`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
+Its companion modules are published, but the `v0.1.0-preview.2` root tag is
+not; the Quickstart above intentionally remains on the published preview.1
+tag until that release handoff completes.
 The [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
 record the exact tag, companion module versions, payload hashes and post-tag
 acceptance. [`PREVIEW.md`](PREVIEW.md) is the historical preparation record for
@@ -742,11 +748,14 @@ parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately. The RTree symbol
-exists on `main` and is intended for a future release, but it is not in the
-published `v0.1.0-preview.1` API, and that release's default companion was
-built before native RTree support. The example below therefore requires an
-RTree-capable native library; it does not run against the preview.1 bundle.
+The Go API and the native library are versioned separately. The published
+`v0.1.0-preview.1` API and bundle predate RTree. The current `main` candidate
+pins `lance-c v0.2.0-beta.1` and its default companion bundles are
+RTree-capable; the `v0.1.0-preview.2` root tag is not published yet. The
+example below runs on the candidate default bundle or on an explicit
+RTree-capable `LANCE_LIB_PATH` library. Until preview.2 is published, a
+released consumer should continue to use preview.1 or supply an explicit
+RTree-capable library.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -1203,7 +1212,7 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show ac2634c553b450c7787577ffe964fc2b283b8334:include/lance/lance.h > lance.h
+git -C /path/to/lance-c show e2564b89be36bb18f5beff6d673daf9dfff8c986:include/lance/lance.h > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
@@ -1259,17 +1268,18 @@ CGO_ENABLED=0 go test -count=1 -tags lance_external_lib ./...
 CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
-The RTree regression tests are build-tagged because the default native pin
-predates RTree. Run the public contract test only against a library that
-implements `LANCE_SCALAR_RTREE`:
+The RTree regression test is build-tagged so it can be selected explicitly.
+The current `main` default companions are RTree-capable; run it through the
+bundle with no external library:
 
 ```console
-export LANCE_LIB_PATH=/path/to/rtree-capable/liblance_c.so
-CGO_ENABLED=0 go test -tags lance_rtree_native -run '^TestRTree' -count=1 -v .
+env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
+  CGO_ENABLED=0 go test -tags lance_rtree_native -run '^TestRTree' -count=1 -v .
 ```
 
-To verify on linux/amd64 that a pre-RTree library still loads and rejects the
-type honestly, run the legacy selector with the pinned default bundle:
+To verify the historical pre-RTree behavior, check out the published
+`v0.1.0-preview.1` tag and run the legacy selector against that tag's default
+bundle:
 
 ```console
 env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \

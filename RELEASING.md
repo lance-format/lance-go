@@ -5,39 +5,26 @@ This is the maintainer sequence for a preview release that includes a compiled
 contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
-Three Unix targets now have published artifact modules and active selectors:
-`linux/amd64`, `linux/arm64`, and `darwin/arm64`. The `linux/amd64` artifact is
-the accepted published artifact and has prior native, default, external, and
-race evidence. The two companion modules are published and their selectors are
-active. Intel macOS is retired for new releases; its published module and tags
-remain at their original revisions, but no current release requires or selects
-them.
+Three Unix and two Windows companion modules are published at
+`v0.1.0-preview.2` from the official `lance-c v0.2.0-beta.1` release. The
+annotated tag object `f19335330b0c2b28bd370e94f5c867c60ce81ed9` peels to
+`e2564b89be36bb18f5beff6d673daf9dfff8c986`; the canonical header SHA-256 is
+`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
+All five active selectors and root requirements use those companion tags. The
+five release archives and checksums were verified, each companion payload
+decompresses byte-for-byte to the official archive library, and every module
+resolves through the public proxy and checksum database. Candidate
+public-consumer and default-bundle RTree/raw-v2.2 Blob evidence belongs to the
+preview.2 bundle PR; post-tag evidence belongs to the release record.
 
-Before the retirement, all four then-published Unix targets passed cold public
-default, namespace-only and external consumers at root `b8132c7`
-([run 43193825133](https://github.com/lance-format/lance-go/actions/runs/43193825133)),
-including final cleanup; the `darwin/amd64` executions are historical evidence
-for that published module and are not part of current support. This evidence
-covers Go 1.23.0, Linux glibc 2.39 and macOS 15.x; it does not replace final
-tag acceptance. Windows amd64 and arm64 static-CRT candidates passed native C,
-full SDK, OS-only import closure, loaded-module guards, packaging verification
-and supplied-library roundtrip at `c8373c9`
-([run 43197858510](https://github.com/lance-format/lance-go/actions/runs/43197858510));
-amd64 race/checkptr also passed. Those Windows modules are published at
-`v0.0.0-20261112113154-9496baf852b1` and their requirements/selectors are active.
-Windows cold public default, namespace-only and external consumers passed at
-`807cb84` ([run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526));
-the then-published four Unix targets passed the same modes at that head in
-[run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211).
-These 18 executions cover the then-published modules and exact root
-pseudo-version; the `darwin/amd64` cells are historical. Post-tag acceptance
-later passed for `v0.1.0-preview.1` in
-[Unix run 43404796150](https://github.com/lance-format/lance-go/actions/runs/43404796150)
-and [Windows run 43404798900](https://github.com/lance-format/lance-go/actions/runs/43404798900).
-Each new tag still requires its own post-tag runs. Real AWS S3 refresh passed
-in both direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
+Intel macOS is retired for new releases; its published module and tags remain
+at their original revisions, but no current release requires or selects them.
+The preview.1 six-target evidence and historical runs remain in
+[PREVIEW.md](PREVIEW.md) and the preview.1 release notes. Each new tag still
+requires its own post-tag runs. Real AWS S3 refresh passed in both
+direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
-`ac2634c`; it does not claim commercial namespace-service or
+`e2564b89`; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
 for the claimed target. They must not claim completion of issue #1; the
 broader RTree/raw v2.2 official-core work remains outside this preview.
@@ -113,9 +100,11 @@ acceptance requirements below.
 
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
 header hash. `upstreamRelease` is informational; it does not prove that a
-release archive, tag, and commit contain the same header. The pinned commit and
-the `v0.1.9` archive have different headers and ABI; do not substitute
-`v0.1.9` for the pin.
+release archive, tag, and commit contain the same header. The current pin is
+the annotated `v0.2.0-beta.1` tag, peeled to
+`e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical header
+`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
+Do not substitute another release archive for that pin.
 
 Version selection is a maintainer decision tracked by issue #1. Check the
 actual native release, tag, and commit alignment before choosing a version. Do
@@ -240,20 +229,21 @@ these states separate; one does not imply another:
 
 Fill each cell with its tested object, result, and evidence, or an explicit
 pending/unsupported state. This is an evidence template, not a support claim.
-The pinned `ac2634c` native build exports 878 declared C symbols; the current
+The pinned `e2564b89` native build exports 887 declared C symbols; the current
 Go bindings bind 603 of them. Record both counts separately. The ABI checker
 validates the bound subset; it does not establish runtime coverage of every
 native export.
 
-The `linux/amd64` library was built on Ubuntu 24.04.5 with glibc 2.39 and
-requires libc, libm, libgcc_s, and the dynamic loader. That ELF payload is
-specific to Linux amd64. The other four targets use their own bundles; their
-accepted hosts are listed in [the preview notes](PREVIEW.md). Older glibc and
-musl compatibility have not been established. The real S3
-acceptance above is scoped to Linux amd64 and the historical `native88` library
-at source `59a427e`; it is not evidence for the `ac2634c` native payload.
-Source review is a separate state: it can justify understanding of the native
-change, but it is not ABI or runtime acceptance.
+The official `linux/amd64` and `linux/arm64` release packages are generic
+glibc 2.28 builds. The macOS package uses deployment target 11.0 and is tested
+on macOS 15.x hosts. The other supported targets use their own bundles; their
+accepted hosts and current payload facts are listed in
+[artifacts/README.md](artifacts/README.md). Older glibc/macOS floors and musl
+compatibility have not been established beyond the recorded package floors.
+The real S3 acceptance above is scoped to Linux amd64 and the historical
+`native88` library at source `59a427e`; it is not evidence for the
+`e2564b89` native payload. Source review is a separate state: it can justify
+understanding of the native change, but it is not ABI or runtime acceptance.
 
 A race run must use a supplied library; record whether it used the default
 selector or the external tag. For the external contract, run
@@ -537,16 +527,17 @@ platform:         target, ABI/runtime/race/default/external results, floor and d
 gaps:             untested targets and storage paths
 ```
 
-The current `linux/amd64` bundle, native `ac2634c553b450c7787577ffe964fc2b283b8334`,
-header `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b`,
-payload `e933fc867b2a9ee404d01959aaef8dc8378ddf0b582d7bb2367ed3dbfe46c5b5`,
-and uncompressed library
-`e5571d6da16e81a0434f2509ade5262785b63df0b37ff7155537642841dd9378` are
-the published preview.1 pin examples. The accepted `linux/amd64` module is
-`github.com/lance-format/lance-go/artifacts/linux-amd64@v0.0.0-20261111235843-ac5955a095d0`.
+The current `linux/amd64` bundle, native
+`e2564b89be36bb18f5beff6d673daf9dfff8c986`, header
+`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`, payload
+`1de588c93d23b5ecbe0288ce67e7ba236089d3b66e37d55f565812937b26eba0`, and
+uncompressed library
+`8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13` are the
+preview.2 pin examples. The published module is
+`github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.0-preview.2`.
 The published companion versions, payload sizes, and hashes are listed in
-[artifacts/README.md](artifacts/README.md), together with exact-root cold public
-acceptance. A new release tag still requires the tag-based gates above.
+[artifacts/README.md](artifacts/README.md), together with the current public
+acceptance record. A new release tag still requires the tag-based gates above.
 
 The [historical preview preparation notes](PREVIEW.md) record the first
 preview's evidence and release gates. Keep them as history; put a new release's
