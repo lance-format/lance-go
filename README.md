@@ -154,13 +154,17 @@ match. Preview.1 had no matching `lance-c` release asset at its exact commit.
 
 ## Platform and distribution evidence
 
-The published preview.1 passed default, namespace-only and external public
-consumers on all six targets, including cold target caches and literal native
-output. The five current targets use Go 1.23, `CGO_ENABLED=0` and the
-verified companion payloads; Windows additionally verified DLL identity,
-OS-only imports and loaded-module closure. Windows amd64 has race/checkptr
-coverage; Go does not support a Windows arm64 race build. These results do not
-establish older OS versions, musl or arbitrary CPU targets.
+The published preview.2 passed default, namespace-only and external public
+consumers on all five targets at `v0.1.0-preview.2`:
+[Unix run 44401996663](https://github.com/lance-format/lance-go/actions/runs/44401996663)
+and [Windows run 44402002254](https://github.com/lance-format/lance-go/actions/runs/44402002254).
+All 15 modes used cold target caches and literal native output. The same runs
+exercised the default-bundle RTree and raw storage 2.2 Blob-reader regressions,
+including the released Lance 14.0.2 fixture's projection, descriptor,
+NULL/empty and multi-column ownership coverage. Windows additionally verified
+DLL identity, OS-only imports, loaded-module closure and the supplied-DLL
+external path. The preview.1 six-target results remain historical. These
+results do not establish older OS versions, musl or arbitrary CPU targets.
 
 The Windows native workflow builds pinned DLLs and unpublished companion
 candidates; it does not publish modules or replace the release sequence. The
@@ -168,11 +172,10 @@ cross-build matrix compiles other targets but does not run or publish them.
 The detailed payload hashes, Windows dependency checks and public-consumer
 records are in [artifacts/README.md](artifacts/README.md),
 [scripts/public-consumer/WINDOWS.md](scripts/public-consumer/WINDOWS.md) and
-the [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1).
-RTree and raw storage 2.2 Blob-reader limits remain tracked in
-[issue #6](https://github.com/lance-format/lance-go/issues/6) and
-[lance-c #153](https://github.com/lance-format/lance-c/issues/153) /
-[lance-c #167](https://github.com/lance-format/lance-c/issues/167).
+the [preview.2 release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2).
+RTree and raw v2.2 Blob reader delivery are part of preview.2;
+[issue #6](https://github.com/lance-format/lance-go/issues/6) tracks the
+remaining roadmap scope.
 
 ## Read a dataset
 
@@ -659,8 +662,11 @@ Contracts and limits:
   values remain distinct. Sliced arrays and repeated calls are supported; the
   caller retains ownership of the array. `FinishArray` returns the prepared
   blob descriptors. BinaryView is not supported by the Arrow bridge.
-- Raw v2.2 projection follows native lance-c behavior. The upstream projection
-  issue (issue 167) is tracked there; this package does not work around it.
+- Raw v2.2 Blob files, including the released Lance 14.0.2 fixture, read
+  through the preview.2 official bundle. Default and explicit projection,
+  descriptors, NULL/empty values and multi-column ownership follow the native
+  reader contract; this package does not add a second parser or rewrite the
+  physical Blob schema.
 
 Pass an existing `*lance.Session` through `file.ReaderOptions.Session`,
 `file.WriterOptions.Session`, or `file.SessionOptions.Session` to share its
@@ -728,9 +734,9 @@ materializes every blob column as binary payloads, while
 `BlobHandlingAllDescriptions` returns descriptors for every column carrying
 blob metadata. `file.Session.OpenPackedBlobWriter` and
 `file.Session.OpenDedicatedBlobWriter` write blob payload files and return
-prepared descriptors through `FinishArray`. The
-[raw v2.2 projection gap](https://github.com/lance-format/lance-c/issues/167)
-remains an upstream reader limitation; blob reads use native descriptors.
+prepared descriptors through `FinishArray`. The preview.2 official bundle
+supports raw v2.2 Blob reads, including projection and nested descriptors; the
+native reader remains authoritative for descriptor and projection semantics.
 
 ## Scalar indexes
 
@@ -1212,9 +1218,12 @@ LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
 Packaging verifies the header against this pin; a library built from a
-different commit is not detectable at runtime. The `artifacts/linux-amd64`
-module must be regenerated when this pin changes and carries the previous pin
-until that happens.
+different commit is not detectable at runtime. When the pin changes, all five
+public companion modules (`linux/amd64`, `linux/arm64`, `darwin/arm64`,
+`windows/amd64`, `windows/arm64`) must be regenerated, published as new
+immutable module versions, and adopted in the selectors, root requirements and
+artifact metadata together. Follow [RELEASING.md](RELEASING.md) for the exact
+source, package, publication and verification sequence.
 
 The checker refuses a header whose SHA-256 differs from the pin, then verifies
 that every bound symbol is declared, that C and Go agree on arity, and that
