@@ -154,6 +154,12 @@ the exact `Version` returned by `go mod download -json`; do not construct one
 from a timestamp or copy an old example. Read the currently selected companion
 module version from `go.mod`.
 
+A Go-only patch release may reuse the existing immutable companion module
+versions and checksums when the native bytes are unchanged. Any native byte
+change, including a new `lance-c` pin or a rebuilt library, requires new
+companion module versions; never replace the bytes behind a published companion
+tag.
+
 ```sh
 ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
 ARTIFACT_MODULE="$ROOT_MODULE/artifacts/$SLUG"
