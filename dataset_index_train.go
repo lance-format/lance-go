@@ -43,7 +43,7 @@ func (d *Dataset) TrainIVFModel(ctx context.Context, column string, numPartition
 	}
 	defer d.res.release()
 	if err := validateCString(column); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	native, field, err := d.native.TrainIVFModel(column, numPartitions, int32(metric), fragmentIDs, ffiTrainerOptions(options))
 	if err != nil {
@@ -73,7 +73,7 @@ func (d *Dataset) TrainPQModel(ctx context.Context, column string, numSubVectors
 	}
 	defer d.res.release()
 	if err := validateCString(column); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	if ivfCentroids == nil {
 		return nil, invalidError(op, d.uri, "PQ training requires IVF centroid models")

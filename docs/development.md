@@ -23,10 +23,12 @@ The [consumer installation](../README.md#supported-consumer-configuration) uses 
    directories and `PATH`.
 
 The bundle cache is
-`<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`; setting
-`XDG_CACHE_HOME` moves it on Linux. The first bundled load must be able to
-create and write this directory. If the cache is read-only or unavailable,
-set `LANCE_LIB_PATH` to the exact library for that SDK release; the environment
+`<cache-root>/lance-go/<uncompressed-sha256>/<libraryName>`, where
+`<cache-root>` is `LANCE_CACHE_DIR` when non-empty and `os.UserCacheDir`
+otherwise. On Linux, `XDG_CACHE_HOME` moves the default user cache. The first
+bundled load must be able to create and write this directory. If the cache is
+read-only or unavailable, set `LANCE_CACHE_DIR` to a writable path, or set
+`LANCE_LIB_PATH` to the exact library for that SDK release; the environment
 path is checked first, so no cache write is attempted. Cached bytes are checked
 by exact size and
 SHA-256 before `dlopen`. Extraction writes a temporary file, verifies the
@@ -90,6 +92,13 @@ Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer
 and CMake's Corrosion dependency. The first build compiles all of Lance and
 takes a long time.
 
+CI and release packaging do not use this path. They acquire the official
+release archive for `upstreamRelease` through
+`internal/tools/fetch-lance-c-release`, which verifies the published per-asset
+checksum, the pinned header hash, and the target machine. Build from source
+when you are changing `lance-c`, or when the pin has no matching release
+archive.
+
 ## Pinned ABI and verification
 
 `internal/ffi/upstream.go` records:
@@ -106,7 +115,7 @@ time instead:
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
 git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
+LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a
@@ -183,11 +192,12 @@ env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
   -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
 
-`benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
+`internal/benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
 long-running repeated use of the public API. CI compiles the package and runs
 its tests, but does not execute the long benchmark.
-See [`benchmarks/soak/README.md`](../benchmarks/soak/README.md) for build and run
-commands, the measurement contract and the limits of RSS evidence.
+See [`internal/benchmarks/soak/README.md`](../internal/benchmarks/soak/README.md)
+for build and run commands, the measurement contract and the limits of RSS
+evidence.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
@@ -222,14 +232,20 @@ runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered
 bundle, so the check cannot pass by silently loading a system library. A
-separate job builds the pinned native library, and a race job uses that library
-with Go's race detector. The cross-build matrix checks Linux amd64 and arm64
-plus macOS arm64; it does not establish native runtime support on those other
-platforms. A separate Windows workflow tests Windows amd64 and arm64; its
-native evidence lane builds the pinned DLL and runs the full Go SDK suite
-against it on both hosted runners, with a `CGO 1` race lane on amd64.
+separate job acquires the pinned `lance-c` release library and runs the native
+suite against it; a race job reuses that library with Go's race detector. The
+cross-build matrix checks Linux amd64 and arm64 plus macOS arm64; it does not
+establish native runtime support on those other platforms. A separate Windows
+workflow tests Windows amd64 and arm64; its native evidence lane runs the full
+Go SDK suite against the pinned release DLL on both hosted runners, with a
+`CGO 1` race lane on amd64.
 
 ## Layout
+
+Maintenance commands, compatibility fixtures and the soak benchmark live under
+`internal/` so they are not part of the public SDK package surface. On the root
+module, `go list ./...` exposes only the public SDK packages, `internal/...`,
+and user-facing `examples/...`.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
@@ -240,8 +256,10 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
-benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
-scripts/          build-lance-c.sh, check-abi-symbols.go, verify-quickstart.sh
+internal/tools/   maintainer Go commands and artifact tooling
+internal/benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
+internal/compat/            cross-language compatibility harness
+scripts/          build-lance-c.sh, verify-quickstart.sh, shell/PS/Python harnesses
 ```
 
 The Arrow bridge is independent of the loader and Lance FFI. Native calls and

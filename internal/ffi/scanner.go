@@ -856,6 +856,89 @@ func (s *Scanner) Statistics() ScanStatistics {
 	return s.stats.snapshot()
 }
 
+// planString runs a planning-only native call and returns its owned string.
+// The call is serialized with Close and Next; it does not mark the scanner
+// used or start iteration.
+func (s *Scanner) planString(op string, call func(handle uintptr) *byte) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing || s.aborted {
+		return "", ErrClosed
+	}
+	if s.polling {
+		return "", fmt.Errorf("ffi: scanner does not support %s during iteration", op)
+	}
+	handle := s.handle.Load()
+	if handle == 0 {
+		return "", ErrClosed
+	}
+
+	runtime.LockOSThread()
+	ptr := call(handle)
+	if ptr == nil {
+		nativeErr := s.b.takeError()
+		runtime.UnlockOSThread()
+		if nativeErr != nil {
+			return "", nativeErr
+		}
+		return "", fmt.Errorf("ffi: %s returned NULL without setting an error", op)
+	}
+	text := goString(ptr)
+	s.b.freeString(ptr)
+	runtime.UnlockOSThread()
+	return text, nil
+}
+
+// ExplainPlan returns the configured native plan without starting iteration.
+func (s *Scanner) ExplainPlan(verbose bool) (string, error) {
+	return s.planString("lance_scanner_explain_plan", func(handle uintptr) *byte {
+		return s.b.scannerExplainPlan(handle, verbose)
+	})
+}
+
+// AnalyzePlan executes the configured native plan and returns its runtime
+// analysis without starting or advancing normal iteration.
+func (s *Scanner) AnalyzePlan() (string, error) {
+	return s.planString("lance_scanner_analyze_plan", func(handle uintptr) *byte {
+		return s.b.scannerAnalyzePlan(handle)
+	})
+}
+
+// AnalyzeCountPlan returns the runtime analysis of the configured COUNT(*)
+// plan without starting or advancing normal iteration.
+func (s *Scanner) AnalyzeCountPlan() (string, error) {
+	return s.planString("lance_scanner_analyze_count_plan", func(handle uintptr) *byte {
+		return s.b.scannerAnalyzeCountPlan(handle)
+	})
+}
+
+// CountRows executes the configured COUNT(*) plan without starting or
+// advancing normal iteration. A zero result is valid, so the thread-local
+// error is always consumed.
+func (s *Scanner) CountRows() (uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing || s.aborted {
+		return 0, ErrClosed
+	}
+	if s.polling {
+		return 0, fmt.Errorf("ffi: scanner does not support count rows during iteration")
+	}
+	handle := s.handle.Load()
+	if handle == 0 {
+		return 0, ErrClosed
+	}
+
+	runtime.LockOSThread()
+	rows := s.b.scannerCountRows(handle)
+	nativeErr := s.b.takeError()
+	runtime.UnlockOSThread()
+	if nativeErr != nil {
+		return 0, nativeErr
+	}
+	return rows, nil
+}
+
 // Next polls the scanner once, waiting without holding an OS thread when the
 // native stream is pending. The returned batch is owned by the caller.
 func (s *Scanner) Next(ctx context.Context) (arrow.RecordBatch, bool, error) {

@@ -805,6 +805,11 @@ func TestFragmentMutationOwnershipAndErrors(t *testing.T) {
 		t.Fatalf("early-failing stream released reader %d times, want 1", badReader.releases)
 	}
 
+	_, _, err = fragment.AddColumnsSQL(ctx, []lance.SQLColumn{{Name: "too_many", Expression: "1"}}, 1, 2)
+	requireInvalidArgumentError(t, err, "batch size accepts at most one value")
+	_, _, err = fragment.AddColumnsSQL(ctx, []lance.SQLColumn{{Name: "too_large", Expression: "1"}}, uint64(math.MaxUint32)+1)
+	requireInvalidArgumentError(t, err, "exceeds uint32")
+
 	snapshotScanner, err := dataset.Scan()
 	if err != nil {
 		t.Fatalf("source Scan: %v", err)

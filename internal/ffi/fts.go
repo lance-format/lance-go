@@ -105,6 +105,16 @@ func (q *FTSQuery) release() {
 	q.mu.RUnlock()
 }
 
+// IsClosed reports whether the query is nil or its native handle is closed.
+func (q *FTSQuery) IsClosed() bool {
+	if q == nil {
+		return true
+	}
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return q.closed || q.handle == 0
+}
+
 // Close releases the native query. It is idempotent and waits for in-flight
 // native calls that borrowed the handle.
 func (q *FTSQuery) Close() error {
@@ -370,7 +380,7 @@ func NewFTSBooleanQuery(occurs []int32, queries []*FTSQuery) (*FTSQuery, error) 
 			for j := 0; j < i; j++ {
 				queries[j].release()
 			}
-			return nil, fmt.Errorf("ffi: boolean query child %d is closed or nil", i)
+			return nil, ErrClosed
 		}
 		handles[i] = handle
 	}
@@ -402,12 +412,12 @@ func NewFTSBoostQuery(positive, negative *FTSQuery, opts FTSBoostOptions) (*FTSQ
 	}
 	positiveHandle, ok := positive.acquire()
 	if !ok {
-		return nil, fmt.Errorf("ffi: positive boost query is closed")
+		return nil, ErrClosed
 	}
 	negativeHandle, ok := negative.acquire()
 	if !ok {
 		positive.release()
-		return nil, fmt.Errorf("ffi: negative boost query is closed")
+		return nil, ErrClosed
 	}
 	var raw ftsBoostOptions
 	runtime.LockOSThread()

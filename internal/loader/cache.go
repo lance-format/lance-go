@@ -29,9 +29,9 @@ func (b *Bundle) cachedLibrary() (string, error) {
 		return "", err
 	}
 
-	root, err := os.UserCacheDir()
+	root, err := bundleCacheRoot()
 	if err != nil {
-		return "", fmt.Errorf("locate user cache directory: %w", err)
+		return "", err
 	}
 
 	baseDir := filepath.Join(root, cacheDirName)
@@ -73,6 +73,20 @@ func (b *Bundle) cachedLibrary() (string, error) {
 		return "", err
 	}
 	return target, nil
+}
+
+// bundleCacheRoot returns the root that contains the lance-go cache
+// directory. LANCE_CACHE_DIR takes precedence; an empty value preserves the
+// platform user-cache behavior.
+func bundleCacheRoot() (string, error) {
+	if root := os.Getenv(EnvCacheDir); root != "" {
+		return root, nil
+	}
+	root, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("locate user cache directory: %w", err)
+	}
+	return root, nil
 }
 
 func makePrivateDir(dir string) error {

@@ -180,8 +180,24 @@ module declares no requirements and contains only `embed` data.
 
 ## 2. Build, check, and record native acceptance
 
-For Linux and macOS, build from the pinned commit into an output directory
-outside the checkout:
+When the pin is a published `lance-c` release, acquire the exact published
+bytes instead of rebuilding:
+
+```sh
+: "${TARGET:?target as GOOS/GOARCH, for example linux/amd64}"
+: "${RELEASE_OUT:?new output directory}"
+go run ./internal/tools/fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
+NATIVE_LIB=$(find "$RELEASE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
+NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
+```
+
+The tool verifies the published per-asset checksum, the pinned header hash, and
+the target machine. Release archives are already stripped, so pass the library
+directly to the generator in step 3. Build from source only when the pin has no
+matching release archive.
+
+For a source build on Linux or macOS, build from the pinned commit into an
+output directory outside the checkout:
 
 ```sh
 : "${NATIVE_OUT:?new output directory}"
@@ -192,7 +208,8 @@ NATIVE_HEADER="$NATIVE_OUT/include/lance/lance.h"
 ```
 
 `build-lance-c.sh` checks out `upstreamCommit`, verifies the source and
-installed header hashes, builds, and installs. It does not strip the library.
+installed header hashes, builds, and installs. It does not strip the library;
+the official release archives are already stripped and need no local strip.
 Keep the original build for diagnostics. Prepare a separate stripped packaging
 copy using the target toolchain, verify that its exported bindings and runtime
 dependencies are unchanged, and run a consumer against that copy. Set
@@ -213,7 +230,7 @@ ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 Check the bindings against the installed header:
 
 ```sh
-LANCE_C_HEADER="$NATIVE_HEADER" go run ./scripts/check-abi-symbols.go
+LANCE_C_HEADER="$NATIVE_HEADER" go run ./internal/tools/check-abi-symbols
 ```
 
 Run the maintained native-library checker:
@@ -318,7 +335,7 @@ pin, and module path. It also checks that `Payload []byte` embeds that exact
 archive and that the module contains only the allowed data files:
 
 ```sh
-go run ./scripts/verify-lance-c-artifact \
+go run ./internal/tools/verify-lance-c-artifact \
   -module "$ARTIFACT_OUT/module" \
   -library "$NATIVE_LIB" \
   -target "$TARGET" \
@@ -612,10 +629,10 @@ release; an accepted pseudo-version does not satisfy this post-tag gate.
 
 ## 7. Reusing existing evidence
 
-The roundtrip example, `compat/`, and `benchmarks/soak` results may be cited only
-when the relevant code, dependencies, and configuration are unchanged since the
-run, and only for the exact commits they exercised. A docs-only delta does not
-require mechanically rerunning a 30-minute soak or four foreign SDK builds.
+The roundtrip example, `internal/compat/`, and `internal/benchmarks/soak`
+results may be cited only when the relevant code, dependencies, and
+configuration are unchanged since the run, and only for the exact commits
+they exercised. A docs-only delta does not require mechanically rerunning a 30-minute soak or four foreign SDK builds.
 State the reused evidence, its commit, and its coverage limits instead.
 
 Cross-compilation is not runtime acceptance. Source review is not binary

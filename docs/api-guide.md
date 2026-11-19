@@ -306,6 +306,40 @@ projected column early. `WithBlobHandling` selects blob descriptors (the
 default), binary payloads for every blob column, or descriptions for every
 column carrying blob metadata.
 
+### Query plan diagnostics
+
+`Scanner.ExplainPlan(ctx, verbose)` returns the native plan for the configured
+scan without starting it. `Scanner.AnalyzePlan(ctx)` executes that plan and
+returns the native runtime analysis, including elapsed time and operator
+metrics. The plan reflects the selected filter, projection, fragment scope and
+scalar index, so it is useful for checking pushdown without matching a complete
+plan string.
+
+`Scanner.CountRows(ctx)` applies the native `COUNT(*)` aggregate to the
+configured scanner plan. `Scanner.AnalyzeCountPlan(ctx)` returns the runtime
+analysis of that count plan. Count planning rejects limits, offsets, ordering
+and MinHash queries; the scan-statistics callback is not invoked for the count
+operation. Use `Dataset.CountRows` or `Dataset.CountRowsFiltered` when only a
+dataset-wide count is needed.
+
+```go
+plan, err := scan.ExplainPlan(ctx, true)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(plan)
+
+count, err := scan.CountRows(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+These calls do not start or advance `Records` or `ToArrowReader`, and do not
+make the scanner single-use. The scanner must still be open, and plan
+diagnostics and counts are serialized with iteration rather than being called
+concurrently with it.
+
 Scan cancellation parks and wakes the goroutine without holding an OS thread
 while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its

@@ -61,6 +61,10 @@ func invalidf(format string, args ...any) error {
 	return &Error{Code: CodeInvalidArgument, Message: fmt.Sprintf(format, args...)}
 }
 
+func internalf(format string, args ...any) error {
+	return &Error{Code: CodeInternal, Message: fmt.Sprintf(format, args...)}
+}
+
 func (e *Error) Error() string {
 	if e.Message == "" {
 		return fmt.Sprintf("lance-c: %s", e.Code)

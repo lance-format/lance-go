@@ -52,6 +52,11 @@ import (
 // shared library file.
 const EnvLibPath = "LANCE_LIB_PATH"
 
+// EnvCacheDir names the environment variable that overrides the root of the
+// private bundled-library cache. An empty value falls back to
+// os.UserCacheDir. It is ignored when EnvLibPath is set.
+const EnvCacheDir = "LANCE_CACHE_DIR"
+
 // ErrNotFound reports that no lance-c library was configured or found by the
 // platform loader. Errors caused by an explicitly configured but unusable
 // LANCE_LIB_PATH do not wrap ErrNotFound.
