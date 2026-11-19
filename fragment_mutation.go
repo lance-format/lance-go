@@ -229,7 +229,7 @@ func (f *Fragment) AddColumnsSQL(ctx context.Context, columns []SQLColumn, batch
 	}
 	size, err := fragmentBatchSize(batchSize)
 	if err != nil {
-		return nil, nil, wrapError("fragment add columns sql", f.uri, err)
+		return nil, nil, invalidError("fragment add columns sql", f.uri, "%v", err)
 	}
 	nativeColumns := make([]ffi.SQLColumn, len(columns))
 	for i := range columns {
@@ -277,7 +277,7 @@ func (f *Fragment) AddColumnsStream(ctx context.Context, source array.RecordRead
 	}
 	size, err := fragmentBatchSize(batchSize)
 	if err != nil {
-		return nil, nil, wrapError("fragment add columns stream", f.uri, err)
+		return nil, nil, invalidError("fragment add columns stream", f.uri, "%v", err)
 	}
 	native, schema, err := f.native.AddColumnsStream(source, size)
 	if err != nil {

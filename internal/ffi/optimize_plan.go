@@ -314,7 +314,7 @@ func (t *OptimizeIndexTask) Reference() (*SegmentMetadata, error) {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
 		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_task_reference returned NULL without setting an error")
+		return nil, internalf("optimize index task reference returned NULL without setting an error")
 	}
 	result := &SegmentMetadata{b: b}
 	result.handle.Store(metadata)
@@ -354,7 +354,7 @@ func (t *OptimizeIndexTask) OldSegmentAt(index uint64) (*SegmentMetadata, error)
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
 		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_task_old_segment_at returned NULL without setting an error")
+		return nil, internalf("optimize index task old segment returned NULL without setting an error")
 	}
 	result := &SegmentMetadata{b: b}
 	result.handle.Store(metadata)
@@ -611,7 +611,7 @@ func (m *OptimizeIndexMerge) OldSegmentAt(index uint64) (*SegmentMetadata, error
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
 		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_merge_old_segment_at returned NULL without setting an error")
+		return nil, internalf("optimize index merge old segment returned NULL without setting an error")
 	}
 	result := &SegmentMetadata{b: b}
 	result.handle.Store(metadata)
@@ -835,7 +835,7 @@ func (r *IndexSegmentResult) Segment() (*SegmentMetadata, error) {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
 		}
-		return nil, fmt.Errorf("ffi: lance_index_segment_result_segment returned NULL without setting an error")
+		return nil, internalf("index segment result segment returned NULL without setting an error")
 	}
 	result := &SegmentMetadata{b: b}
 	result.handle.Store(metadata)
