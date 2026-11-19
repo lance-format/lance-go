@@ -82,7 +82,8 @@ Update together:
 
 - README Quickstart and application install command to the new root tag;
 - README release/native mapping and the bundled-platform table;
-- README RTree boundary, stating the Go tag and native requirement together;
+- README and [`docs/api-guide.md`](docs/api-guide.md#scalar-indexes)
+  RTree boundary, stating the Go tag and native requirement together;
 - README read-only deployment example's exact companion module, version and
   library hash;
 - `scripts/verify-quickstart.sh` version, companion module/version and
@@ -259,7 +260,7 @@ detector.
 On Linux, the default lane must run with `LANCE_LIB_PATH` unset, a fresh
 `XDG_CACHE_HOME`, and the expected uncompressed hash. macOS ignores
 `XDG_CACHE_HOME`; use the public-consumer driver below for a cold macOS runtime
-cache. See [README Testing](README.md#testing) for the existing command matrix
+cache. See [`docs/development.md#testing`](docs/development.md#testing) for the existing command matrix
 rather than duplicating it here.
 
 ## 3. Generate and verify the production artifact module
