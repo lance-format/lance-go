@@ -307,14 +307,17 @@ In a default build with a registered bundle, `loader.Load` verifies the
 compressed payload and materializes the library under:
 
 ```text
-<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>
+<LANCE_CACHE_DIR or os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>
 ```
 
-The cache directory and entry directory are private (`0700`) on Unix, where
-the library is also read-only (`0500`). On Windows the cache lives under the
-per-user `LocalAppData` directory; Go cannot express Unix permission bits
-there, so the cached DLL remains writable and access is inherited from that
-per-user directory. A `.lock` file coordinates extraction across processes:
+A non-empty `LANCE_CACHE_DIR` selects the cache root on every platform; an
+empty value keeps the platform user cache. The layout, permissions, lock and
+verification behavior are unchanged. The cache directory and entry directory
+are private (`0700`) on Unix, where the library is also read-only (`0500`). On
+Windows the cache lives under the per-user `LocalAppData` directory; Go cannot
+express Unix permission bits there, so the cached DLL remains writable and
+access is inherited from that per-user directory. A `.lock` file coordinates
+extraction across processes:
 `flock` on Unix and `LockFileEx` on Windows. Existing bytes are checked for
 exact size and SHA-256 before the platform loader opens them. A corrupt
 regular entry is removed and replaced under the lock. Extraction writes a

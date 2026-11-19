@@ -77,6 +77,99 @@ func TestBundleReusesVerifiedCache(t *testing.T) {
 	}
 }
 
+func TestBundleCacheDirOverrideUsesPrivateLayout(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv(EnvCacheDir, root)
+	// Make the platform user cache unavailable so this proves the override is
+	// used instead of being merely an additional preferred location.
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("LOCALAPPDATA", "")
+
+	raw := []byte("override payload")
+	b := testBundle(t, raw)
+
+	path, err := b.cachedLibrary()
+	if err != nil {
+		t.Fatalf("cachedLibrary: %v", err)
+	}
+	wantPath := filepath.Join(root, cacheDirName, b.UncompressedSHA256, libraryName)
+	if path != wantPath {
+		t.Fatalf("cache path = %q, want %q", path, wantPath)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read cached library: %v", err)
+	}
+	if !bytes.Equal(got, raw) {
+		t.Fatalf("cached bytes = %q, want %q", got, raw)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat cached library: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if mode := info.Mode().Perm(); mode != 0o500 {
+			t.Fatalf("cached library mode = %o, want 500", mode)
+		}
+		dirInfo, err := os.Stat(filepath.Dir(path))
+		if err != nil {
+			t.Fatalf("stat cache directory: %v", err)
+		}
+		if mode := dirInfo.Mode().Perm(); mode != 0o700 {
+			t.Fatalf("cache directory mode = %o, want 700", mode)
+		}
+	}
+}
+
+func TestBundleCacheDirEmptyRequiresUserCache(t *testing.T) {
+	t.Setenv(EnvCacheDir, "")
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("LOCALAPPDATA", "")
+
+	b := testBundle(t, []byte("payload"))
+	_, err := b.cachedLibrary()
+	if err == nil {
+		t.Fatal("cachedLibrary succeeded without LANCE_CACHE_DIR or a user cache")
+	}
+	if !strings.Contains(err.Error(), "locate user cache directory") {
+		t.Fatalf("cachedLibrary error = %v, want user-cache guidance", err)
+	}
+}
+
+func TestLoadFromEnvBypassesBundleCache(t *testing.T) {
+	defaultCache := testCacheBase(t)
+	override := t.TempDir()
+	t.Setenv(EnvCacheDir, override)
+
+	b := testBundle(t, []byte("payload"))
+	installTestBundle(t, b)
+
+	notLibrary := filepath.Join(t.TempDir(), "not-a-library")
+	if err := os.WriteFile(notLibrary, []byte("not a shared library"), 0o600); err != nil {
+		t.Fatalf("write path fixture: %v", err)
+	}
+	t.Setenv(EnvLibPath, notLibrary)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load succeeded with a non-library explicit path")
+	}
+	if strings.Contains(err.Error(), b.Module) {
+		t.Fatalf("Load error came from the registered bundle instead of LANCE_LIB_PATH: %v", err)
+	}
+	for _, cachePath := range []string{
+		defaultCache,
+		filepath.Join(override, cacheDirName),
+	} {
+		if _, statErr := os.Stat(cachePath); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("explicit LANCE_LIB_PATH touched cache path %s (stat error %v)", cachePath, statErr)
+		}
+	}
+}
+
 func TestBundleReplacesCorruptCache(t *testing.T) {
 	testCacheBase(t)
 	raw := []byte("verified payload contents")
@@ -511,6 +604,8 @@ func testCacheBase(t *testing.T) string {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "xdg-cache"))
 	// os.UserCacheDir uses LocalAppData on Windows, not HOME/XDG_CACHE_HOME.
 	t.Setenv("LOCALAPPDATA", filepath.Join(home, "local-app-data"))
+	// Keep default-cache tests independent of an inherited override.
+	t.Setenv(EnvCacheDir, "")
 
 	root, err := os.UserCacheDir()
 	if err != nil {
