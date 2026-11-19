@@ -13,9 +13,9 @@ annotated tag object `f19335330b0c2b28bd370e94f5c867c60ce81ed9` peels to
 All five active selectors and root requirements use those companion tags. The
 five release archives and checksums were verified, each companion payload
 decompresses byte-for-byte to the official archive library, and every module
-resolves through the public proxy and checksum database. Candidate
-public-consumer and default-bundle RTree/raw-v2.2 Blob evidence belongs to the
-preview.2 bundle PR; post-tag evidence belongs to the release record.
+resolves through the public proxy and checksum database. Pre-publication
+candidate evidence belongs to the preview.2 bundle PR; accepted exact-tag
+evidence belongs to the release record.
 
 Intel macOS is retired for new releases; its published module and tags remain
 at their original revisions, but no current release requires or selects them.
@@ -81,16 +81,24 @@ as the root version and native input. Do not derive it from an unversioned
 Update together:
 
 - README Quickstart and application install command to the new root tag;
-- README release/native mapping and the bundled-platform table;
+- README release/native mapping, supported consumer table, and read-only
+  deployment example's exact companion module, version and library hash;
 - README RTree boundary, stating the Go tag and native requirement together;
-- README read-only deployment example's exact companion module, version and
-  library hash;
-- `scripts/verify-quickstart.sh` version, companion module/version and
-  expected library identity;
+- [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
+  boundaries. Keep exact current native mapping in the README, release record
+  and [artifact record](artifacts/README.md), not duplicated in the guide;
+- [`docs/development.md`](docs/development.md) "Building liblance_c" Rust
+  requirement and matching native build guards, "Pinned ABI" reproducible
+  command, and "Testing" current RTree command. Keep the historical
+  `v0.1.0-preview.1` command pinned to that tag;
+- `scripts/verify-quickstart.sh` version, companion module/version, published
+  module archive size, and expected library size and SHA-256. Keep the module
+  archive size separate from the compressed native payload;
 - `artifacts/README.md` with the new companion versions, payload facts and
-  accepted evidence.
+  accepted exact-tag evidence.
 
-Keep `PREVIEW.md` as the historical first-preview record. Put new
+Keep `PREVIEW.md` as the historical first-preview record. Do not rewrite its
+version facts; update only links whose documentation moved. Put new
 preview-specific notes in the release record or a new dated file rather than
 silently rewriting the historical one. The release handoff owns the
 beta/preview version wording; a docs-only change does not weaken the runtime
@@ -104,7 +112,9 @@ release archive, tag, and commit contain the same header. The current pin is
 the annotated `v0.2.0-beta.1` tag, peeled to
 `e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical header
 `90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
-Do not substitute another release archive for that pin.
+Do not substitute another release archive for that pin. The selected
+`Cargo.toml` declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`,
+`ci.yml`, and `unix-native.yml` reject older Rust toolchains before building.
 
 Version selection is a maintainer decision tracked by issue #1. Check the
 actual native release, tag, and commit alignment before choosing a version. Do
@@ -259,7 +269,7 @@ detector.
 On Linux, the default lane must run with `LANCE_LIB_PATH` unset, a fresh
 `XDG_CACHE_HOME`, and the expected uncompressed hash. macOS ignores
 `XDG_CACHE_HOME`; use the public-consumer driver below for a cold macOS runtime
-cache. See [README Testing](README.md#testing) for the existing command matrix
+cache. See [`docs/development.md#testing`](docs/development.md#testing) for the existing command matrix
 rather than duplicating it here.
 
 ## 3. Generate and verify the production artifact module
@@ -319,14 +329,16 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The artifact publication commit tracks the compressed archive. The current `linux/amd64`
-payload is 85,696,976 bytes (81.7 MiB) compressed and 322,099,824 bytes
-(307.2 MiB) uncompressed; exact hashes and counts are recorded in
-[artifacts/README.md](artifacts/README.md). The raw library is never committed. GitHub rejects
-ordinary Git blobs over 100 MiB, and warns above 50 MiB. Keep each tracked
-compressed payload below that hard limit. A future target whose compressed
-payload exceeds it needs a separate storage decision; do not silently switch
-formats or move the payload outside the module contract.
+The artifact publication commit tracks the compressed archive. The current
+`linux/amd64` payload is 87,177,503 bytes compressed and 342,441,416 bytes
+uncompressed; exact hashes and counts are recorded in
+[artifacts/README.md](artifacts/README.md). The published Go module archive is
+87,186,200 bytes, a different value because it also contains module metadata;
+`scripts/verify-quickstart.sh` pins it separately. The raw library is never
+committed. GitHub rejects ordinary Git blobs over 100 MiB, and warns above
+50 MiB. Keep each tracked compressed payload below that hard limit. A future
+target whose compressed payload exceeds it needs a separate storage decision;
+do not silently switch formats or move the payload outside the module contract.
 
 The payload at the artifact publication commit must stay byte-identical to the
 published module archive. Preserve and record both sizes and both hashes.
@@ -541,9 +553,12 @@ uncompressed library
 `8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13` are the
 preview.2 pin examples. The published module is
 `github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.0-preview.2`.
-The published companion versions, payload sizes, and hashes are listed in
-[artifacts/README.md](artifacts/README.md), together with the current public
-acceptance record. A new release tag still requires the tag-based gates above.
+The published companion versions, payload sizes, hashes, and accepted
+exact-tag consumer runs are listed in
+[artifacts/README.md](artifacts/README.md). The
+[preview.2 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2)
+records the post-tag evidence archive and both consumer runs. A new release
+tag still requires the tag-based gates above.
 
 The [historical preview preparation notes](PREVIEW.md) record the first
 preview's evidence and release gates. Keep them as history; put a new release's
