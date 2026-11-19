@@ -19,6 +19,10 @@ type Dataset struct {
 	// "$"-joined table ID for a namespace open. It is not necessarily the
 	// native dataset's fully qualified URI.
 	uri string
+	// nativeURI is the fully qualified URI resolved by native code when this
+	// snapshot was produced. It is copied into Go memory once so URI remains
+	// available after Close without acquiring the dataset handle.
+	nativeURI string
 }
 
 // Open opens a dataset. A zero version selects the latest version.
@@ -111,7 +115,34 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		return nil, err
 	}
 
-	dataset := &Dataset{native: native, uri: uri}
+	dataset, err := newDataset(native, uri)
+	if err != nil {
+		return nil, wrapError("open", uri, err)
+	}
+	return dataset, nil
+}
+
+// URI returns the fully qualified URI of this dataset snapshot.
+//
+// Lance resolves the URI when it opens the dataset. For a dataset opened
+// through a namespace, URI is the describe_table location rather than the
+// "$"-joined table identifier used in error diagnostics. The value is captured
+// when the dataset is produced and remains available after Close.
+//
+// URI does not acquire the dataset handle or perform a native call.
+func (d *Dataset) URI() string {
+	return d.nativeURI
+}
+
+// newDataset takes ownership of native and captures its snapshot URI. On
+// failure it closes native and returns the native error.
+func newDataset(native *ffi.Dataset, requestURI string) (*Dataset, error) {
+	nativeURI, err := native.URI()
+	if err != nil {
+		native.Close()
+		return nil, err
+	}
+	dataset := &Dataset{native: native, uri: requestURI, nativeURI: nativeURI}
 	dataset.res = newResource(native.Close)
 	return dataset, nil
 }
@@ -133,10 +164,8 @@ func (d *Dataset) acquire(op string) error {
 // adopt wraps an independently owned native dataset returned by a checkout or
 // restore operation. The receiver supplies only the URI and is not otherwise
 // shared with the result.
-func (d *Dataset) adopt(native *ffi.Dataset) *Dataset {
-	derived := &Dataset{native: native, uri: d.uri}
-	derived.res = newResource(native.Close)
-	return derived
+func (d *Dataset) adopt(native *ffi.Dataset) (*Dataset, error) {
+	return newDataset(native, d.uri)
 }
 
 // Schema returns the dataset schema.

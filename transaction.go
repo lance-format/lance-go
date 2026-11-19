@@ -946,7 +946,11 @@ func CommitTransaction(ctx context.Context, uri string, tx *Transaction, opts ..
 	if err != nil {
 		return nil, wrapError("commit", uri, err)
 	}
-	return newDataset(native, uri), nil
+	dataset, err := newDataset(native, uri)
+	if err != nil {
+		return nil, wrapError("commit", uri, err)
+	}
+	return dataset, nil
 }
 
 // CommitTransactionBatch publishes append transactions atomically through
@@ -1028,7 +1032,12 @@ func CommitTransactionBatch(ctx context.Context, uri string, txs []*Transaction,
 	if err != nil {
 		return nil, nil, wrapError("commit batch", uri, err)
 	}
-	return newDataset(nativeDataset, uri), newTransaction(nativeTransaction, uri), nil
+	dataset, err := newDataset(nativeDataset, uri)
+	if err != nil {
+		nativeTransaction.Close()
+		return nil, nil, wrapError("commit batch", uri, err)
+	}
+	return dataset, newTransaction(nativeTransaction, uri), nil
 }
 
 func parseCommitOptions(opts []CommitOption) (commitConfig, error) {
@@ -1176,10 +1185,4 @@ func fragmentURI(fragments []*Fragment) string {
 		}
 	}
 	return ""
-}
-
-func newDataset(native *ffi.Dataset, uri string) *Dataset {
-	dataset := &Dataset{native: native, uri: uri}
-	dataset.res = newResource(native.Close)
-	return dataset
 }
