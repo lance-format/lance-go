@@ -15,7 +15,10 @@ import (
 type Dataset struct {
 	native *ffi.Dataset
 	res    *resource
-	uri    string
+	// uri is the caller's request identifier for an ordinary open, or the
+	// "$"-joined table ID for a namespace open. It is not necessarily the
+	// native dataset's fully qualified URI.
+	uri string
 }
 
 // Open opens a dataset. A zero version selects the latest version.

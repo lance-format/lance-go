@@ -74,7 +74,17 @@ func (b *Bundle) open() (*Library, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loader: load bundled artifact %q from %s: %w", b.Module, path, err)
 	}
-	return &Library{path: path, handle: handle}, nil
+	return &Library{
+		path:   path,
+		handle: handle,
+		source: SourceBundle,
+		bundle: &BundleInfo{
+			Module:         b.Module,
+			Target:         b.Target,
+			UpstreamCommit: b.UpstreamCommit,
+			HeaderSHA256:   b.HeaderSHA256,
+		},
+	}, nil
 }
 
 func (b *Bundle) validate() error {

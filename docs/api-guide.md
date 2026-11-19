@@ -44,9 +44,14 @@ func main() {
 ```
 
 `Create`, `Append`, `Overwrite` and `Write` accept an `array.RecordReader`.
-The caller owns the reader and releases it after the write. `Append` creates
-an absent dataset; `Overwrite` commits a replacement version while preserving
-older versions. `WriteParams` exposes the options available in the pinned C ABI.
+The caller owns the reader and releases it after the write; the call borrows
+and advances it. When starting from one or a few `arrow.RecordBatch` values,
+pass them to `array.NewRecordReader`. That reader retains each batch for its own
+lifetime, so release the caller's batch references after constructing it and
+release the reader after the write. `WriteToNamespace` follows the same reader
+ownership contract. `Append` creates an absent dataset; `Overwrite` commits a
+replacement version while preserving older versions. `WriteParams` exposes the
+options available in the pinned C ABI.
 
 `WriteParams` also exposes native write options for V2 manifest selection,
 initial and target bases, per-base storage parameters, external blob handling,
@@ -216,6 +221,24 @@ operation. `NewProjectOperation` accepts a `NativeSchema`, which preserves
 native field IDs that the lossy Arrow schema view does not. Schemas, data files
 and fragments returned by operations are independently owned and remain valid
 after their parent object is closed.
+
+## Runtime diagnostics
+
+`RuntimeInfo()` returns what this process has actually observed without
+inspecting the environment, extracting a bundle, loading a library, resolving
+symbols, or retrying an earlier failure. Before the first native operation,
+`Loaded` and `FFIReady` are false. After a successful open, `Library.Source` is
+`RuntimeSourceLibPath`, `RuntimeSourceBundle`, or `RuntimeSourceSystem`, and
+`Library.Path` is the explicit file, extracted bundle cache path, or bare
+platform library name for a system lookup.
+
+`Loaded` only reports that opening the library succeeded. `FFIReady` separately
+reports that the mandatory C symbols were bound. `Expected` is the lance-c
+release, commit and header this Go module was built against. A loaded
+`liblance_c` cannot be verified against that pin because lance-c has no runtime
+version symbol. For a bundled load, `Library.Bundle` carries the artifact's
+recorded packaging metadata; for explicit and system loads, only the source and
+path are known.
 
 ## Compaction and cleanup
 
@@ -973,3 +996,28 @@ Models preserve absent, explicit-null and concrete values using pointers to
 `namespace.Nullable[T]`. Native namespace errors retain their separate error
 code space, including code zero (`Unsupported`). The standalone `namespace`
 package activates the same platform bundle as the root package.
+
+## Optional values
+
+The packages use different optional representations on purpose because they
+encode different native contracts. Do not unify them into one type or change a
+signature only to make them look alike.
+
+- Root option structs such as `WriteParams` use pointer fields when native must
+distinguish an absent value from an explicit zero or false. A nil pointer leaves
+the native default in place; a non-nil pointer forwards the value, including
+zero. Scalar zero values documented as defaults keep that meaning.
+- `index` option structs use bare pointers for the same absent-versus-explicit
+  value distinction. Slices follow their documented contract: nil generally
+  means unset, while a non-nil empty slice is an explicit empty selection.
+- `compaction.Optional[T]` distinguishes three states: `Unset` leaves the
+  native default unchanged, `None` sets native `None` explicitly, and `Some`
+  sets a value including zero or an empty slice. A nil `*compaction.Options`
+  selects the native from-dataset configuration; ordinary pointer fields still
+  distinguish only absent from an explicit value.
+- `namespace` models use `*namespace.Nullable[T]`: a nil pointer omits the JSON
+  field, a non-nil `Nullable` with a nil `Value` sends an explicit JSON null,
+  and a non-nil `Value` sends a concrete value.
+- The `file` package uses a nil `*file.ReaderOptions` or writer/session options
+  pointer for native defaults. Pointer fields inside a non-nil options value
+  keep the absent-versus-explicit distinction.
