@@ -20,7 +20,8 @@ evidence belongs to the release record.
 Intel macOS is retired for new releases; its published module and tags remain
 at their original revisions, but no current release requires or selects them.
 The preview.1 six-target evidence and historical runs remain in
-[PREVIEW.md](PREVIEW.md) and the preview.1 release notes. Each new tag still
+[docs/PREVIEW.md](docs/PREVIEW.md) and the preview.1 release notes. Each new
+tag still
 requires its own post-tag runs. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
@@ -97,8 +98,9 @@ Update together:
 - `artifacts/README.md` with the new companion versions, payload facts and
   accepted exact-tag evidence.
 
-Keep `PREVIEW.md` as the historical first-preview record. Do not rewrite its
-version facts; update only links whose documentation moved. Put new
+Keep [docs/PREVIEW.md](docs/PREVIEW.md) as the historical first-preview
+record. Do not rewrite its version facts; update only links whose documentation
+moved. Put new
 preview-specific notes in the release record or a new dated file rather than
 silently rewriting the historical one. The release handoff owns the
 beta/preview version wording; a docs-only change does not weaken the runtime
@@ -582,7 +584,7 @@ exact-tag consumer runs are listed in
 records the post-tag evidence archive and both consumer runs. A new release
 tag still requires the tag-based gates above.
 
-The [historical preview preparation notes](PREVIEW.md) record the first
+The [historical preview preparation notes](docs/PREVIEW.md) record the first
 preview's evidence and release gates. Keep them as history; put a new release's
 notes in its release record. Include the artifact version, payload
 sizes and hashes, evidence location, supported bundle target and runtime floor,
