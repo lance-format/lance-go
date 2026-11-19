@@ -2,7 +2,7 @@
 # Build liblance_c from the exact lance-c commit pinned by
 # internal/ffi/upstream.go, then install it into a local prefix.
 #
-# Requires: git, cmake >= 3.22, cargo (Rust >= 1.94.0), network access for
+# Requires: git, cmake >= 3.22, cargo with rustc >= 1.95.0, network access for
 # Cargo crates and CMake's Corrosion dependency, and a SHA-256 tool.
 set -euo pipefail
 
@@ -65,9 +65,23 @@ esac
 
 [[ ! -e "$out_dir" && ! -L "$out_dir" ]] || die "output already exists: $out_dir; choose a new --out directory"
 
-for cmd in git cmake cargo; do
+# Keep this in sync with the pinned lance-c Cargo.toml rust-version.
+required_rust_version=1.95.0
+
+for cmd in git cmake cargo rustc; do
 	command -v "$cmd" >/dev/null 2>&1 || die "required command not found: $cmd"
 done
+
+rust_version=$(rustc --version | awk '{print $2}')
+[[ -n $rust_version ]] || die "could not read the rustc version"
+awk -v version="$rust_version" -v required="$required_rust_version" 'BEGIN {
+	split(version, actual, ".")
+	split(required, minimum, ".")
+	if (actual[1] < minimum[1] || (actual[1] == minimum[1] && actual[2] < minimum[2])) {
+		printf "build-lance-c: rustc %s is older than the required %s\n", version, required > "/dev/stderr"
+		exit 1
+	}
+}'
 
 sha256_file() {
 	if command -v sha256sum >/dev/null 2>&1; then

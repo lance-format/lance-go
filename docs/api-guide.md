@@ -488,10 +488,10 @@ Contracts and limits:
   caller retains ownership of the array. `FinishArray` returns the prepared
   blob descriptors. BinaryView is not supported by the Arrow bridge.
 - Raw v2.2 Blob files, including the released Lance 14.0.2 fixture, read
-  through the preview.2 official bundle. Default and explicit projection,
-  descriptors, NULL/empty values and multi-column ownership follow the native
-  reader contract; this package does not add a second parser or rewrite the
-  physical Blob schema.
+  through default bundles from preview.2 onward. Default and explicit
+  projection, descriptors, NULL/empty values and multi-column ownership follow
+  the native reader contract; this package does not add a second parser or
+  rewrite the physical Blob schema.
 
 Pass an existing `*lance.Session` through `file.ReaderOptions.Session`,
 `file.WriterOptions.Session`, or `file.SessionOptions.Session` to share its
@@ -559,7 +559,7 @@ materializes every blob column as binary payloads, while
 `BlobHandlingAllDescriptions` returns descriptors for every column carrying
 blob metadata. `file.Session.OpenPackedBlobWriter` and
 `file.Session.OpenDedicatedBlobWriter` write blob payload files and return
-prepared descriptors through `FinishArray`. The preview.2 official bundle
+prepared descriptors through `FinishArray`. The current default bundle
 supports raw v2.2 Blob reads, including projection and nested descriptors; the
 native reader remains authoritative for descriptor and projection semantics.
 
@@ -576,12 +576,13 @@ parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately.
-`v0.1.0-preview.2` and its default companions pin `lance-c v0.2.0-beta.1`
-(`e2564b89be36bb18f5beff6d673daf9dfff8c986`) and are RTree-capable. The
-previous `v0.1.0-preview.1` API and bundle predate RTree. The example below
-runs on the preview.2 default bundle; use an explicit RTree-capable
-`LANCE_LIB_PATH` library only when testing an older SDK or library.
+The Go API and the native library are versioned separately. RTree support was
+introduced with `v0.1.0-preview.2`; the `v0.1.0-preview.1` API and bundle
+predate it. The example below runs on a current default bundle. Use an explicit
+RTree-capable `LANCE_LIB_PATH` library only when testing an older SDK or
+library. The README release mapping and the
+[artifact record](../artifacts/README.md) identify the exact native pin for the
+installed Go tag.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -599,10 +600,10 @@ scan, err := indexed.Scan(
 RTree uses the generic scalar-index ABI. A native library that predates RTree
 still loads, but rejects the type with a native error. Scalar-index symbol
 presence is not proof that enum value 9 is supported; the SDK neither emulates
-RTree nor substitutes a different index. For `v0.1.0-preview.2`, the native
-requirement is `lance-c v0.2.0-beta.1` at
-`e2564b89be36bb18f5beff6d673daf9dfff8c986`; the preview.1 bundle instead
-rejects enum value 9.
+RTree nor substitutes a different index. The preview.1 bundle rejects enum
+value 9; the README release mapping and the
+[artifact record](../artifacts/README.md) state the exact native requirement
+for the installed preview.
 
 ## Vector search
 

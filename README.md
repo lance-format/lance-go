@@ -134,5 +134,5 @@ $ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so CGO_ENABLED=0 go run .
 ## Documentation
 
 - [Go API reference for preview.2](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.2) and [usage guide](docs/api-guide.md) for scans, mutations, search, and dataset maintenance.
-- [Native package details](artifacts/README.md) for platform coverage, library identity, and checksums.
+- [Native package details](artifacts/README.md) for platform coverage, library identity, checksums, and the preview.2 exact-tag consumer record.
 - [Development and testing](docs/development.md#testing) and [release process](RELEASING.md) for contributors.

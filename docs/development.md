@@ -48,7 +48,7 @@ writable cache for the process or set `LANCE_LIB_PATH` to the exact library for
 the installed SDK. Do not substitute a library from another Go or `lance-c`
 release; the loader cannot detect that mismatch before native calls fail.
 
-Build tags:
+### Build tags
 
 - Default builds for the five selected targets compile the generated selector,
   the artifact package, and its compressed payload into the binary. Other
@@ -84,9 +84,11 @@ and installs into `dist/lance-c`. The output directory must not already exist.
 Use `--out DIR` to choose another prefix and `LANCE_C_WORK_DIR` to move the
 checkout/build cache. Build intermediates are reused across runs.
 
-Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer,
-network access for crates and CMake's Corrosion dependency. The first build
-compiles all of Lance and takes a long time.
+Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer
+(the pinned `lance-c` `Cargo.toml` declares this minimum and
+`scripts/build-lance-c.sh` rejects older toolchains), network access for crates
+and CMake's Corrosion dependency. The first build compiles all of Lance and
+takes a long time.
 
 ## Pinned ABI and verification
 
@@ -101,7 +103,9 @@ be identified at runtime. Provenance is checked at build
 time instead:
 
 ```console
-git -C /path/to/lance-c show e2564b89be36bb18f5beff6d673daf9dfff8c986:include/lance/lance.h > lance.h
+PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
+test -n "$PINNED_COMMIT"
+git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
 LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
 ```
 
@@ -161,8 +165,8 @@ CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
 The RTree regression test is build-tagged so it can be selected explicitly.
-The `v0.1.0-preview.2` default companions are RTree-capable; run it through
-the bundle with no external library:
+The current default companions are RTree-capable; run it through the bundle
+with no external library:
 
 ```console
 env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \

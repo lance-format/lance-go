@@ -204,8 +204,8 @@ jobs:
           cmake --version | head -n 1
           awk -v version="$(rustc --version | awk '{print $2}')" 'BEGIN {
             split(version, v, ".")
-            if (v[1] < 1 || (v[1] == 1 && v[2] < 94)) {
-              printf "rustc %s is older than the required 1.94.0\n", version
+            if (v[1] < 1 || (v[1] == 1 && v[2] < 95)) {
+              printf "rustc %s is older than the required 1.95.0\n", version
               exit 1
             }
           }'
