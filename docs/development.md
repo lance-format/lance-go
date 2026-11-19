@@ -92,6 +92,16 @@ Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer
 and CMake's Corrosion dependency. The first build compiles all of Lance and
 takes a long time.
 
+CI and release packaging do not use this path. They acquire the official
+release archive for `upstreamRelease` through
+`internal/tools/fetch-lance-c-release`, which verifies the published per-asset
+checksum, the pinned header hash, and the target machine. When
+`artifacts/<target>/artifact.go` describes the same upstream commit and header,
+the acquired library must also equal that companion metadata's
+`UncompressedSHA256`; after a pin bump the check stays inactive until the new
+companions are published. Build from source when you are changing `lance-c`,
+or when the pin has no matching release archive.
+
 ## Pinned ABI and verification
 
 `internal/ffi/upstream.go` records:
@@ -225,12 +235,13 @@ runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered
 bundle, so the check cannot pass by silently loading a system library. A
-separate job builds the pinned native library, and a race job uses that library
-with Go's race detector. The cross-build matrix checks Linux amd64 and arm64
-plus macOS arm64; it does not establish native runtime support on those other
-platforms. A separate Windows workflow tests Windows amd64 and arm64; its
-native evidence lane builds the pinned DLL and runs the full Go SDK suite
-against it on both hosted runners, with a `CGO 1` race lane on amd64.
+separate job acquires the pinned `lance-c` release library and runs the native
+suite against it; a race job reuses that library with Go's race detector. The
+cross-build matrix checks Linux amd64 and arm64 plus macOS arm64; it does not
+establish native runtime support on those other platforms. A separate Windows
+workflow tests Windows amd64 and arm64; its native evidence lane runs the full
+Go SDK suite against the pinned release DLL on both hosted runners, with a
+`CGO 1` race lane on amd64.
 
 ## Layout
 

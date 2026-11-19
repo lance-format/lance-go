@@ -239,7 +239,8 @@ Use the shared library and header from the official `lance-c` release archive
 matching the tag, commit and header in `internal/ffi/upstream.go`. Verify the
 archive checksum before extracting it. A source-built alternative is allowed
 only when it is built from the same pinned commit and header. Do not substitute
-a different release archive.
+a different release archive. `internal/tools/fetch-lance-c-release` downloads,
+verifies, and extracts the archive for one target.
 
 ```sh
 scripts/sync-lance-c.sh \
@@ -430,71 +431,89 @@ companion tags still need their own post-tag acceptance.
 
 ## Native Unix validation workflow
 
-`.github/workflows/unix-native.yml` builds and tests the pinned lance-c source
-on native runners for `linux/amd64`, `linux/arm64`, and `darwin/arm64`. The
-runners are `ubuntu-24.04`, `ubuntu-24.04-arm`, and `macos-15`. The workflow
-runs on pull requests and `main` pushes that touch native inputs, and on manual
-dispatch.
+`.github/workflows/unix-native.yml` tests the pinned lance-c release on native
+runners for `linux/amd64`, `linux/arm64`, and `darwin/arm64`. The runners are
+`ubuntu-24.04`, `ubuntu-24.04-arm`, and `macos-15`. The workflow runs on pull
+requests and `main` pushes that touch native inputs, and on manual dispatch.
 
-Each job restores or builds the exact pinned source through
-`scripts/build-lance-c.sh`, validates the install cache with
-`scripts/lance-c-cache.sh`, and runs `scripts/check-native-library.sh` against
-the installed library and header. That check verifies the pinned header hash,
-object format and architecture, direct dependencies, the libc or macOS
-deployment floor, and that every symbol in the Go binding table is exported. It
-reports observed export and dependency counts; it does not assert that the
-library exports only `lance_` symbols.
+Each job downloads the archive named after `upstreamRelease` and the target
+triple from the official `lance-c` release with
+`internal/tools/fetch-lance-c-release`. The tool verifies the archive against
+the per-asset `.sha256` published with the release, extracts only the header and
+shared library, verifies the header against `upstreamHeaderSHA256`, and checks
+the object format and machine for the target. The Windows archive ships the
+same header with CRLF line endings; the tool writes the canonical LF form and
+records both hashes. When `artifacts/<target>/artifact.go` records the same
+upstream repository, commit, and header as the pin, the acquired library must
+also equal that metadata's `UncompressedSHA256`, so a release archive and its
+published checksum replaced together cannot silently change the bytes CI
+tests. After a pin bump the existing snapshots describe the previous commit,
+so the check is recorded as inactive until the new companion modules are
+published and their metadata is adopted; candidate packaging still uses the
+acquired bytes. A missing asset or a checksum or identity mismatch fails the
+job; there is no source-build fallback. The acquisition record is uploaded
+with the job evidence.
+
+Each job then runs `scripts/check-native-library.sh` against the acquired
+library and header. That check verifies the pinned header hash, object format
+and architecture, direct dependencies, the libc or macOS deployment floor, and
+that every symbol in the Go binding table is exported. It reports observed
+export and dependency counts; it does not assert that the library exports only
+`lance_` symbols.
 
 The workflow then runs `internal/tools/check-abi-symbols` and three test passes
 against the supplied library: the default build, an external build
 (`-tags lance_external_lib`) with `CGO_ENABLED=0`, and an external build with
 the race detector. A skipped native test fails the job.
 
-After the three test runs, the job copies the accepted install-cache library
-into `$RUNNER_TEMP/production/<slug>/library`, outside the checkout and cache,
-and runs `scripts/strip-native-library.sh` on that copy. The helper records the raw
-and stripped sizes and SHA-256s, the strip tool path, hash, version, and argv,
-and fails if the source library's bytes or hash change. Linux uses
-`strip --strip-unneeded`; macOS uses `strip -x`. It does not rewrite
-dependencies, install names, or RPATH. `scripts/check-native-library.sh` then
-revalidates the stripped copy against the matching header, including the
-architecture, dependency contract, deployment floor, and every bound export.
+After the three test runs, the job verifies the acquired library's SHA-256
+against the acquisition record and uses those exact bytes as the production
+packaging input. Published release libraries are already stripped, so no local
+strip runs and the archive library is never modified.
 
 The job runs `examples/roundtrip` with `CGO_ENABLED=0`,
-`-tags lance_external_lib`, and `LANCE_LIB_PATH` set explicitly to the stripped
-copy. The external tag excludes the generated selector and bundle path, and
+`-tags lance_external_lib`, and `LANCE_LIB_PATH` set explicitly to the acquired
+library. The external tag excludes the generated selector and bundle path, and
 the explicit path prevents system discovery from being used. The step requires
-the exact three-row output, not just exit status. The raw library still receives
-the default, external, and race test passes above.
+the exact three-row output, not just exit status. The same library still
+receives the default, external, and race test passes above.
 
-The job then passes the stripped copy to `scripts/sync-lance-c.sh` with the
+The job then passes the acquired library to `scripts/sync-lance-c.sh` with the
 production module path `github.com/lance-format/lance-go/artifacts/<goos>-<goarch>`.
 The generated selector keeps the
 `!lance_external_lib && <goos> && <goarch>` constraint and imports that
 production path, but the workflow does not copy it into `internal/bundled`,
 change `go.mod`/`go.sum`, or write into the checkout.
 `internal/tools/verify-lance-c-artifact` checks the compressed payload hash and
-size, decompresses it, compares it byte for byte with the stripped copy, and checks
-the uncompressed hash, size, pin, module path, exact embed target, and file
-allowlist. Darwin export inspection must produce a symbol table; unavailable
-export evidence fails verification.
+size, decompresses it, compares it byte for byte with the acquired library, and
+checks the uncompressed hash, size, pin, module path, exact embed target, and
+file allowlist. Darwin export inspection must produce a symbol table;
+unavailable export evidence fails verification.
 
 The candidate module and evidence are uploaded as
 `unix-native-candidate-<slug>` and `unix-native-evidence-<slug>` with seven-day
 retention. These workflow candidates remain unpublished. The tracked companion
 modules were published after review and their selectors are active; their
 exact-tag cold public-consumer acceptance is recorded above. The workflow
-publishes the validated install cache only after the
-stripped candidate is staged and verified and all consumers of the cache
-staging path finish; the cache continues to hold the unstripped
-accepted library, and candidates are never cached. The workflow asserts that
-the checkout is unchanged, so it cannot activate a selector.
+asserts that the checkout is unchanged, so it cannot activate a selector.
 
-A successful run establishes native build, test, strip, and candidate
-verification results for that commit only. Public proxy and sumdb
-verification, cold default/external/namespace consumers of a published module,
-selector activation, release/tag creation, and acceptance of any newly built
-candidate remain separate release responsibilities. Existing published Unix
-module acceptance does not automatically accept different workflow candidates.
-The tested macOS runtime versions do not establish an older deployment floor
-or completion of the platform roadmap.
+A successful run establishes test and candidate verification results for the
+published release bytes at that pin only. Public proxy and sumdb verification,
+cold default/external/namespace consumers of a published module, selector
+activation, release/tag creation, and acceptance of any newly built candidate
+remain separate release responsibilities. Existing published Unix module
+acceptance does not automatically accept different workflow candidates. The
+tested macOS runtime versions do not establish an older deployment floor or
+completion of the platform roadmap.
+
+## Native Windows validation workflow
+
+`.github/workflows/windows-native.yml` acquires the official release archive
+for `windows/amd64` and `windows/arm64` and verifies the PE identity, header and
+export agreement, the actual dependency closure, a native C consumer, the full
+Go SDK suite, and a external-tag roundtrip against the exact staged DLL.
+The external-tag suite records `windows/arm64` race coverage as unsupported rather
+than skipped. After the dependency closure is OS-only, the workflow packages an
+unpublished companion candidate from the unmodified DLL; it does not publish a
+module or activate a selector. A missing or mismatched release asset fails the
+job.
