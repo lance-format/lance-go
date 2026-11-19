@@ -89,6 +89,19 @@ func TestLoadRealLibrary(t *testing.T) {
 	if got := lib.Path(); got != path {
 		t.Fatalf("Path() = %q, want %q", got, path)
 	}
+	state := Observe()
+	if !state.Loaded {
+		t.Fatal("Observe did not report the loaded library")
+	}
+	if state.Source != SourceEnv {
+		t.Fatalf("Source = %v, want %v", state.Source, SourceEnv)
+	}
+	if state.Path != path {
+		t.Fatalf("Observe().Path = %q, want %q", state.Path, path)
+	}
+	if state.Bundle != nil {
+		t.Fatalf("explicit library reported bundle metadata: %+v", state.Bundle)
+	}
 
 	for _, name := range []string{
 		"lance_last_error_code",

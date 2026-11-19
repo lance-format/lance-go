@@ -15,13 +15,43 @@ import (
 //
 // FetchStorageOptions may be called concurrently from native worker threads.
 // It returns nil for native absence and a non-nil empty map for an explicitly
-// empty option set. Native code owns expiration, caching and fallback; a
-// provider must not start a refresh goroutine or retain fetched credentials in
-// a second Go cache.
+// empty option set. The context is background-scoped and valid only for the
+// callback; it cannot cancel native I/O. Native code owns expiration, caching
+// and fallback; a provider must not start a refresh goroutine or retain fetched
+// credentials in a second Go cache.
+//
+// A StorageOptionsProvider has the following methods:
+//
+//	StorageOptionsProviderID() string
+//	FetchStorageOptions(ctx context.Context) (map[string]string, error)
+//
+// For example, this provider returns a fixed option map; a real provider
+// should fetch current credentials and endpoint settings:
+//
+//	type tenantProvider struct{}
+//
+//	func (tenantProvider) StorageOptionsProviderID() string { return "tenant-a/read" }
+//
+//	func (tenantProvider) FetchStorageOptions(ctx context.Context) (map[string]string, error) {
+//		return map[string]string{"allow_http": "true"}, nil
+//	}
+//
+//	accessor, err := NewStorageOptionsAccessor(nil, tenantProvider{})
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer accessor.Close()
 type StorageOptionsProvider = accessor.Provider
 
 // ForceStorageOptionsProvider optionally handles an explicit force refresh.
 // Without it, native force fetch falls back to StorageOptionsProvider.
+//
+// ForceStorageOptionsProvider has the following method:
+//
+//	ForceFetchStorageOptions(ctx context.Context) (map[string]string, error)
+//
+// It has the same nil-versus-empty and concurrency contract as
+// StorageOptionsProvider.FetchStorageOptions.
 type ForceStorageOptionsProvider = accessor.ForceProvider
 
 // StorageOptionsAccessor is a reusable owned accessor for dynamic storage
@@ -30,10 +60,26 @@ type ForceStorageOptionsProvider = accessor.ForceProvider
 // writers and sessions.
 //
 // The accessor contains its initial static options and optional provider.
-// Closing it waits for in-flight local snapshot calls but does not wait for
-// native datasets or stores that retained their own reference. Callers own the
-// provider value passed to NewStorageOptionsAccessor; the accessor does not
-// call a Go provider Close method.
+// A nil initial map means native None; a non-nil map, including an empty one,
+// means an explicit initial set. Valid initial options are used without
+// fetching. After they expire, provider options replace the initial set; a nil
+// provider result falls back to the initial set.
+//
+// A StorageOptionsAccessor has the following methods:
+//
+//	func (a *StorageOptionsAccessor) ProviderID() string
+//	func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error)
+//	func (a *StorageOptionsAccessor) Close()
+//
+// ProviderID returns the native provider identity, or an empty string for a
+// purely static accessor. Snapshot returns the currently resolved options and
+// whether native has an option set: a nil map with false means native None,
+// while a non-nil empty map with true means Some(empty). The map is an
+// independent copy. Close is idempotent and waits for in-flight local snapshot
+// calls, but does not wait for native datasets or stores that retained their
+// own reference. Callers own the provider value passed to
+// NewStorageOptionsAccessor; the accessor does not call a Go provider Close
+// method.
 type StorageOptionsAccessor = accessor.Accessor
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map

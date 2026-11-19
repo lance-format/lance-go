@@ -26,11 +26,37 @@ type CacheSpec struct {
 }
 
 // CacheStats is a snapshot of both session caches.
+//
+// CacheStats has the following fields:
+//
+//	IndexCacheHits         uint64
+//	IndexCacheMisses       uint64
+//	IndexCacheEntries      uint64
+//	IndexCacheSizeBytes    uint64
+//	MetadataCacheHits      uint64
+//	MetadataCacheMisses    uint64
+//	MetadataCacheEntries   uint64
+//	MetadataCacheSizeBytes uint64
+//
+// The hit and miss counters describe lookups. Entries and size bytes describe
+// the current cache contents. Session.CacheStats returns a copied snapshot.
 type CacheStats = sharesession.CacheStats
 
 // Session owns shared index and metadata caches. Datasets and raw file
 // objects opened with a session keep their cache state after the session is
 // closed.
+//
+// A Session has the following methods:
+//
+//	func (s *Session) CacheStats() (CacheStats, error)
+//	func (s *Session) SizeBytes() (uint64, error)
+//	func (s *Session) ApproxNumItems() (uint64, error)
+//	func (s *Session) Close() error
+//
+// SizeBytes reports approximate cache memory use, and ApproxNumItems reports
+// the approximate number of cached items. Close is idempotent, waits for
+// in-flight calls, and releases the caller's session handle; objects already
+// opened from the session remain usable.
 type Session = sharesession.Session
 
 // NewSession creates a session with fixed-size caches.
