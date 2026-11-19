@@ -96,7 +96,19 @@ jobs:
 
       - name: Verify README quickstart
         if: matrix.go-version == '1.23.x'
-        run: ./scripts/verify-quickstart.sh
+        env:
+          RELEASE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          PULL_REQUEST_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          # A fork pull request's head commit is not resolvable as this module.
+          if [[ -n "$PULL_REQUEST_HEAD_REPOSITORY" && "$PULL_REQUEST_HEAD_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+            unset RELEASE_REVISION
+          fi
+          if [[ -n "${RELEASE_REVISION:-}" ]]; then
+            export LANCE_GO_QUICKSTART_VERSION="$RELEASE_REVISION"
+          fi
+          ./scripts/verify-quickstart.sh
 
   native:
     name: Native Linux amd64
