@@ -37,8 +37,8 @@ internal/ffi/upstream.go and the host platform. The library is never loaded.
 EOF
 }
 
-# Keep this parser in sync with scripts/build-lance-c.sh, scripts/lance-c-cache.sh,
-# and scripts/sync-lance-c.sh; all read the pin from the same file.
+# Keep this parser in sync with scripts/build-lance-c.sh and
+# scripts/sync-lance-c.sh; all read the pin from the same file.
 read_pin() {
 	local name=$1 value count
 	count=$(grep -c "^[[:space:]]*${name}[[:space:]]*=" "$upstream_go" || true)

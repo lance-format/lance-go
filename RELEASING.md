@@ -180,8 +180,29 @@ module declares no requirements and contains only `embed` data.
 
 ## 2. Build, check, and record native acceptance
 
-For Linux and macOS, build from the pinned commit into an output directory
-outside the checkout:
+When the pin is a published `lance-c` release, acquire the exact published
+bytes instead of rebuilding:
+
+```sh
+: "${TARGET:?target as GOOS/GOARCH, for example linux/amd64}"
+: "${RELEASE_OUT:?new output directory}"
+go run ./internal/tools/fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
+NATIVE_LIB=$(find "$RELEASE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
+NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
+```
+
+The tool verifies the published per-asset checksum, the pinned header hash, and
+the target machine. It also requires the library to equal
+`artifacts/$SLUG/artifact.go` `UncompressedSHA256` when that companion metadata
+describes the same commit and header. After a pin bump, the existing companions
+describe the previous commit, so the check is inactive until the new companions
+are published and adopted; candidate packaging proceeds from the acquired
+bytes. Release archives are already stripped, so pass the library directly to
+the generator in step 3. Build from source only when the pin has no matching
+release archive.
+
+For a source build on Linux or macOS, build from the pinned commit into an
+output directory outside the checkout:
 
 ```sh
 : "${NATIVE_OUT:?new output directory}"
@@ -192,7 +213,8 @@ NATIVE_HEADER="$NATIVE_OUT/include/lance/lance.h"
 ```
 
 `build-lance-c.sh` checks out `upstreamCommit`, verifies the source and
-installed header hashes, builds, and installs. It does not strip the library.
+installed header hashes, builds, and installs. It does not strip the library;
+the official release archives are already stripped and need no local strip.
 Keep the original build for diagnostics. Prepare a separate stripped packaging
 copy using the target toolchain, verify that its exported bindings and runtime
 dependencies are unchanged, and run a consumer against that copy. Set
