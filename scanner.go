@@ -104,6 +104,63 @@ func (s *Scanner) Statistics() ScanStatistics {
 	return result
 }
 
+// ExplainPlan returns the native query plan for this scanner without starting
+// the scan. verbose selects the native DataFusion tree formatting. The scanner
+// remains usable for iteration or count diagnostics afterward.
+func (s *Scanner) ExplainPlan(ctx context.Context, verbose bool) (string, error) {
+	if err := checkContext(ctx); err != nil {
+		return "", err
+	}
+	plan, err := s.native.ExplainPlan(verbose)
+	if err != nil {
+		return "", wrapError("explain plan", s.uri, err)
+	}
+	return plan, nil
+}
+
+// AnalyzePlan executes the native query plan and returns its runtime analysis
+// without starting or advancing iteration. The scanner remains usable
+// afterward.
+func (s *Scanner) AnalyzePlan(ctx context.Context) (string, error) {
+	if err := checkContext(ctx); err != nil {
+		return "", err
+	}
+	plan, err := s.native.AnalyzePlan()
+	if err != nil {
+		return "", wrapError("analyze plan", s.uri, err)
+	}
+	return plan, nil
+}
+
+// AnalyzeCountPlan returns the runtime analysis of the native COUNT(*) plan
+// used by CountRows. It obeys the same count-plan restrictions and does not
+// start or advance iteration.
+func (s *Scanner) AnalyzeCountPlan(ctx context.Context) (string, error) {
+	if err := checkContext(ctx); err != nil {
+		return "", err
+	}
+	plan, err := s.native.AnalyzeCountPlan()
+	if err != nil {
+		return "", wrapError("analyze count plan", s.uri, err)
+	}
+	return plan, nil
+}
+
+// CountRows counts rows matched by the configured scanner plan. It applies the
+// native COUNT(*) aggregate instead of consuming scan batches; limit, offset,
+// ordering and MinHash queries are rejected by native planning. Use
+// Dataset.CountRows or CountRowsFiltered for dataset-wide counts.
+func (s *Scanner) CountRows(ctx context.Context) (uint64, error) {
+	if err := checkContext(ctx); err != nil {
+		return 0, err
+	}
+	rows, err := s.native.CountRows()
+	if err != nil {
+		return 0, wrapError("count rows", s.uri, err)
+	}
+	return rows, nil
+}
+
 // Close releases the scanner. It is idempotent.
 func (s *Scanner) Close() error {
 	return s.native.Close()
