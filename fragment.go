@@ -3,6 +3,7 @@ package lance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime"
 
@@ -278,10 +279,14 @@ func (f *Fragment) Scan(opts ...ScanOption) (*Scanner, error) {
 		return nil, invalidError("scan fragment", f.uri, "%v", err)
 	}
 	native, err := f.native.Scan(nativeScannerOptions(config), func(native *ffi.Scanner) error {
-		return applyFTSScan(native, &config)
+		return applyFTSScan(native, &config, "scan fragment", f.uri)
 	})
 	runtime.KeepAlive(&config)
 	if err != nil {
+		var lanceErr *Error
+		if errors.As(err, &lanceErr) {
+			return nil, err
+		}
 		return nil, wrapError("scan fragment", f.uri, err)
 	}
 	return &Scanner{

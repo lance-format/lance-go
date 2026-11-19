@@ -121,10 +121,10 @@ func (d *Dataset) NewVectorSegmentBuilder(ctx context.Context, column, name stri
 	}
 	defer d.res.release()
 	if err := validateCString(column); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	if err := validateCString(name); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	native, err := d.native.NewVectorSegmentBuilder(column, name, ffiVectorIndexOptions(options), ffiSegmentSelection(scope))
 	if err != nil {
@@ -145,10 +145,10 @@ func (d *Dataset) NewScalarSegmentBuilder(ctx context.Context, column, name stri
 	}
 	defer d.res.release()
 	if err := validateCString(column); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	if err := validateCString(name); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	native, err := d.native.NewScalarSegmentBuilder(column, name, int32(indexType), params, ffiScalarOptions(options), ffiSegmentSelection(scope))
 	if err != nil {
@@ -167,10 +167,10 @@ func (d *Dataset) CommitIndexSegments(ctx context.Context, indexName, column str
 		return nil, err
 	}
 	if err := validateCString(indexName); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	if err := validateCString(column); err != nil {
-		return nil, wrapError(op, d.uri, err)
+		return nil, invalidError(op, d.uri, "%v", err)
 	}
 	if len(segments) == 0 {
 		return nil, invalidError(op, d.uri, "at least one index segment is required")
@@ -215,7 +215,7 @@ func (d *Dataset) MergeIndexMetadata(ctx context.Context, uuid index.UUID, index
 		return invalidError(op, d.uri, "indexType must not be empty")
 	}
 	if err := validateCString(indexType); err != nil {
-		return wrapError(op, d.uri, err)
+		return invalidError(op, d.uri, "%v", err)
 	}
 	if err := d.acquire(op); err != nil {
 		return err

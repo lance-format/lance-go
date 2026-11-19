@@ -24,7 +24,7 @@ type SegmentMetadata struct {
 // ParseSegmentMetadata decodes one encoded IndexMetadata protobuf.
 func ParseSegmentMetadata(encoded []byte) (*SegmentMetadata, error) {
 	if len(encoded) == 0 {
-		return nil, invalidf("ffi: segment metadata must not be empty")
+		return nil, invalidf("segment metadata must not be empty")
 	}
 	b, err := load()
 	if err != nil {

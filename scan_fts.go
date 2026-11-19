@@ -19,7 +19,9 @@ type ftsScanConfig struct {
 	segmentsSet   bool
 }
 
-// WithFTSQuery attaches an immutable full-text query to the scan.
+// WithFTSQuery attaches an immutable full-text query to the scan. The query
+// must be non-nil, initialized and open; Scan reports ErrInvalidArgument for a
+// nil or uninitialized query and ErrClosed for a closed query.
 func WithFTSQuery(query *FTSQuery) ScanOption {
 	return func(config *scanConfig) error {
 		if query == nil {
@@ -31,7 +33,9 @@ func WithFTSQuery(query *FTSQuery) ScanOption {
 }
 
 // WithFTSQueryContext attaches a prepared full-text query context. The context
-// must come from this exact process-local dataset snapshot.
+// must come from this exact process-local dataset snapshot. Scan reports
+// ErrInvalidArgument for a nil or uninitialized context and ErrClosed for a
+// closed context.
 func WithFTSQueryContext(query *FTSPreparedQuery) ScanOption {
 	return func(config *scanConfig) error {
 		if query == nil {
@@ -74,7 +78,7 @@ func WithFTSIndexSegments(uuids ...index.UUID) ScanOption {
 	}
 }
 
-func applyFTSScan(native *ffi.Scanner, config *scanConfig) error {
+func applyFTSScan(native *ffi.Scanner, config *scanConfig, op, uri string) error {
 	fts := &config.fts
 	attached := 0
 	if fts.query != nil {
@@ -86,11 +90,17 @@ func applyFTSScan(native *ffi.Scanner, config *scanConfig) error {
 	if fts.minHashSet {
 		attached++
 	}
+	if fts.query != nil && fts.query.native == nil {
+		return invalidError(op, uri, "FTS query is not initialized")
+	}
+	if fts.context != nil && fts.context.native == nil {
+		return invalidError(op, uri, "FTS prepared query is not initialized")
+	}
 	if attached > 1 {
-		return fmt.Errorf("FTS query, prepared context, and MinHash query are mutually exclusive")
+		return invalidError(op, uri, "FTS query, prepared context, and MinHash query are mutually exclusive")
 	}
 	if fts.segmentsSet && len(fts.segments) > 0 && fts.context == nil {
-		return fmt.Errorf("FTS index segments require a prepared query context")
+		return invalidError(op, uri, "FTS index segments require a prepared query context")
 	}
 	switch {
 	case fts.query != nil:
