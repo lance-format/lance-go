@@ -171,4 +171,5 @@ Cache entries are content-addressed by `<uncompressed-sha256>`. After upgrading,
 - [Go API reference for preview.2](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.2) and [usage guide](docs/api-guide.md) for scans, mutations, search, and dataset maintenance.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
 - [Native package details](artifacts/README.md) for platform coverage, library identity, checksums, and the preview.2 exact-tag consumer record.
+- [Changelog](CHANGELOG.md) for user-facing changes by release.
 - [Development and testing](docs/development.md#testing) and [release process](RELEASING.md) for contributors.
