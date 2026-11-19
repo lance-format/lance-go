@@ -87,12 +87,12 @@ jobs:
             echo "bundled public path test did not pass; it must not skip or use another library" >&2
             exit 1
           fi
-          cache_file="$cache_dir/lance-go/8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13/liblance_c.so"
+          cache_file="$cache_dir/lance-go/4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac/liblance_c.so"
           if [[ ! -f "$cache_file" ]]; then
             echo "bundled library was not extracted to $cache_file" >&2
             exit 1
           fi
-          echo "8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13  $cache_file" | sha256sum -c -
+          echo "4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac  $cache_file" | sha256sum -c -
 
       - name: Verify README quickstart
         if: matrix.go-version == '1.23.x'

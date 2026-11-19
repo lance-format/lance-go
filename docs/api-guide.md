@@ -2,7 +2,7 @@
 
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
-This guide describes the `main` branch and the public Go APIs it contains. The latest published tag is `v0.1.0-preview.2`, which bundles lance-c v0.2.0-beta.1. APIs added after that tag are marked **main only** below; they are not available from the preview.2 module.
+This guide describes the `main` branch and the public Go APIs it contains. The latest published tag is `v0.1.0`, which bundles lance-c v0.2.0. APIs added after that tag are marked **main only** below; they are not available from the v0.1.0 module.
 
 ## Read a dataset
 
@@ -222,7 +222,7 @@ after their parent object is closed.
 
 ## Runtime diagnostics
 
-`RuntimeInfo()` and the runtime fields are **main only**; the published preview.2 module does not contain them.
+`RuntimeInfo()` and the runtime fields were added in `v0.1.0`; earlier modules do not contain them.
 
 `RuntimeInfo()` returns what this process has actually observed without
 inspecting the environment, extracting a bundle, loading a library, resolving
@@ -423,8 +423,8 @@ column carrying blob metadata.
 
 ### Query plan diagnostics
 
-These scanner diagnostics and `Scanner.CountRows` are **main only**; the
-published preview.2 module does not contain them.
+These scanner diagnostics and `Scanner.CountRows` were added in `v0.1.0`;
+earlier modules do not contain them.
 
 `Scanner.ExplainPlan(ctx, verbose)` returns the native plan for the configured
 scan without starting it. `Scanner.AnalyzePlan(ctx)` executes that plan and
@@ -806,7 +806,7 @@ presence is not proof that enum value 9 is supported; the SDK neither emulates
 RTree nor substitutes a different index. The preview.1 bundle rejects enum
 value 9; the README release mapping and the
 [artifact record](../artifacts/README.md) state the exact native requirement
-for the installed preview.
+for the installed release.
 
 ## Vector search
 
@@ -960,7 +960,7 @@ the scan.
 On `main`, the FTS query constructors return `*lance.Error` matching
 `ErrInvalidArgument` for invalid arguments, including embedded NUL bytes,
 invalid operators and nil or closed subqueries. This typed-error normalization
-is **main only**; some constructor checks in preview.2 return plain errors.
+was added in `v0.1.0`; some constructor checks in preview.2 return plain errors.
 
 FTS and vector scans project `_score` or `_distance` automatically, even when a
 column projection is explicit. Call `WithoutScoringAutoprojection()` to disable

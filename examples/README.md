@@ -1,8 +1,7 @@
 # Examples
 
-These examples track `main`. The published `v0.1.0-preview.2` tag contains only
-the earlier `roundtrip` and `cloud-refresh` examples; the workflow examples
-below are not part of that tag.
+These examples track `main`. The published `v0.1.0` tag contains the same
+examples.
 
 Run the local examples from the repository root with the normal zero-config
 bundle on a supported target:
