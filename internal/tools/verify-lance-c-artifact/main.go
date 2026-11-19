@@ -33,21 +33,8 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
 )
-
-type metadata struct {
-	target             string
-	libraryName        string
-	compressedSize     int64
-	compressedSHA256   string
-	uncompressedSize   int64
-	uncompressedSHA256 string
-	upstreamRepo       string
-	upstreamCommit     string
-	headerSHA256       string
-}
-
-var constantLine = regexp.MustCompile(`(?m)^[ \t]*([A-Za-z][A-Za-z0-9]*)[ \t]*(?:int64[ \t]*)?=[ \t]*(?:"([^"]*)"|([0-9]+))[ \t]*$`)
 
 func main() {
 	moduleDir := flag.String("module", "", "generated module directory to verify")
@@ -65,39 +52,39 @@ func main() {
 		fail(errors.New("-module, -library, and -target are required"))
 	}
 
-	md, err := readMetadata(filepath.Join(*moduleDir, "artifact.go"))
+	md, err := artifactmeta.Read(filepath.Join(*moduleDir, "artifact.go"))
 	if err != nil {
 		fail(err)
 	}
-	if err := verifyModuleLayout(*moduleDir, md.libraryName+".zst"); err != nil {
+	if err := verifyModuleLayout(*moduleDir, md.LibraryName+".zst"); err != nil {
 		fail(err)
 	}
-	if md.target != *target {
-		fail(fmt.Errorf("artifact target is %q, want %q", md.target, *target))
+	if md.Target != *target {
+		fail(fmt.Errorf("artifact target is %q, want %q", md.Target, *target))
 	}
 
 	libraryInfo, err := regularFile(*libraryPath)
 	if err != nil {
 		fail(fmt.Errorf("library: %w", err))
 	}
-	if filepath.Base(*libraryPath) != md.libraryName {
-		fail(fmt.Errorf("library basename is %q, want %q", filepath.Base(*libraryPath), md.libraryName))
+	if filepath.Base(*libraryPath) != md.LibraryName {
+		fail(fmt.Errorf("library basename is %q, want %q", filepath.Base(*libraryPath), md.LibraryName))
 	}
 
-	payloadPath := filepath.Join(*moduleDir, md.libraryName+".zst")
+	payloadPath := filepath.Join(*moduleDir, md.LibraryName+".zst")
 	payloadInfo, err := regularFile(payloadPath)
 	if err != nil {
 		fail(fmt.Errorf("payload: %w", err))
 	}
-	if payloadInfo.Size() != md.compressedSize {
-		fail(fmt.Errorf("payload is %d bytes, artifact says %d", payloadInfo.Size(), md.compressedSize))
+	if payloadInfo.Size() != md.CompressedSize {
+		fail(fmt.Errorf("payload is %d bytes, artifact says %d", payloadInfo.Size(), md.CompressedSize))
 	}
 	payloadSHA, err := sha256File(payloadPath)
 	if err != nil {
 		fail(err)
 	}
-	if payloadSHA != md.compressedSHA256 {
-		fail(fmt.Errorf("payload sha256 is %s, artifact says %s", payloadSHA, md.compressedSHA256))
+	if payloadSHA != md.CompressedSHA256 {
+		fail(fmt.Errorf("payload sha256 is %s, artifact says %s", payloadSHA, md.CompressedSHA256))
 	}
 
 	pin, err := os.ReadFile(*pinPath)
@@ -108,9 +95,9 @@ func main() {
 		name string
 		want string
 	}{
-		{"upstreamRepo", md.upstreamRepo},
-		{"upstreamCommit", md.upstreamCommit},
-		{"upstreamHeaderSHA256", md.headerSHA256},
+		{"upstreamRepo", md.UpstreamRepo},
+		{"upstreamCommit", md.UpstreamCommit},
+		{"upstreamHeaderSHA256", md.HeaderSHA256},
 	} {
 		got, err := pinConstant(string(pin), check.name)
 		if err != nil {
@@ -158,21 +145,21 @@ func main() {
 	if compared != libraryInfo.Size() {
 		fail(fmt.Errorf("decompressed payload is %d bytes, library is %d", compared, libraryInfo.Size()))
 	}
-	if compared != md.uncompressedSize {
-		fail(fmt.Errorf("decompressed payload is %d bytes, artifact says %d", compared, md.uncompressedSize))
+	if compared != md.UncompressedSize {
+		fail(fmt.Errorf("decompressed payload is %d bytes, artifact says %d", compared, md.UncompressedSize))
 	}
 	decompressedSHA := hex.EncodeToString(decompressedHash.Sum(nil))
-	if decompressedSHA != md.uncompressedSHA256 {
-		fail(fmt.Errorf("decompressed payload sha256 is %s, artifact says %s", decompressedSHA, md.uncompressedSHA256))
+	if decompressedSHA != md.UncompressedSHA256 {
+		fail(fmt.Errorf("decompressed payload sha256 is %s, artifact says %s", decompressedSHA, md.UncompressedSHA256))
 	}
-	if librarySHA != md.uncompressedSHA256 {
-		fail(fmt.Errorf("library sha256 is %s, artifact says %s", librarySHA, md.uncompressedSHA256))
+	if librarySHA != md.UncompressedSHA256 {
+		fail(fmt.Errorf("library sha256 is %s, artifact says %s", librarySHA, md.UncompressedSHA256))
 	}
 
 	fmt.Printf("artifact_module=%s\n", *moduleDir)
 	fmt.Printf("module_path=%s\n", gotModulePath)
 	fmt.Printf("go_version=%s\n", goVersion)
-	fmt.Printf("target=%s\n", md.target)
+	fmt.Printf("target=%s\n", md.Target)
 	fmt.Printf("library=%s\n", *libraryPath)
 	fmt.Printf("library_bytes=%d\n", libraryInfo.Size())
 	fmt.Printf("library_sha256=%s\n", librarySHA)
@@ -182,9 +169,9 @@ func main() {
 	fmt.Printf("decompressed_bytes=%d\n", compared)
 	fmt.Printf("decompressed_sha256=%s\n", decompressedSHA)
 	fmt.Printf("byte_equality=identical\n")
-	fmt.Printf("upstream_repo=%s\n", md.upstreamRepo)
-	fmt.Printf("upstream_commit=%s\n", md.upstreamCommit)
-	fmt.Printf("header_sha256=%s\n", md.headerSHA256)
+	fmt.Printf("upstream_repo=%s\n", md.UpstreamRepo)
+	fmt.Printf("upstream_commit=%s\n", md.UpstreamCommit)
+	fmt.Printf("header_sha256=%s\n", md.HeaderSHA256)
 	fmt.Printf("artifact_verification=ok\n")
 }
 
@@ -275,62 +262,6 @@ func verifyModuleLayout(dir, payloadName string) error {
 		return errors.New("artifact module must declare exactly one Payload variable")
 	}
 	return nil
-}
-
-func readMetadata(path string) (metadata, error) {
-	var md metadata
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return md, fmt.Errorf("read artifact metadata: %w", err)
-	}
-	values := make(map[string]string)
-	for _, match := range constantLine.FindAllStringSubmatch(string(data), -1) {
-		name := match[1]
-		if _, exists := values[name]; exists {
-			return md, fmt.Errorf("artifact metadata has duplicate %s", name)
-		}
-		value := match[2]
-		if value == "" {
-			value = match[3]
-		}
-		values[name] = value
-	}
-
-	required := []string{
-		"Target", "LibraryName", "CompressedSize", "CompressedSHA256",
-		"UncompressedSize", "UncompressedSHA256", "UpstreamRepo",
-		"UpstreamCommit", "HeaderSHA256",
-	}
-	for _, name := range required {
-		if _, ok := values[name]; !ok {
-			return md, fmt.Errorf("artifact metadata is missing %s", name)
-		}
-	}
-
-	md.target = values["Target"]
-	md.libraryName = values["LibraryName"]
-	md.compressedSHA256 = values["CompressedSHA256"]
-	md.uncompressedSHA256 = values["UncompressedSHA256"]
-	md.upstreamRepo = values["UpstreamRepo"]
-	md.upstreamCommit = values["UpstreamCommit"]
-	md.headerSHA256 = values["HeaderSHA256"]
-
-	if md.compressedSize, err = strconv.ParseInt(values["CompressedSize"], 10, 64); err != nil {
-		return md, fmt.Errorf("artifact CompressedSize: %w", err)
-	}
-	if md.uncompressedSize, err = strconv.ParseInt(values["UncompressedSize"], 10, 64); err != nil {
-		return md, fmt.Errorf("artifact UncompressedSize: %w", err)
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(md.compressedSHA256) {
-		return md, fmt.Errorf("artifact CompressedSHA256 is not a lowercase SHA-256: %q", md.compressedSHA256)
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(md.uncompressedSHA256) {
-		return md, fmt.Errorf("artifact UncompressedSHA256 is not a lowercase SHA-256: %q", md.uncompressedSHA256)
-	}
-	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(md.headerSHA256) {
-		return md, fmt.Errorf("artifact HeaderSHA256 is not a lowercase SHA-256: %q", md.headerSHA256)
-	}
-	return md, nil
 }
 
 func readGoMod(path string) (modulePath, goVersion string, err error) {

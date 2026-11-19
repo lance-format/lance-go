@@ -95,9 +95,12 @@ takes a long time.
 CI and release packaging do not use this path. They acquire the official
 release archive for `upstreamRelease` through
 `internal/tools/fetch-lance-c-release`, which verifies the published per-asset
-checksum, the pinned header hash, and the target machine. Build from source
-when you are changing `lance-c`, or when the pin has no matching release
-archive.
+checksum, the pinned header hash, and the target machine. When
+`artifacts/<target>/artifact.go` describes the same upstream commit and header,
+the acquired library must also equal that companion metadata's
+`UncompressedSHA256`; after a pin bump the check stays inactive until the new
+companions are published. Build from source when you are changing `lance-c`,
+or when the pin has no matching release archive.
 
 ## Pinned ABI and verification
 

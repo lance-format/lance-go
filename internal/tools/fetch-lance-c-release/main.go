@@ -26,9 +26,18 @@
 // same header with CRLF line endings. The command writes the canonical LF form
 // recorded by upstreamHeaderSHA256 and records both hashes.
 //
+// When the checked-in companion metadata at artifacts/<target>/artifact.go
+// records the same upstream repository, commit, and header as the pin, the
+// acquired library must also equal that module's UncompressedSHA256. That
+// check keeps CI on the bytes a published companion ships even if a release
+// archive and its published checksum were replaced together. A pin bump whose
+// companions have not been republished yet records the independent check as
+// inactive; candidate packaging still uses the acquired bytes.
+//
 // lance-c exposes no runtime version symbol, so the library bytes cannot prove
 // the commit that built them. The published per-asset checksum, the pinned
-// header hash and the target machine check are the available identity chain.
+// companion identity, the pinned header hash, and the target machine check are
+// the available identity chain.
 package main
 
 import (
@@ -43,6 +52,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,6 +63,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
 )
 
 const pinPath = "internal/ffi/upstream.go"
@@ -61,6 +73,7 @@ func main() {
 	targetFlag := flag.String("target", "", "target to acquire as GOOS/GOARCH: linux/amd64, linux/arm64, darwin/arm64, windows/amd64, or windows/arm64")
 	outFlag := flag.String("out", "", "new output directory; must not exist")
 	pinFlag := flag.String("pin", pinPath, "pin file with the upstream provenance constants")
+	artifactsFlag := flag.String("artifacts", "artifacts", "root of the checked-in companion metadata")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
@@ -71,7 +84,7 @@ func main() {
 		fail(errors.New("-target and -out are required"))
 	}
 
-	if err := run(*targetFlag, *outFlag, *pinFlag); err != nil {
+	if err := run(*targetFlag, *outFlag, *pinFlag, *artifactsFlag); err != nil {
 		fail(err)
 	}
 }
@@ -94,7 +107,7 @@ type pinCheck struct {
 	want string
 }
 
-func run(targetName, outDir, pinFile string) error {
+func run(targetName, outDir, pinFile, artifactsRoot string) error {
 	pinned, err := readPin(pinFile)
 	if err != nil {
 		return err
@@ -111,7 +124,7 @@ func run(targetName, outDir, pinFile string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory %s: %w", outDir, err)
 	}
-	if err := acquire(pinned, spec, outDir); err != nil {
+	if err := acquire(pinned, spec, outDir, artifactsRoot); err != nil {
 		return err
 	}
 
@@ -126,7 +139,7 @@ func run(targetName, outDir, pinFile string) error {
 const recordName = "acquisition.txt"
 
 // acquire downloads, verifies, extracts, and records one release archive.
-func acquire(pinned pin, spec targetSpec, outDir string) error {
+func acquire(pinned pin, spec targetSpec, outDir, artifactsRoot string) error {
 	assetName := fmt.Sprintf("lance-c-%s-%s.tar.xz", pinned.release, spec.triple)
 	baseURL := strings.TrimSuffix(pinned.repo, "/") + "/releases/download/" + url.PathEscape(pinned.release)
 	assetURL := baseURL + "/" + assetName
@@ -155,9 +168,8 @@ func acquire(pinned pin, spec targetSpec, outDir string) error {
 	if err != nil {
 		return fmt.Errorf("published checksum %s: %w", checksumPath, err)
 	}
-	if archiveSHA != publishedSHA {
-		return fmt.Errorf("archive sha256 is %s, published %s says %s; the download is corrupt or the published asset changed",
-			archiveSHA, checksumName, publishedSHA)
+	if err := verifyArchiveChecksum(archiveSHA, publishedSHA, checksumName); err != nil {
+		return err
 	}
 
 	members, err := listArchiveMembers(archivePath)
@@ -203,6 +215,16 @@ func acquire(pinned pin, spec targetSpec, outDir string) error {
 		}
 	}
 
+	independent, err := verifyIndependentIdentity(artifactsRoot, spec, pinned, librarySHA, librarySize)
+	if err != nil {
+		return err
+	}
+	if independent.status == "verified" {
+		fmt.Printf("independent identity: %s matches the companion module %s\n", librarySHA, independent.path)
+	} else {
+		fmt.Printf("independent identity: inactive for %s (%s)\n", spec.name, independent.reason)
+	}
+
 	record := []string{
 		"target=" + spec.name,
 		"upstream_repo=" + pinned.repo,
@@ -227,6 +249,16 @@ func acquire(pinned pin, spec targetSpec, outDir string) error {
 		"library_sha256=" + librarySHA,
 		"library_format=" + format,
 		"library_machine=" + machine,
+		"independent_identity=" + independent.path,
+		"independent_identity_status=" + independent.status,
+	}
+	if independent.status == "verified" {
+		record = append(record,
+			"independent_identity_library_bytes="+strconv.FormatInt(independent.expectedSize, 10),
+			"independent_identity_library_sha256="+independent.expectedSHA,
+		)
+	} else {
+		record = append(record, "independent_identity_reason="+independent.reason)
 	}
 	if importLibraryPath != "" {
 		record = append(record,
@@ -672,6 +704,65 @@ func classifyPE(head []byte) (string, string, error) {
 	default:
 		return "", "", fmt.Errorf("PE machine 0x%x is not a supported target", machine)
 	}
+}
+
+// verifyArchiveChecksum binds the downloaded archive to the checksum published
+// next to it. It cannot detect a release whose archive and checksum were
+// replaced together; verifyIndependentIdentity adds the checked-in companion
+// identity for that case.
+func verifyArchiveChecksum(observed, published, checksumName string) error {
+	if observed != published {
+		return fmt.Errorf("archive sha256 is %s, published %s says %s; the download is corrupt or the published asset changed",
+			observed, checksumName, published)
+	}
+	return nil
+}
+
+type independentIdentity struct {
+	path         string
+	status       string
+	expectedSHA  string
+	expectedSize int64
+	reason       string
+}
+
+// verifyIndependentIdentity ties the acquired library to the companion module
+// metadata recorded in the SDK tree for this target. The check is inactive
+// when that metadata describes a different upstream revision, which is the
+// normal state between a pin bump and companion republication. Candidate
+// packaging therefore depends only on the acquired bytes and the pin.
+func verifyIndependentIdentity(artifactsRoot string, spec targetSpec, pinned pin, librarySHA string, librarySize int64) (independentIdentity, error) {
+	slug := strings.ReplaceAll(spec.name, "/", "-")
+	path := filepath.Join(artifactsRoot, slug, "artifact.go")
+	result := independentIdentity{path: path}
+
+	md, err := artifactmeta.Read(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		result.status = "inactive"
+		result.reason = fmt.Sprintf("no companion metadata at %s", path)
+		return result, nil
+	}
+	if err != nil {
+		return result, fmt.Errorf("read independently pinned companion %s: %w", path, err)
+	}
+	if md.UpstreamRepo == pinned.repo && md.UpstreamCommit == pinned.commit && md.HeaderSHA256 == pinned.headerSHA {
+		if md.Target != spec.name || md.LibraryName != filepath.Base(spec.libraryMember) {
+			return result, fmt.Errorf("independently pinned companion %s records %s/%s, want %s/%s",
+				path, md.Target, md.LibraryName, spec.name, filepath.Base(spec.libraryMember))
+		}
+		result.status = "verified"
+		result.expectedSHA = md.UncompressedSHA256
+		result.expectedSize = md.UncompressedSize
+		if md.UncompressedSHA256 != librarySHA || md.UncompressedSize != librarySize {
+			return result, fmt.Errorf("library sha256 is %s (%d bytes), but the independently pinned companion %s records %s (%d bytes) for %s@%s; the release archive does not carry the bytes this pin publishes",
+				librarySHA, librarySize, path, md.UncompressedSHA256, md.UncompressedSize, pinned.repo, pinned.commit)
+		}
+		return result, nil
+	}
+	result.status = "inactive"
+	result.reason = fmt.Sprintf("companion metadata records %s@%s with header sha256 %s; the pin records %s@%s with header sha256 %s",
+		md.UpstreamRepo, md.UpstreamCommit, md.HeaderSHA256, pinned.repo, pinned.commit, pinned.headerSHA)
+	return result, nil
 }
 
 // listArchiveMembers returns the exact member names in the archive.

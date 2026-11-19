@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
 )
 
 const testPinFile = `package ffi
@@ -359,5 +362,165 @@ func TestDownloadOnce(t *testing.T) {
 	var failure statusError
 	if !errors.As(err, &failure) || failure.code != http.StatusNotFound || retryable(err) {
 		t.Fatalf("missing asset returned %v, want a non-retryable HTTP 404", err)
+	}
+}
+
+const companionLibrarySHA = "8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13"
+
+func testPin(t *testing.T) pin {
+	t.Helper()
+	pinned, err := readPin(writeFile(t, t.TempDir(), "upstream.go", testPinFile))
+	if err != nil {
+		t.Fatalf("readPin: %v", err)
+	}
+	return pinned
+}
+
+func writeCompanion(t *testing.T, root string, spec targetSpec, pinned pin, librarySHA string, librarySize int64) {
+	t.Helper()
+	dir := filepath.Join(root, strings.ReplaceAll(spec.name, "/", "-"))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create companion directory: %v", err)
+	}
+	source := fmt.Sprintf(`package artifact
+
+const (
+	Target                   = %q
+	LibraryName              = %q
+	CompressedSize     int64 = 1
+	CompressedSHA256         = %q
+	UncompressedSize   int64 = %d
+	UncompressedSHA256       = %q
+	UpstreamRepo             = %q
+	UpstreamCommit           = %q
+	HeaderSHA256             = %q
+)
+`, spec.name, filepath.Base(spec.libraryMember), strings.Repeat("a", 64), librarySize,
+		librarySHA, pinned.repo, pinned.commit, pinned.headerSHA)
+	if err := os.WriteFile(filepath.Join(dir, "artifact.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("write companion metadata: %v", err)
+	}
+}
+
+func TestVerifyArchiveChecksum(t *testing.T) {
+	const digest = "76df5338b16e02627e715a3bbe6df554ce7e280e2c2d7497fa01ff76bea7ebf5"
+	if err := verifyArchiveChecksum(digest, digest, "asset.tar.xz.sha256"); err != nil {
+		t.Fatalf("verifyArchiveChecksum: %v", err)
+	}
+	if err := verifyArchiveChecksum(digest, strings.Repeat("b", 64), "asset.tar.xz.sha256"); err == nil {
+		t.Fatal("verifyArchiveChecksum accepted a mismatched checksum")
+	}
+}
+
+// TestReplacedArchiveWithMatchingChecksumIsRejected covers the contract that a
+// replaced archive with a replacement same-source checksum cannot pass: the
+// published-checksum comparison succeeds, and the independently pinned
+// companion identity rejects the different library bytes.
+func TestReplacedArchiveWithMatchingChecksumIsRejected(t *testing.T) {
+	pinned := testPin(t)
+	spec, err := resolveTarget("linux/amd64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+	root := t.TempDir()
+	writeCompanion(t, root, spec, pinned, companionLibrarySHA, 342441416)
+
+	replacementArchiveSHA := strings.Repeat("c", 64)
+	if err := verifyArchiveChecksum(replacementArchiveSHA, replacementArchiveSHA, "asset.tar.xz.sha256"); err != nil {
+		t.Fatalf("a self-consistent replacement checksum must pass the published-checksum check: %v", err)
+	}
+	if _, err := verifyIndependentIdentity(root, spec, pinned, strings.Repeat("d", 64), 342441416); err == nil ||
+		!strings.Contains(err.Error(), "independently pinned companion") {
+		t.Fatalf("verifyIndependentIdentity accepted replaced library bytes: %v", err)
+	}
+}
+
+func TestVerifyIndependentIdentity(t *testing.T) {
+	pinned := testPin(t)
+	spec, err := resolveTarget("linux/amd64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+
+	t.Run("valid pinned companion", func(t *testing.T) {
+		root := t.TempDir()
+		writeCompanion(t, root, spec, pinned, companionLibrarySHA, 342441416)
+		got, err := verifyIndependentIdentity(root, spec, pinned, companionLibrarySHA, 342441416)
+		if err != nil {
+			t.Fatalf("verifyIndependentIdentity: %v", err)
+		}
+		if got.status != "verified" || got.expectedSHA != companionLibrarySHA || got.expectedSize != 342441416 {
+			t.Fatalf("unexpected identity result: %+v", got)
+		}
+	})
+
+	t.Run("different library size", func(t *testing.T) {
+		root := t.TempDir()
+		writeCompanion(t, root, spec, pinned, companionLibrarySHA, 342441416)
+		if _, err := verifyIndependentIdentity(root, spec, pinned, companionLibrarySHA, 1); err == nil {
+			t.Fatal("verifyIndependentIdentity accepted a different library size")
+		}
+	})
+
+	t.Run("stale companion after a pin bump", func(t *testing.T) {
+		root := t.TempDir()
+		stale := pinned
+		stale.commit = strings.Repeat("a", 40)
+		writeCompanion(t, root, spec, stale, companionLibrarySHA, 342441416)
+		got, err := verifyIndependentIdentity(root, spec, pinned, strings.Repeat("d", 64), 1)
+		if err != nil {
+			t.Fatalf("a stale companion must not block acquisition: %v", err)
+		}
+		if got.status != "inactive" || !strings.Contains(got.reason, "companion metadata records") {
+			t.Fatalf("unexpected identity result: %+v", got)
+		}
+	})
+
+	t.Run("missing companion", func(t *testing.T) {
+		got, err := verifyIndependentIdentity(t.TempDir(), spec, pinned, companionLibrarySHA, 342441416)
+		if err != nil {
+			t.Fatalf("missing companion must not block acquisition: %v", err)
+		}
+		if got.status != "inactive" || !strings.Contains(got.reason, "no companion metadata") {
+			t.Fatalf("unexpected identity result: %+v", got)
+		}
+	})
+
+	t.Run("companion for another target", func(t *testing.T) {
+		root := t.TempDir()
+		other, err := resolveTarget("linux/arm64")
+		if err != nil {
+			t.Fatalf("resolveTarget: %v", err)
+		}
+		writeCompanion(t, root, other, pinned, companionLibrarySHA, 342441416)
+		// Place the other target's metadata where linux/amd64 is expected.
+		if err := os.Rename(filepath.Join(root, "linux-arm64"), filepath.Join(root, "linux-amd64")); err != nil {
+			t.Fatalf("rename companion: %v", err)
+		}
+		if _, err := verifyIndependentIdentity(root, spec, pinned, companionLibrarySHA, 342441416); err == nil ||
+			!strings.Contains(err.Error(), "records linux/arm64") {
+			t.Fatalf("verifyIndependentIdentity accepted metadata for another target: %v", err)
+		}
+	})
+}
+
+// TestCheckedInCompanionsMatchTargets keeps the metadata mapping every
+// supported target already relies on. It deliberately does not require the
+// companions to describe the current pin: after a pin bump they are updated
+// only once the new modules are published.
+func TestCheckedInCompanionsMatchTargets(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..")
+	for _, spec := range targets {
+		path := filepath.Join(repoRoot, "artifacts", strings.ReplaceAll(spec.name, "/", "-"), "artifact.go")
+		md, err := artifactmeta.Read(path)
+		if err != nil {
+			t.Fatalf("%s: %v", spec.name, err)
+		}
+		if md.Target != spec.name {
+			t.Fatalf("%s metadata target is %q", spec.name, md.Target)
+		}
+		if want := filepath.Base(spec.libraryMember); md.LibraryName != want {
+			t.Fatalf("%s metadata library is %q, want %q", spec.name, md.LibraryName, want)
+		}
 	}
 }

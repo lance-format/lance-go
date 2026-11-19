@@ -443,8 +443,15 @@ the per-asset `.sha256` published with the release, extracts only the header and
 shared library, verifies the header against `upstreamHeaderSHA256`, and checks
 the object format and machine for the target. The Windows archive ships the
 same header with CRLF line endings; the tool writes the canonical LF form and
-records both hashes. A missing asset or a checksum or identity mismatch fails
-the job; there is no source-build fallback. The acquisition record is uploaded
+records both hashes. When `artifacts/<target>/artifact.go` records the same
+upstream repository, commit, and header as the pin, the acquired library must
+also equal that metadata's `UncompressedSHA256`, so a release archive and its
+published checksum replaced together cannot silently change the bytes CI
+tests. After a pin bump the existing snapshots describe the previous commit,
+so the check is recorded as inactive until the new companion modules are
+published and their metadata is adopted; candidate packaging still uses the
+acquired bytes. A missing asset or a checksum or identity mismatch fails the
+job; there is no source-build fallback. The acquisition record is uploaded
 with the job evidence.
 
 Each job then runs `scripts/check-native-library.sh` against the acquired

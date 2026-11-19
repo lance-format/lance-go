@@ -192,9 +192,14 @@ NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
 ```
 
 The tool verifies the published per-asset checksum, the pinned header hash, and
-the target machine. Release archives are already stripped, so pass the library
-directly to the generator in step 3. Build from source only when the pin has no
-matching release archive.
+the target machine. It also requires the library to equal
+`artifacts/$SLUG/artifact.go` `UncompressedSHA256` when that companion metadata
+describes the same commit and header. After a pin bump, the existing companions
+describe the previous commit, so the check is inactive until the new companions
+are published and adopted; candidate packaging proceeds from the acquired
+bytes. Release archives are already stripped, so pass the library directly to
+the generator in step 3. Build from source only when the pin has no matching
+release archive.
 
 For a source build on Linux or macOS, build from the pinned commit into an
 output directory outside the checkout:
