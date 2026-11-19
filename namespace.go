@@ -33,6 +33,11 @@ func acquireNamespace(namespaceName namespace.Namespace, operation string) (*nsh
 	return lease, nil
 }
 
+// namespaceTableURI identifies the requested namespace table for local
+// bookkeeping and errors. It is not the native fully qualified dataset URI:
+// the namespace API returns only a dataset handle, and the pinned C ABI has no
+// dataset URI getter. Exposing a genuine Dataset.URI requires lance-c to add a
+// thin getter over Rust Dataset::uri() first.
 func namespaceTableURI(tableID []string) string {
 	return strings.Join(tableID, "$")
 }
