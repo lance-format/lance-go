@@ -160,7 +160,7 @@ if [[ -z $module_path ]]; then
 fi
 
 cd "$repo_root"
-go run ./scripts/sync-lance-c-gen \
+go run ./internal/tools/sync-lance-c-gen \
 	-library "$library" \
 	-header "$header" \
 	-target "$target" \

@@ -74,7 +74,7 @@ not complete publishable modules.
   14.0.2 / pyarrow 22.0.0, lance-java 14.0.2 / Arrow 18.3.0, and Rust core
   `40f15ed1b71b66950961b175829fdf17a763f108` / Arrow 58.3.0. This is Linux
   storage 2.1 evidence; it does not establish storage 2.2 or a cross-platform
-  compatibility matrix. See [the suite record](compat/README.md#accepted-execution).
+  compatibility matrix. See [the suite record](internal/compat/README.md#accepted-execution).
 - The current ac263 Linux lifecycle/RSS run completed 30 measured minutes
   with zero workload errors and zero sampled callback-handle delta. RSS grew;
   the measurement does not establish leak absence or a memory budget.

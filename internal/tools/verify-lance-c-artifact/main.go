@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	go run ./scripts/verify-lance-c-artifact \
+//	go run ./internal/tools/verify-lance-c-artifact \
 //	  -module /tmp/staging/linux-amd64/module \
 //	  -library /path/to/liblance_c.so \
 //	  -target linux/amd64 \

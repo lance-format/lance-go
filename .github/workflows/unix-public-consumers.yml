@@ -21,6 +21,7 @@ on:
     paths:
       - ".github/workflows/unix-public-consumers.yml"
       - "scripts/public-consumer/**"
+      - "internal/tools/public-consumer/**"
       - "artifacts/**"
       - "internal/ffi/**"
       - "internal/loader/**"

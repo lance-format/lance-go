@@ -24,17 +24,17 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-COMPAT = ROOT / "compat"
+COMPAT = Path(__file__).resolve().parent
+ROOT = COMPAT.parent.parent
 EXPECTED = COMPAT / "expected"
 
 LANGUAGES = ("go", "python", "java", "rust")
 FOREIGN = ("python", "java", "rust")
 DEFAULT_COMMANDS = {
-    "go": "go run ./compat/go",
-    "python": "python3 compat/python/compat.py",
-    "java": "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar compat/java/target/lance-compat-java.jar",
-    "rust": "cargo run --quiet --manifest-path compat/rust/Cargo.toml --",
+    "go": "go run ./internal/compat/go",
+    "python": "python3 internal/compat/python/compat.py",
+    "java": "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar internal/compat/java/target/lance-compat-java.jar",
+    "rust": "cargo run --quiet --manifest-path internal/compat/rust/Cargo.toml --",
 }
 STORAGE_VERSION = "2.1"
 
@@ -141,7 +141,7 @@ def preflight(commands: dict[str, list[str]], timeout: int) -> dict[str, Languag
         if name == "java":
             jar = java_jar_from_argv(argv)
             if jar is not None and not jar.exists():
-                languages[name] = Language(name, argv, False, f"missing Java jar {jar}; build compat/java first")
+                languages[name] = Language(name, argv, False, f"missing Java jar {jar}; build internal/compat/java first")
                 continue
         if name == "python":
             probe = run_process(

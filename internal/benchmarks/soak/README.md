@@ -1,10 +1,10 @@
 # RSS and lifecycle soak benchmark
 
-`benchmarks/soak` is an opt-in, bounded, Linux-only benchmark for long-running
-use of the public lance-go API. It repeatedly exercises dataset, scanner, raw
-file, Blob and writer lifetimes while sampling total process residency. It is
-not run as a long benchmark in CI. The package is compiled and its tests run
-with `go test ./...`, including a short Linux native journal regression when
+`internal/benchmarks/soak` is an opt-in, bounded, Linux-only benchmark for
+long-running use of the public lance-go API. It repeatedly exercises dataset,
+scanner, raw file, Blob and writer lifetimes while sampling total process
+residency. It is not run as a long benchmark in CI. The package is compiled
+and its tests run with `go test ./...`, including a short Linux native journal regression when
 the library is available.
 
 This command is supplementary evidence. Existing lifetime and ownership tests
@@ -26,7 +26,7 @@ Run these commands on the host that will execute the benchmark, for example
 NieR, from the lance-go checkout to review:
 
 ```sh
-CGO_ENABLED=0 go build -o /tmp/lance-go-soak ./benchmarks/soak
+CGO_ENABLED=0 go build -o /tmp/lance-go-soak ./internal/benchmarks/soak
 ```
 
 Default build (bundled `linux/amd64` artifact):
@@ -40,7 +40,7 @@ External library build:
 
 ```sh
 export LANCE_LIB_PATH=/absolute/path/to/liblance_c.so
-CGO_ENABLED=0 go build -tags lance_external_lib -o /tmp/lance-go-soak ./benchmarks/soak
+CGO_ENABLED=0 go build -tags lance_external_lib -o /tmp/lance-go-soak ./internal/benchmarks/soak
 /tmp/lance-go-soak -warmup=10s -duration=30s -sample-interval=1s \
   -concurrency=2 -rows=2048 -jsonl=/tmp/soak-smoke.jsonl
 ```

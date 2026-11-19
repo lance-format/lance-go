@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/lance-format/lance-go/scripts/internal/artifactgen"
+	"github.com/lance-format/lance-go/internal/tools/artifactgen"
 )
 
 func main() {
