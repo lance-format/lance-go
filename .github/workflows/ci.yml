@@ -302,7 +302,7 @@ jobs:
           LANCE_C_HEADER: ${{ steps.locate.outputs.header }}
         run: |
           set -euo pipefail
-          go run ./scripts/check-abi-symbols.go
+          go run ./internal/tools/check-abi-symbols
 
       - name: Test against installed library
         env:

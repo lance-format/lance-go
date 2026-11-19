@@ -8,7 +8,7 @@ package ffi
 //
 // There is no version symbol in the pinned lance-c ABI, so these values cannot
 // be verified at runtime. They
-// document intent and give scripts/check-abi-symbols.go and
+// document intent and give internal/tools/check-abi-symbols and
 // scripts/build-lance-c.sh a single source of truth.
 const (
 	upstreamRepo         = "https://github.com/lance-format/lance-c"

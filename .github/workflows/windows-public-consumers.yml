@@ -22,6 +22,7 @@ on:
     paths:
       - ".github/workflows/windows-public-consumers.yml"
       - "scripts/public-consumer/**"
+      - "internal/tools/public-consumer/**"
       - "artifacts/**"
       - "internal/ffi/**"
       - "internal/loader/**"

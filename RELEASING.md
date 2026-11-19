@@ -213,7 +213,7 @@ ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 Check the bindings against the installed header:
 
 ```sh
-LANCE_C_HEADER="$NATIVE_HEADER" go run ./scripts/check-abi-symbols.go
+LANCE_C_HEADER="$NATIVE_HEADER" go run ./internal/tools/check-abi-symbols
 ```
 
 Run the maintained native-library checker:
@@ -318,7 +318,7 @@ pin, and module path. It also checks that `Payload []byte` embeds that exact
 archive and that the module contains only the allowed data files:
 
 ```sh
-go run ./scripts/verify-lance-c-artifact \
+go run ./internal/tools/verify-lance-c-artifact \
   -module "$ARTIFACT_OUT/module" \
   -library "$NATIVE_LIB" \
   -target "$TARGET" \
@@ -612,10 +612,10 @@ release; an accepted pseudo-version does not satisfy this post-tag gate.
 
 ## 7. Reusing existing evidence
 
-The roundtrip example, `compat/`, and `benchmarks/soak` results may be cited only
-when the relevant code, dependencies, and configuration are unchanged since the
-run, and only for the exact commits they exercised. A docs-only delta does not
-require mechanically rerunning a 30-minute soak or four foreign SDK builds.
+The roundtrip example, `internal/compat/`, and `internal/benchmarks/soak`
+results may be cited only when the relevant code, dependencies, and
+configuration are unchanged since the run, and only for the exact commits
+they exercised. A docs-only delta does not require mechanically rerunning a 30-minute soak or four foreign SDK builds.
 State the reused evidence, its commit, and its coverage limits instead.
 
 Cross-compilation is not runtime acceptance. Source review is not binary

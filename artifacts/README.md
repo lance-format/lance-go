@@ -386,9 +386,9 @@ were verified against the published assets. Each companion payload decompressed
 byte-for-byte to the shared library in the matching official archive, and each
 `v0.1.0-preview.2` module resolved through `proxy.golang.org` and
 `sum.golang.org`. Compressed sizes and hashes in this file come from
-`scripts/verify-lance-c-artifact` and the public module ZIPs, not the earlier
-pre-best-compression intermediate metadata log. Full per-target digests are
-recorded in the preview.2 release evidence rather than duplicated here.
+`internal/tools/verify-lance-c-artifact` and the public module ZIPs, not the
+earlier pre-best-compression intermediate metadata log. Full per-target
+digests are recorded in the preview.2 release evidence rather than duplicated here.
 
 The preview.1 consumer evidence remains historical and records the older
 six-target module set. The published preview.2 release passed the exact-tag
@@ -442,7 +442,7 @@ deployment floor, and that every symbol in the Go binding table is exported. It
 reports observed export and dependency counts; it does not assert that the
 library exports only `lance_` symbols.
 
-The workflow then runs `scripts/check-abi-symbols.go` and three test passes
+The workflow then runs `internal/tools/check-abi-symbols` and three test passes
 against the supplied library: the default build, an external build
 (`-tags lance_external_lib`) with `CGO_ENABLED=0`, and an external build with
 the race detector. A skipped native test fails the job.
@@ -470,8 +470,8 @@ The generated selector keeps the
 `!lance_external_lib && <goos> && <goarch>` constraint and imports that
 production path, but the workflow does not copy it into `internal/bundled`,
 change `go.mod`/`go.sum`, or write into the checkout.
-`scripts/verify-lance-c-artifact` checks the compressed payload hash and size,
-decompresses it, compares it byte for byte with the stripped copy, and checks
+`internal/tools/verify-lance-c-artifact` checks the compressed payload hash and
+size, decompresses it, compares it byte for byte with the stripped copy, and checks
 the uncompressed hash, size, pin, module path, exact embed target, and file
 allowlist. Darwin export inspection must produce a symbol table; unavailable
 export evidence fails verification.

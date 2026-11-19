@@ -679,7 +679,7 @@ type symbol struct {
 }
 
 // symbols is the complete set of C entry points this package binds.
-// scripts/check-abi-symbols.go parses this list and compares it with the
+// internal/tools/check-abi-symbols parses this list and compares it with the
 // pinned header; keep the literal form ([]symbol{{"name", &b.field}}) intact.
 func (b *bindings) symbols() []symbol {
 	return []symbol{

@@ -106,7 +106,7 @@ time instead:
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
 git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER=./lance.h go run ./scripts/check-abi-symbols.go
+LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a
@@ -183,11 +183,12 @@ env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
   -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
 
-`benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
+`internal/benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
 long-running repeated use of the public API. CI compiles the package and runs
 its tests, but does not execute the long benchmark.
-See [`benchmarks/soak/README.md`](../benchmarks/soak/README.md) for build and run
-commands, the measurement contract and the limits of RSS evidence.
+See [`internal/benchmarks/soak/README.md`](../internal/benchmarks/soak/README.md)
+for build and run commands, the measurement contract and the limits of RSS
+evidence.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
@@ -231,6 +232,11 @@ against it on both hosted runners, with a `CGO 1` race lane on amd64.
 
 ## Layout
 
+Maintenance commands, compatibility fixtures and the soak benchmark live under
+`internal/` so they are not part of the public SDK package surface. On the root
+module, `go list ./...` exposes only the public SDK packages, `internal/...`,
+and user-facing `examples/...`.
+
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
 namespace/        typed native namespace API and managed dataset operations
@@ -240,8 +246,10 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
-benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
-scripts/          build-lance-c.sh, check-abi-symbols.go, verify-quickstart.sh
+internal/tools/   maintainer Go commands and artifact tooling
+internal/benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
+internal/compat/            cross-language compatibility harness
+scripts/          build-lance-c.sh, verify-quickstart.sh, shell/PS/Python harnesses
 ```
 
 The Arrow bridge is independent of the loader and Lance FFI. Native calls and
