@@ -105,11 +105,13 @@ Preview.2 supports RTree indices and raw storage 2.2 Blob reads with the default
 
 ### How loading works
 
-The first native call verifies and extracts the bundled library to a writable per-user cache. Later runs reuse it. On Linux, set `XDG_CACHE_HOME` to use a different cache root. An explicit `LANCE_LIB_PATH` takes precedence and must point to the matching official shared library. See [loader behavior](docs/development.md#how-loading-works) for details.
+The first native call verifies and extracts the bundled library to a writable cache at `<cache-root>/lance-go/<uncompressed-sha256>/<library>`. The cache root is `LANCE_CACHE_DIR` when it is non-empty, otherwise the platform user cache. On Linux, `XDG_CACHE_HOME` also moves the default user cache. An explicit `LANCE_LIB_PATH` is checked first, bypasses extraction and the cache, and must point to the matching official shared library. See [loader behavior](docs/development.md#how-loading-works) for details.
 
 ### Read-only or no-cache deployment
 
-When the runtime environment has a read-only filesystem or no writable user cache, pre-extract the exact official companion library for your SDK version during image build or staging and set `LANCE_LIB_PATH`. Because `LANCE_LIB_PATH` is checked before the embedded bundle, no extraction or cache write occurs at runtime.
+When the runtime environment has a read-only filesystem or no writable user cache, pre-extract the exact official companion library for your SDK version during image build or staging and set `LANCE_LIB_PATH`. Build with `-tags lance_external_lib` so the binary does not embed the compressed payload. Because `LANCE_LIB_PATH` is checked before the embedded bundle, no extraction or cache write occurs at runtime.
+
+The active preview.2 companion payloads are 76.9–99.6 MB compressed and 288–403 MB uncompressed. A default build embeds the compressed payload for its target and writes the uncompressed library to the cache on first use. A tagged build does not embed the payload, but the staged library still occupies its uncompressed size in the image. The tag does not remove the artifact module from `go.mod`, so module-graph commands may still download the companion archives.
 
 For `v0.1.0-preview.2` on `linux/amd64`, extract `github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.0-preview.2`:
 
@@ -125,11 +127,22 @@ $ sha256sum /opt/lance-go/liblance_c.so
 8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13  /opt/lance-go/liblance_c.so
 ```
 
-Run the application against the extracted library:
+Build the application without the embedded payload and run it against the extracted library:
 
 ```console
-$ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so CGO_ENABLED=0 go run .
+$ CGO_ENABLED=0 go build -tags lance_external_lib -o app .
+$ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so ./app
 ```
+
+The tag spelling is `lance_external_lib` (underscores).
+
+Cache entries are content-addressed by `<uncompressed-sha256>`. After upgrading, remove stale `<cache-root>/lance-go/<sha256>` directories when no process is using them. `LANCE_CACHE_DIR` only relocates the cache; it does not skip the size and SHA-256 verification performed under the file lock on each process start. An explicit `LANCE_LIB_PATH` avoids that cache extraction and verification, so verify the staged file once during image build as shown above.
+
+## Troubleshooting
+
+- **Alpine/musl:** current Linux companions are glibc builds for glibc 2.28+. There is no musl companion. Use a glibc-based image; the loader reports the missing native dependency instead of falling back to another library.
+- **Intel macOS (`darwin/amd64`):** preview.2 has no bundled selector or companion archive for Intel macOS. Use an Apple-silicon host. The older preview.1 Intel bundle is historical and must not be mixed with a newer SDK.
+- **Non-writable cache:** a default bundled build needs to create and write `<cache-root>/lance-go/...` on first use. Set `LANCE_CACHE_DIR` to a writable absolute path, or use the tagged `LANCE_LIB_PATH` deployment above for a read-only image. An empty `LANCE_CACHE_DIR` uses the platform user cache, which may be unavailable when `HOME` is unset in a minimal container.
 
 ## Documentation
 
