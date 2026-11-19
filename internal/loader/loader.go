@@ -57,6 +57,57 @@ const EnvLibPath = "LANCE_LIB_PATH"
 // LANCE_LIB_PATH do not wrap ErrNotFound.
 var ErrNotFound = errors.New("lance-c shared library not found")
 
+// Source identifies how a successfully opened library was selected.
+type Source uint8
+
+const (
+	// SourceUnknown means this process has not successfully opened a library.
+	SourceUnknown Source = iota
+	// SourceEnv means LANCE_LIB_PATH named the opened file.
+	SourceEnv
+	// SourceBundle means the compiled-in artifact was extracted and opened.
+	SourceBundle
+	// SourceSystem means the platform loader resolved the library name.
+	SourceSystem
+)
+
+// String returns the diagnostic name of the source.
+func (s Source) String() string {
+	switch s {
+	case SourceEnv:
+		return EnvLibPath
+	case SourceBundle:
+		return "bundle"
+	case SourceSystem:
+		return "system"
+	default:
+		return "unknown"
+	}
+}
+
+// BundleInfo is the packaging metadata of a compiled-in artifact. The upstream
+// commit and header hash are claims recorded when the artifact was built; they
+// are not read from or verified against the loaded binary.
+type BundleInfo struct {
+	Module         string
+	Target         string
+	UpstreamCommit string
+	HeaderSHA256   string
+}
+
+// State is a side-effect-free snapshot of the loaded library.
+type State struct {
+	// Loaded reports whether this process has successfully opened a library.
+	Loaded bool
+	// Source and Path describe that successful open. Path is the explicit
+	// path, the extracted bundle cache path, or the platform library name for
+	// a system lookup.
+	Source Source
+	Path   string
+	// Bundle is non-nil only when Source is SourceBundle.
+	Bundle *BundleInfo
+}
+
 var (
 	mu     sync.Mutex
 	cached *Library
@@ -66,6 +117,8 @@ var (
 type Library struct {
 	path   string
 	handle uintptr
+	source Source
+	bundle *BundleInfo
 }
 
 // Load returns the process-wide lance-c library, opening it on first use.
@@ -93,6 +146,27 @@ func (l *Library) Path() string {
 	return l.path
 }
 
+// Observe returns the current process state without loading a library. It does
+// not inspect the environment, extract a bundle, resolve a symbol, or retry a
+// previous failure.
+func Observe() State {
+	mu.Lock()
+	defer mu.Unlock()
+	return cached.state()
+}
+
+func (l *Library) state() State {
+	if l == nil {
+		return State{}
+	}
+	state := State{Loaded: true, Source: l.source, Path: l.path}
+	if l.bundle != nil {
+		bundle := *l.bundle
+		state.Bundle = &bundle
+	}
+	return state
+}
+
 // Lookup resolves an exported C symbol.
 func (l *Library) Lookup(name string) (uintptr, error) {
 	addr, err := lookupSymbol(l.handle, name)
@@ -118,7 +192,7 @@ func openFromEnv(path string) (*Library, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loader: load %s=%q: %w", EnvLibPath, path, err)
 	}
-	return &Library{path: path, handle: handle}, nil
+	return &Library{path: path, handle: handle, source: SourceEnv}, nil
 }
 
 func openFromSystemPath() (*Library, error) {
@@ -127,7 +201,7 @@ func openFromSystemPath() (*Library, error) {
 		return nil, fmt.Errorf("loader: %w: the platform loader could not open %q: %v%s",
 			ErrNotFound, libraryName, err, strategyNote())
 	}
-	return &Library{path: libraryName, handle: handle}, nil
+	return &Library{path: libraryName, handle: handle, source: SourceSystem}, nil
 }
 
 // resetForTest clears the cached handle without unloading it. Tests use it to
