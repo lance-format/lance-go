@@ -308,6 +308,10 @@ type bindings struct {
 	scannerSetMinHashQuery              func(scanner uintptr, column, text string) int32
 	scannerSetFTSIndexSegments          func(scanner uintptr, uuids []byte, count uint64) int32
 	scannerSchema                       func(scanner uintptr, out *cdata.ArrowSchema) int32
+	scannerExplainPlan                  func(scanner uintptr, verbose bool) *byte
+	scannerAnalyzePlan                  func(scanner uintptr) *byte
+	scannerCountRows                    func(scanner uintptr) uint64
+	scannerAnalyzeCountPlan             func(scanner uintptr) *byte
 	scannerPollNext                     func(scanner uintptr, waker uintptr, wakerCtx uintptr, out *uintptr) int32
 
 	storageProviderNew        func(spec *storageOptionsProviderSpec) uintptr
@@ -1100,6 +1104,10 @@ func (b *bindings) symbols() []symbol {
 		{"lance_scanner_set_minhash_query", &b.scannerSetMinHashQuery},
 		{"lance_scanner_set_fts_index_segments", &b.scannerSetFTSIndexSegments},
 		{"lance_scanner_schema", &b.scannerSchema},
+		{"lance_scanner_explain_plan", &b.scannerExplainPlan},
+		{"lance_scanner_analyze_plan", &b.scannerAnalyzePlan},
+		{"lance_scanner_count_rows", &b.scannerCountRows},
+		{"lance_scanner_analyze_count_plan", &b.scannerAnalyzeCountPlan},
 		{"lance_scanner_poll_next", &b.scannerPollNext},
 
 		{"lance_storage_options_provider_new", &b.storageProviderNew},
