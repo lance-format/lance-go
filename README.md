@@ -93,6 +93,18 @@ Expected output:
 
 Each record yielded by `Records` is borrowed until iteration advances. Call `Retain` before keeping a record beyond the loop step and `Release` when finished. Dataset mutations return a new snapshot. Close each dataset handle after use.
 
+## Stability and compatibility
+
+The 0.1 line is currently published as previews (`v0.1.0-preview.1` and `v0.1.0-preview.2`); no stable `v0.1.0` has been published.
+
+`lance-go` follows Semantic Versioning for `v0.x`: `0.1.x` patch releases preserve source compatibility for published Go APIs. Necessary breaking changes move to the next minor release, `0.2`, with migration notes.
+
+Applications require Go 1.23+ and `CGO_ENABLED=0`. The current preview has five bundled targets: Linux amd64 and arm64 with the generic glibc 2.28 floor, macOS arm64, and Windows amd64 and arm64. Intel macOS (`darwin/amd64`) is not a current target.
+
+The historical Lance storage 2.1 acceptance record covers 56 cells: four producer writes, 16 cross-reader reads, and 36 append cells across six directions (both ways for Go/Python, Go/Java and Go/Rust), checking versions 1 and 2. That run used SDK `807cb843` and native `ac2634c` on Linux amd64, before `v0.1.0-preview.2`; it is not evidence for the released preview.2 or for other platforms and formats. See the [cross-language suite evidence](https://github.com/lance-format/lance-go/blob/0e186d62d0fe3758e190502f9273df7dd7409c55/compat/README.md) for pins, cells and evidence boundaries.
+
+Raw storage 2.2 Blob reads are verified for preview.2, including the released Lance 14.0.2 fixture and explicit projection. This is read evidence for the raw Blob path only. It does not establish general storage 2.2 read/write interoperability, cross-SDK acceptance, or support for newer format features.
+
 ## Supported consumer configuration
 
 | Platform | Bundled targets in preview.2 |
