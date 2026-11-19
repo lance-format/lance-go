@@ -4,14 +4,21 @@
 # This runs on linux/amd64. It resolves the published Go modules from the public
 # proxy, never builds Rust or lance-c, and never uses a preinstalled native
 # library or an existing dataset.
+#
+# LANCE_GO_QUICKSTART_VERSION defaults to the current stable root release. A
+# full 40-hex commit is resolved to that module's pseudo-version through the
+# public proxy and checksum database first, so release CI can verify the exact
+# candidate revision before the root tag exists; the companion module always
+# stays on the stable ARTIFACT_VERSION.
 set -euo pipefail
 
-VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.0-preview.2}
-ARTIFACT_MODULE=github.com/lance-format/lance-go/artifacts/linux-amd64
-ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.1.0-preview.2}
-COMPANION_BYTES=87186200
-LIBRARY_BYTES=342441416
-LIBRARY_SHA256=8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13
+ROOT_MODULE=github.com/lance-format/lance-go
+VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.0}
+ARTIFACT_MODULE=$ROOT_MODULE/artifacts/linux-amd64
+ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.1.0}
+COMPANION_BYTES=87415140
+LIBRARY_BYTES=342712936
+LIBRARY_SHA256=4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac
 EXPECTED_OUTPUT='Created, reopened and scanned 3 rows: [10 20 30]'
 
 if [[ "$(go env GOOS)/$(go env GOARCH)" != linux/amd64 ]]; then
@@ -48,13 +55,40 @@ common_env=(
   GOMODCACHE="$modcache" GOCACHE="$buildcache"
 )
 
+# A release candidate is identified by its exact commit before the root tag
+# exists. `go run <package>@<revision>` does not resolve a bare revision for a
+# package path, so resolve the module version and record its proxy identity.
+QUICKSTART_VERSION=$VERSION
+ROOT_SUM=
+ROOT_GOMODSUM=
+if [[ $VERSION =~ ^[0-9a-f]{40}$ ]]; then
+  resolution="$work/root-resolution.json"
+  if ! env "${common_env[@]}" go mod download -json "$ROOT_MODULE@$VERSION" \
+    >"$resolution" 2>"$work/root-resolution.err"; then
+    cat "$work/root-resolution.err" >&2
+    echo "verify-quickstart: cannot resolve $ROOT_MODULE@$VERSION" >&2
+    exit 1
+  fi
+  if grep -q '"Error"' "$resolution"; then
+    cat "$resolution" >&2
+    exit 1
+  fi
+  QUICKSTART_VERSION=$(sed -n 's/.*"Version": "\([^"]*\)".*/\1/p' "$resolution")
+  ROOT_SUM=$(sed -n 's/.*"Sum": "\([^"]*\)".*/\1/p' "$resolution")
+  ROOT_GOMODSUM=$(sed -n 's/.*"GoModSum": "\([^"]*\)".*/\1/p' "$resolution")
+  if [[ -z $QUICKSTART_VERSION ]]; then
+    echo "verify-quickstart: resolved root module version is empty" >&2
+    exit 1
+  fi
+fi
+
 run_quickstart() {
   local stdout=$1 stderr=$2
   shift 2
   (
     cd "$run_dir"
     env "${common_env[@]}" "$@" \
-      go run "github.com/lance-format/lance-go/examples/roundtrip@$VERSION"
+      go run "$ROOT_MODULE/examples/roundtrip@$QUICKSTART_VERSION"
   ) >"$stdout" 2>"$stderr"
 }
 
@@ -141,7 +175,10 @@ assert_quickstart_output "$work/readonly.out"
   exit 1
 }
 
-printf 'quickstart_version=%s\n' "$VERSION"
+printf 'root_revision=%s\n' "$VERSION"
+printf 'quickstart_version=%s\n' "$QUICKSTART_VERSION"
+[[ -z $ROOT_SUM ]] || printf 'root_sum=%s\n' "$ROOT_SUM"
+[[ -z $ROOT_GOMODSUM ]] || printf 'root_gomodsum=%s\n' "$ROOT_GOMODSUM"
 printf 'quickstart_output=%s\n' "$EXPECTED_OUTPUT"
 printf 'companion_archives=1\n'
 printf 'companion_bytes=%s\n' "$companion_size"
