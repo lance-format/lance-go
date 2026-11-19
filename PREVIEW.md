@@ -23,7 +23,9 @@ The SDK provides pure-Go bindings to Lance with `CGO_ENABLED=0`. The API covers
 dataset writes and immutable snapshots, scans and row selection, vector and
 full-text queries, staged fragments and transactions, Blob reads, raw files,
 table maintenance and directory/REST namespace integration. See
-[README.md](README.md) for API examples and the external-library build option.
+[docs/api-guide.md](docs/api-guide.md) for API examples and
+[docs/development.md](docs/development.md#build-tags) for the
+external-library build option.
 
 Default builds select a published native companion for each of the six
 then-supported targets. Each companion embeds compressed native bytes that the

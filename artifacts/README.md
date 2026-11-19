@@ -150,7 +150,7 @@ canonical `HeaderSHA256`
 
 The published payloads decompress byte-for-byte to the DLLs in the official
 `v0.2.0-beta.1` Windows archives. The C release workflow verified the staged
-PE images and public export set; the Go public-consumer candidate verifies the
+PE images and public export set; the Go public-consumer lane verifies the
 loaded DLL, cache identity, OS-only import closure and external supplied-DLL
 path. Older Windows versions and redistributable CRT deployment remain
 unclaimed.
@@ -171,7 +171,7 @@ The cross-build matrix in `ci.yml` compiles other targets but does not run them
 and does not publish artifacts. The Unix native workflow rebuilds candidate
 libraries; publication and selector adoption are separate release steps.
 Windows static-CRT packaging and staged-consumer validation are part of the
-official C release; the Go public-consumer candidate verifies the selected DLL
+official C release; the Go public-consumer lane verifies the selected DLL
 and its runtime closure.
 
 A bundle is fetched through the normal Go module proxy when a default build for
@@ -391,10 +391,18 @@ pre-best-compression intermediate metadata log. Full per-target digests are
 recorded in the preview.2 release evidence rather than duplicated here.
 
 The preview.1 consumer evidence remains historical and records the older
-six-target module set. Preview.2 candidate public-consumer results, including
-default, namespace-only and external modes plus the default-bundle RTree and
-raw v2.2 Blob checks, are owned by the bundle PR and the post-tag release run.
-No preview.2 claim is made until those checks pass on the accepted revision.
+six-target module set. The published preview.2 release passed the exact-tag
+public-consumer gate on all five targets. The
+[Unix run 44401996663](https://github.com/lance-format/lance-go/actions/runs/44401996663)
+covered linux/amd64, linux/arm64 and darwin/arm64; the
+[Windows run 44402002254](https://github.com/lance-format/lance-go/actions/runs/44402002254)
+covered windows/amd64 and windows/arm64. All 15 default, namespace-only and
+external modes passed, including the default-bundle RTree and raw v2.2 Blob
+checks on every target. The
+[release record](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2)
+links the checksummed post-tag evidence archive
+(`fab6a791e58a392e396363dc62ae8bf85fa4ceb8747c36219e20324e577630c7`,
+531242 bytes) and the main CI, Unix native and Windows runs.
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -408,15 +416,14 @@ installation behavior, not target selection. The public-consumer lanes record
 installation and each fresh-cache target build separately. The preview.1
 [Unix run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211)
 and [Windows run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)
-remain historical evidence for the older six-target module set. Preview.2
-public-consumer and post-tag evidence belongs to the bundle PR and release
-record; it is not claimed by this candidate metadata update.
+remain historical evidence for the older six-target module set. The exact-tag
+preview.2 runs above are the current public-consumer record.
 
 Windows module publication, selector activation and hosted cold-cache loading
-are verified by the preview.2 candidate public-consumer lane before merge.
-Broader glibc/musl, older-macOS and older-Windows runtime coverage remain
-unaccepted. These companion tags do not replace post-tag public-consumer
-acceptance.
+were verified on the published tag by the Windows run above. Broader
+glibc/musl, older-macOS and older-Windows runtime coverage remain unaccepted.
+The preview.2 post-tag runs satisfy this tag's public-consumer gate; future
+companion tags still need their own post-tag acceptance.
 
 ## Native Unix validation workflow
 
@@ -472,9 +479,9 @@ export evidence fails verification.
 The candidate module and evidence are uploaded as
 `unix-native-candidate-<slug>` and `unix-native-evidence-<slug>` with seven-day
 retention. These workflow candidates remain unpublished. The tracked companion
-modules were published after review and their selectors are active; their cold
-public-consumer acceptance at `b8132c7` is recorded above. The workflow publishes
-the validated install cache only after the
+modules were published after review and their selectors are active; their
+exact-tag cold public-consumer acceptance is recorded above. The workflow
+publishes the validated install cache only after the
 stripped candidate is staged and verified and all consumers of the cache
 staging path finish; the cache continues to hold the unstripped
 accepted library, and candidates are never cached. The workflow asserts that
