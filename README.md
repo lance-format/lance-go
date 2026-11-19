@@ -3,6 +3,16 @@
 Read, write, and search [Lance](https://lance.org/) datasets from Go using Apache Arrow record batches.
 The [current preview](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2), `v0.1.0-preview.2`, bundles the official prebuilt shared library from **lance-c v0.2.0-beta.1**. Applications use Go 1.23+ with `CGO_ENABLED=0`.
 
+## What you can do
+
+- **Search** with exact or indexed vector similarity, full-text match, phrase, boolean and boost queries, or MinHash similarity.
+- **Modify** rows with `Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate`; evolve columns with SQL expressions, null or streamed columns, renames, type changes and drops.
+- **Keep history** with versions, tags, branches, checkout and restore. Mutations return new snapshots, while existing readers keep their original version.
+- **Store anywhere** on local files, S3, GCS or Azure object storage, or through Directory, REST and Connect namespaces.
+- **Use Arrow** to read and write `array.RecordReader` streams without cgo.
+
+The [API guide](docs/api-guide.md) covers these workflows in detail. The [examples](examples/) directory contains focused runnable programs for vector search, full-text search, mutations and versions, cloud storage and namespaces. These examples track `main`; the published `v0.1.0-preview.2` tag contains only the earlier `roundtrip` and `cloud-refresh` examples.
+
 ## Quickstart
 
 Run this example from any directory. It creates a temporary dataset, reopens it, and scans it without a repository checkout or a local installation of Lance.
@@ -159,5 +169,6 @@ Cache entries are content-addressed by `<uncompressed-sha256>`. After upgrading,
 ## Documentation
 
 - [Go API reference for preview.2](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0-preview.2) and [usage guide](docs/api-guide.md) for scans, mutations, search, and dataset maintenance.
+- [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
 - [Native package details](artifacts/README.md) for platform coverage, library identity, checksums, and the preview.2 exact-tag consumer record.
 - [Development and testing](docs/development.md#testing) and [release process](RELEASING.md) for contributors.
