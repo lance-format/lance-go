@@ -1,6 +1,7 @@
 package ffi
 
 import (
+	"fmt"
 	"runtime"
 	"sync/atomic"
 )
@@ -36,6 +37,33 @@ func (d *Dataset) Close() {
 	defer runtime.UnlockOSThread()
 
 	d.b.datasetClose(handle)
+}
+
+// URI returns a copy of the snapshot's fully qualified native URI.
+//
+// The value is stable for the lifetime of the native snapshot and is copied
+// into Go memory before return, so it remains valid after the dataset closes.
+func (d *Dataset) URI() (string, error) {
+	handle := d.handle.Load()
+	if handle == 0 {
+		return "", ErrClosed
+	}
+
+	b := d.b
+	runtime.LockOSThread()
+	ptr := b.datasetURI(handle)
+	if ptr == nil {
+		nativeErr := b.takeError()
+		runtime.UnlockOSThread()
+		if nativeErr != nil {
+			return "", nativeErr
+		}
+		return "", fmt.Errorf("ffi: lance_dataset_uri returned NULL without setting an error")
+	}
+	uri := goString(ptr)
+	b.freeString(ptr)
+	runtime.UnlockOSThread()
+	return uri, nil
 }
 
 func (d *Dataset) jsonString(op string, call func(handle uintptr) *byte) (string, error) {

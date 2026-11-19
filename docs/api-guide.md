@@ -100,6 +100,14 @@ A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
 
+`Dataset.URI()` returns the fully qualified URI native resolved when the
+snapshot was produced (**main only**). For a namespace dataset it is the
+resolved `describe_table` location, not the `$`-joined table identifier used in
+error diagnostics. Every returned snapshot reports its own native URI; for
+example, a created branch includes its branch path. The Go string is captured
+once, remains available after `Close`, and `URI` does not acquire the dataset
+handle or call native code.
+
 `WriteUncommitted` writes data files without publishing a version and returns
 a `Transaction`. The transaction can be serialized with `MarshalBinary` and
 restored with `ParseTransaction`, or built directly from an `Operation`.

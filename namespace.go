@@ -34,10 +34,8 @@ func acquireNamespace(namespaceName namespace.Namespace, operation string) (*nsh
 }
 
 // namespaceTableURI identifies the requested namespace table for local
-// bookkeeping and errors. It is not the native fully qualified dataset URI:
-// the namespace API returns only a dataset handle, and the pinned C ABI has no
-// dataset URI getter. Exposing a genuine Dataset.URI requires lance-c to add a
-// thin getter over Rust Dataset::uri() first.
+// bookkeeping and errors. It is not the native fully qualified dataset URI;
+// Dataset.URI reports the native describe_table location instead.
 func namespaceTableURI(tableID []string) string {
 	return strings.Join(tableID, "$")
 }
@@ -90,7 +88,11 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 	if err != nil {
 		return nil, wrapError("open namespace", namespaceTableURI(tableID), err)
 	}
-	return newDataset(native, namespaceTableURI(tableID)), nil
+	dataset, err := newDataset(native, namespaceTableURI(tableID))
+	if err != nil {
+		return nil, wrapError("open namespace", namespaceTableURI(tableID), err)
+	}
+	return dataset, nil
 }
 
 // WriteToNamespace writes all batches from reader into a table managed by ns.
@@ -155,7 +157,11 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 	if err != nil {
 		return nil, wrapError("write namespace", namespaceTableURI(tableID), err)
 	}
-	return newDataset(native, namespaceTableURI(tableID)), nil
+	dataset, err := newDataset(native, namespaceTableURI(tableID))
+	if err != nil {
+		return nil, wrapError("write namespace", namespaceTableURI(tableID), err)
+	}
+	return dataset, nil
 }
 
 // CommitTransactionToNamespace publishes tx through a namespace-managed table
@@ -212,5 +218,9 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 	if err != nil {
 		return nil, wrapError("commit namespace", uri, err)
 	}
-	return newDataset(native, uri), nil
+	dataset, err := newDataset(native, uri)
+	if err != nil {
+		return nil, wrapError("commit namespace", uri, err)
+	}
+	return dataset, nil
 }

@@ -213,7 +213,9 @@ func (d *Dataset) mutate(op string, apply func(*ffi.Dataset) error) (*Dataset, e
 		return nil, wrapError(op, d.uri, err)
 	}
 
-	next := &Dataset{native: clone, uri: d.uri}
-	next.res = newResource(clone.Close)
+	next, err := newDataset(clone, d.uri)
+	if err != nil {
+		return nil, wrapError(op, d.uri, err)
+	}
 	return next, nil
 }

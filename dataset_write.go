@@ -91,8 +91,10 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 	if err != nil {
 		return nil, wrapError("write", uri, err)
 	}
-	dataset := &Dataset{native: native, uri: uri}
-	dataset.res = newResource(native.Close)
+	dataset, err := newDataset(native, uri)
+	if err != nil {
+		return nil, wrapError("write", uri, err)
+	}
 	return dataset, nil
 }
 
