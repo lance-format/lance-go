@@ -1,13 +1,21 @@
-# Build the pinned lance-c source as a native Windows DLL for the requested
-# architecture, verify the produced PE and C ABI, then run a native C consumer
-# and the full Go SDK suite against the staged DLL: the external tag with CGO
-# disabled, the default tag as a supplied-library lane, and on amd64 a CGO 1
-# -race lane when the selected toolchain and host compiler support it.
+# Verify the published Windows lance-c DLL and header that lance-go ships, then
+# run the native C consumer and the full Go SDK suite against those exact
+# bytes: the external tag with CGO disabled, the default tag as a supplied-library
+# lane, and on amd64 a CGO 1 -race lane when the selected toolchain and host
+# compiler support it.
 #
-# Native evidence is never replaced by packaging. Only after all native gates
-# pass does the script evaluate the actual DLL dependency closure. When every
-# dependency is an OS component, it packages the exact tested DLL bytes as an
-# unpublished companion candidate at
+# The DLL, its import library, and the header come from the official lance-c
+# release archive pinned in internal/ffi/upstream.go. The shared acquisition
+# tool verifies the published per-asset checksum, the pinned header hash, and
+# the PE machine before this script copies the published bytes into the staging
+# tree. This script never builds lance-c from source and never falls back to a
+# source build; a missing or mismatched asset fails the run.
+#
+# PE provenance, export/header agreement, delay-load and import closure, the
+# native C consumer, and the Go lanes all run on the staged DLL. Only after
+# those gates pass does the script evaluate the actual DLL dependency closure.
+# When every dependency is an OS component, it packages the exact tested DLL
+# bytes as an unpublished companion candidate at
 # github.com/lance-format/lance-go/artifacts/windows-<arch>, verifies that module
 # with the shared verifier, and runs an external-tag roundtrip. A redistributable
 # or unclassified dependency blocks candidate generation explicitly; hosted
@@ -42,12 +50,14 @@ switch ($Architecture) {
 		$script:TargetTriple = "x86_64-pc-windows-msvc"
 		$script:ExpectedPeMachine = 0x8664
 		$script:PeMachineLabel = "x86_64"
+		$script:ExpectedAcquisitionMachine = "x86-64"
 		$script:ExpectedProcessorArchitecture = "AMD64"
 	}
 	"arm64" {
 		$script:TargetTriple = "aarch64-pc-windows-msvc"
 		$script:ExpectedPeMachine = 0xAA64
 		$script:PeMachineLabel = "arm64"
+		$script:ExpectedAcquisitionMachine = "ARM64"
 		$script:ExpectedProcessorArchitecture = "ARM64"
 	}
 	default {
@@ -92,7 +102,10 @@ $script:DllSize = "n/a"
 $script:PeMachine = "n/a"
 $script:HeaderSha256 = "n/a"
 $script:SourceCommit = "n/a"
-$script:SourceTree = "n/a"
+$script:UpstreamRelease = "n/a"
+$script:ArchiveName = "n/a"
+$script:ArchiveSha256 = "n/a"
+$script:ImportLibSha256 = "n/a"
 $script:ExportCount = "n/a"
 $script:PublicExportCount = "n/a"
 $script:DependencyExportCount = "n/a"
@@ -108,7 +121,6 @@ $script:GoHostTarget = "n/a"
 $script:VsDeveloperShell = "n/a"
 $script:VsHostArch = "n/a"
 $script:VsTargetArch = "n/a"
-$script:ProtocMachine = "n/a"
 $script:PeDebugFacts = "not recorded"
 $script:ProductionEligibility = "not evaluated"
 $script:ProductionCandidate = "not generated"
@@ -118,7 +130,6 @@ $script:PayloadSha256 = "n/a"
 $script:HostedDependencies = "not evaluated"
 $script:DependencyRecords = @()
 $script:ProductionGateBlocked = $false
-$script:StaticCrtConfig = "not applied"
 $script:CrtImportClosure = "not evaluated"
 $script:CrtLoadedModules = "not evaluated"
 $script:DelayDependencySummary = "n/a"
@@ -189,11 +200,11 @@ function Write-Summary {
 		"| Item | Value |",
 		"| --- | --- |",
 		"| Architecture | $Architecture |",
-		"| Rust target | $script:TargetTriple |",
-		"| Result | $script:Status |",
-		"| Step | $script:Step |",
-		"| Source commit | $script:SourceCommit |",
-		"| Source tree | $script:SourceTree |",
+		"| Native input | official lance-c release archive |",
+		"| Upstream release | $script:UpstreamRelease |",
+		"| Upstream commit | $script:SourceCommit |",
+		"| Release archive | $script:ArchiveName |",
+		"| Release archive SHA-256 | $script:ArchiveSha256 |",
 		"| Header SHA-256 | $script:HeaderSha256 |",
 		"| DLL SHA-256 | $script:DllSha256 |",
 		"| DLL size | $script:DllSize |",
@@ -202,7 +213,6 @@ function Write-Summary {
 		"| Total / dependency exports | $script:ExportCount / $script:DependencyExportCount |",
 		"| DLL dependencies | $script:DependencySummary |",
 		"| Delay-load dependencies | $script:DelayDependencySummary |",
-		"| Static CRT compiler config | $script:StaticCrtConfig |",
 		"| Direct and delay-load import closure | $script:CrtImportClosure |",
 		"| Loaded CRT modules (consumer guard) | $script:CrtLoadedModules |",
 		"| Bundled dependencies | $script:BundledDependencies |",
@@ -215,19 +225,18 @@ function Write-Summary {
 		"| Visual Studio developer shell | $script:VsDeveloperShell |",
 		"| Visual Studio host / target | $script:VsHostArch / $script:VsTargetArch |",
 		"| Go host / target | $script:GoHostTarget |",
-		"| Protoc build tool | $script:ProtocMachine |",
 		"| ABI checker | $script:AbiResult |",
 		"| Native C consumer | $script:ConsumerResult |",
 		"| Go full SDK, external tag (CGO 0) | $script:GoExternalResult |",
 		"| Go full SDK, default tag with supplied DLL | $script:GoDefaultResult |",
 		"| Go race, external tag | $script:GoRaceResult |",
 		"",
-		"The pinned protoc win64 executable is a build-time tool only. On arm64 it may run under OS emulation; it is not linked into the DLL and is not part of the C consumer or Go runtime evidence.",
+		"The native input is the official lance-c release archive pinned in internal/ffi/upstream.go. The shared acquisition tool verified the published per-asset checksum, the pinned header hash, and the PE machine; the staged DLL is copied byte for byte from the verified archive and no source build ran.",
 		"The native C consumer and the full Go SDK suites are evidence for the staged DLL. The default-tag suite supplies the DLL through LANCE_LIB_PATH and is not a cold default bundle. These runs do not establish a cold external or public consumer, or a supported distribution.",
 		"A generated Windows companion is an unpublished CI candidate only. No selector is activated, no module requirement is added, and no module is published.",
 		"The single-DLL companion requires an OS-only dependency closure. Direct and delay-load imports are classified by module name. A redistributable or unclassified import blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS.",
-		"The DLL is built with '-Ctarget-feature=+crt-static' through CARGO_ENCODED_RUSTFLAGS. Inherited flags are merged and restored; an inherited '-crt-static' is rejected rather than overridden. The native C consumer is built with '/MT' and rejects redistributable CRT modules before and after native operations, allowing only the exact OS components msvcp_win.dll, msvcrt.dll, and ucrtbase.dll.",
-		"The static-CRT compiler configuration is source-inspected and recorded here; it does not claim that the pinned ac263 build has passed a hosted static-CRT run."
+		"lance-c builds its release DLLs with LANCE_C_CRT_STATIC=ON. The native C consumer is built with '/MT' and rejects redistributable CRT modules before and after native operations, allowing only the exact OS components msvcp_win.dll, msvcrt.dll, and ucrtbase.dll.",
+		"lance-c exposes no runtime version symbol, so the DLL cannot prove the commit that built it. The published archive checksum and the pinned header hash are the available identity chain; this workflow never substitutes a source build."
 	)
 	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "summary.md")
 	if (-not [string]::IsNullOrEmpty($env:GITHUB_STEP_SUMMARY)) {
@@ -328,15 +337,35 @@ function Assert-GoSuiteLog {
 	return [pscustomobject]@{ Passed = $passed.Count; Packages = $packages }
 }
 
-function Read-Pin {
-	param([string]$Path, [string]$Name)
-	$text = Get-Content -Raw -LiteralPath $Path
-	$pattern = '(?m)^\s*' + [regex]::Escape($Name) + '\s*=\s*"([^"]+)"\s*$'
-	$found = [regex]::Matches($text, $pattern)
-	if ($found.Count -ne 1) {
-		throw "expected exactly one $Name in $Path, found $($found.Count)"
+function Read-AcquisitionRecord {
+	param([Parameter(Mandatory = $true)][string]$Path)
+	$values = @{}
+	foreach ($line in Get-Content -LiteralPath $Path) {
+		if ($line -notmatch "^([a-z0-9_]+)=(.*)$") {
+			continue
+		}
+		$key = $Matches[1]
+		if ($values.ContainsKey($key)) {
+			throw "acquisition record $Path repeats $key"
+		}
+		$values[$key] = $Matches[2]
 	}
-	return $found[0].Groups[1].Value
+	$required = @(
+		"target", "upstream_repo", "upstream_release", "upstream_commit",
+		"upstream_header_sha256", "archive_name", "archive_sha256",
+		"header", "header_sha256", "library", "library_bytes", "library_sha256",
+		"library_format", "library_machine", "import_library",
+		"import_library_sha256", "fetch_lance_c_release"
+	)
+	foreach ($key in $required) {
+		if (-not $values.ContainsKey($key) -or [string]::IsNullOrEmpty($values[$key])) {
+			throw "acquisition record $Path is missing $key"
+		}
+	}
+	if ($values["fetch_lance_c_release"] -ne "ok") {
+		throw "acquisition record $Path did not report fetch_lance_c_release=ok"
+	}
+	return $values
 }
 
 function Get-PeImageInfo {
@@ -565,88 +594,6 @@ function Get-DependencyClass {
 		return "redistributable"
 	}
 	return "unclassified"
-}
-
-# Cargo gives CARGO_ENCODED_RUSTFLAGS precedence over RUSTFLAGS and target or
-# build config rustflags. Preserve the first active environment source among
-# CARGO_ENCODED_RUSTFLAGS, RUSTFLAGS, and CARGO_BUILD_RUSTFLAGS, then add
-# the static-CRT target feature. Reject -crt-static in that selected source.
-# Per-target environment and Cargo config-file flags are overridden by the
-# encoded flags; this helper does not claim to audit those lower-priority sources.
-#
-# The pinned ac263 source needs no patch for this: when static_crt is unset,
-# cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE, which Cargo derives from
-# rustc --print=cfg with these rustflags. Upstream 335dbac documents the same
-# direct-Cargo contract for its Windows build.
-function Get-StaticCrtRustFlags {
-	param([string]$EncodedRustFlags, [string]$RustFlags, [string]$BuildRustFlags)
-	$tokens = New-Object System.Collections.Generic.List[string]
-	$source = "none"
-	if (-not [string]::IsNullOrEmpty($EncodedRustFlags)) {
-		$source = "CARGO_ENCODED_RUSTFLAGS"
-		foreach ($token in $EncodedRustFlags.Split([char]0x1F)) {
-			if ($token.Length -gt 0) {
-				$tokens.Add($token)
-			}
-		}
-	} elseif (-not [string]::IsNullOrWhiteSpace($RustFlags)) {
-		$source = "RUSTFLAGS"
-		foreach ($token in ($RustFlags -split " ")) {
-			if ($token.Length -gt 0) {
-				$tokens.Add($token)
-			}
-		}
-	} elseif (-not [string]::IsNullOrWhiteSpace($BuildRustFlags)) {
-		$source = "CARGO_BUILD_RUSTFLAGS"
-		foreach ($token in ($BuildRustFlags -split " ")) {
-			if ($token.Length -gt 0) {
-				$tokens.Add($token)
-			}
-		}
-	}
-	$joined = $tokens -join " "
-	$hasStatic = $false
-	foreach ($match in [regex]::Matches($joined, "(?:^|\s)-C\s*target-feature\s*=\s*([^\s]+)")) {
-		foreach ($feature in $match.Groups[1].Value.Split(",")) {
-			if ($feature -eq "-crt-static") {
-				throw "inherited $source flags disable crt-static; refusing to override an explicit compiler configuration"
-			}
-			if ($feature -eq "+crt-static") {
-				$hasStatic = $true
-			}
-		}
-	}
-	$inherited = @($tokens)
-	if (-not $hasStatic) {
-		$tokens.Add("-Ctarget-feature=+crt-static")
-	}
-	return [pscustomobject]@{
-		Source = $source
-		InheritedFlags = ($inherited -join " ")
-		EffectiveFlags = ($tokens -join " ")
-		Encoded = ($tokens -join ([string][char]0x1F))
-	}
-}
-
-function Set-StaticCrtBuildEnvironment {
-	param([Parameter(Mandatory = $true)]$Plan)
-	$oldEncoded = [Environment]::GetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", "Process")
-	$oldRustFlags = [Environment]::GetEnvironmentVariable("RUSTFLAGS", "Process")
-	[Environment]::SetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", $Plan.Encoded, "Process")
-	# Cargo prefers the encoded variable, but clearing RUSTFLAGS avoids leaving
-	# a shadowed RUSTFLAGS record in the child environment. Other lower-priority
-	# variables remain unchanged and are ignored by Cargo while encoded is set.
-	[Environment]::SetEnvironmentVariable("RUSTFLAGS", $null, "Process")
-	return [pscustomobject]@{
-		OldEncoded = $oldEncoded
-		OldRustFlags = $oldRustFlags
-	}
-}
-
-function Restore-StaticCrtBuildEnvironment {
-	param([Parameter(Mandatory = $true)]$Saved)
-	[Environment]::SetEnvironmentVariable("CARGO_ENCODED_RUSTFLAGS", $Saved.OldEncoded, "Process")
-	[Environment]::SetEnvironmentVariable("RUSTFLAGS", $Saved.OldRustFlags, "Process")
 }
 
 # dumpbin /imports separates the normal import directory from the delay-load
@@ -951,37 +898,10 @@ try {
 		"generated_at: $((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
 	) | Set-Content -LiteralPath (Join-Path $EvidenceDir "provenance.txt")
 
-	$upstreamGo = Join-Path $RepoRoot "internal\ffi\upstream.go"
-	if (-not (Test-Path -LiteralPath $upstreamGo -PathType Leaf)) {
-		throw "pinned upstream metadata not found at $upstreamGo"
-	}
-	$upstreamRepo = Read-Pin $upstreamGo "upstreamRepo"
-	$sourceCommit = Read-Pin $upstreamGo "upstreamCommit"
-	$headerSha = Read-Pin $upstreamGo "upstreamHeaderSHA256"
-	$script:SourceCommit = $sourceCommit
-	$script:HeaderSha256 = $headerSha
-	if ($sourceCommit -notmatch "^[0-9a-f]{40}$") {
-		throw "upstreamCommit is not a full 40-character SHA-1: $sourceCommit"
-	}
-	if ($headerSha -notmatch "^[0-9a-f]{64}$") {
-		throw "upstreamHeaderSHA256 is not a 64-character SHA-256: $headerSha"
-	}
-	Write-Log "pinned_repo=$upstreamRepo"
-	Write-Log "pinned_commit=$sourceCommit"
-	Write-Log "pinned_header_sha256=$headerSha"
-
-	$protocVersion = if ([string]::IsNullOrEmpty($env:PROTOC_VERSION)) { "21.12" } else { $env:PROTOC_VERSION }
-	$protocSha = if ([string]::IsNullOrEmpty($env:PROTOC_SHA256)) {
-		"71852a30cf62975358edfcbbff93086e8857a079c8e4d6904881aa968d65c7f9"
-	} else {
-		$env:PROTOC_SHA256.ToLowerInvariant()
-	}
-	if ($protocSha -notmatch "^[0-9a-f]{64}$") {
-		throw "PROTOC_SHA256 is not a lowercase SHA-256: $protocSha"
-	}
-
+	# The work tree holds only downloaded release bytes and test output. Clean it
+	# on every run so a previous download or build cannot satisfy this one.
 	if ($WorkDir -eq $RepoRoot -or $WorkDir -eq (Split-Path -Parent $RepoRoot)) {
-		throw "refusing to use $WorkDir as the build work directory"
+		throw "refusing to use $WorkDir as the work directory"
 	}
 	foreach ($path in @($WorkDir, $StageDir)) {
 		if (Test-Path -LiteralPath $path) {
@@ -995,10 +915,6 @@ try {
 
 	$env:CGO_ENABLED = "0"
 	$env:GOTOOLCHAIN = "local"
-	$env:CARGO_TERM_COLOR = "never"
-	$env:CARGO_INCREMENTAL = "0"
-	$env:CARGO_NET_RETRY = "3"
-	$env:CARGO_NET_GIT_FETCH_WITH_CLI = "true"
 
 	$script:Step = "toolchain"
 	if ($env:PROCESSOR_ARCHITECTURE -ne $script:ExpectedProcessorArchitecture) {
@@ -1008,9 +924,6 @@ try {
 	Write-Log "target_triple=$script:TargetTriple"
 	Write-Log "go=$((Get-Command go -ErrorAction Stop).Source)"
 	Write-Log "git=$((Get-Command git -ErrorAction Stop).Source)"
-	Write-Log "cargo=$((Get-Command cargo -ErrorAction Stop).Source)"
-	Write-Log "rustc=$((Get-Command rustc -ErrorAction Stop).Source)"
-	Write-Log "cmake=$((Get-Command cmake -ErrorAction Stop).Source)"
 
 	$goVersion = (Invoke-Capture -FilePath "go" -ArgumentList @("version") -Label "go version") -join " "
 	$goEnvLines = Invoke-Capture -FilePath "go" -ArgumentList @("env", "-json", "GOOS", "GOARCH", "GOHOSTOS", "GOHOSTARCH", "GOVERSION", "CGO_ENABLED", "GOMODCACHE", "GOCACHE") -Label "go env"
@@ -1019,19 +932,10 @@ try {
 		throw "go environment is not native windows/$Architecture with CGO disabled: $($goEnvLines -join '; ')"
 	}
 	$script:GoHostTarget = "$($goEnv.GOHOSTOS)/$($goEnv.GOHOSTARCH)"
-	$rustcVerbose = Invoke-Capture -FilePath "rustc" -ArgumentList @("-vV") -Label "rustc -vV"
-	$rustcVerbose | Set-Content -LiteralPath (Join-Path $EvidenceDir "rustc-vV.txt")
-	$hostLine = @($rustcVerbose | Where-Object { $_ -match "^host:" } | ForEach-Object { $_.Trim() }) | Select-Object -First 1
-	$hostPattern = "^host:\s*" + [regex]::Escape($script:TargetTriple) + "$"
-	if ($hostLine -notmatch $hostPattern) {
-		throw "rustc host is not $($script:TargetTriple): $($rustcVerbose -join '; ')"
-	}
-	$rustupShow = Invoke-Capture -FilePath "rustup" -ArgumentList @("show", "active-toolchain") -Label "rustup show active-toolchain"
-	$rustupTargets = @(Invoke-Capture -FilePath "rustup" -ArgumentList @("target", "list", "--installed") -Label "rustup target list" | ForEach-Object { $_.Trim() })
-	if (-not (@($rustupTargets) -contains $script:TargetTriple)) {
-		throw "$($script:TargetTriple) target is not installed"
-	}
 
+	# The native C consumer is compiled with cl and the DLL is inspected with
+	# dumpbin, so the runner still needs the MSVC developer shell. Nothing here
+	# builds lance-c or its Rust dependencies.
 	Import-VsDevShell
 	$clCommand = Get-Command cl -ErrorAction Stop
 	$dumpbinCommand = Get-Command dumpbin -ErrorAction Stop
@@ -1043,60 +947,69 @@ try {
 		throw "dumpbin /version failed with exit code $LASTEXITCODE"
 	}
 
-	$protocDir = Join-Path $WorkDir "protoc-$protocVersion"
-	$protocZip = Join-Path $WorkDir "protoc-$protocVersion-win64.zip"
-	# protoc-21.12-win64.exe is an x86_64 build tool. On windows arm64 it runs
-	# under OS emulation while building the Rust library; it is not linked into
-	# the DLL and is not part of the C consumer or Go runtime evidence.
-	$protocUrl = "https://github.com/protocolbuffers/protobuf/releases/download/v$protocVersion/protoc-$protocVersion-win64.zip"
-	Write-Log "downloading $protocUrl"
-	Invoke-WebRequest -Uri $protocUrl -OutFile $protocZip -UseBasicParsing
-	$actualProtocSha = (Get-FileHash -LiteralPath $protocZip -Algorithm SHA256).Hash.ToLowerInvariant()
-	if ($actualProtocSha -ne $protocSha) {
-		throw "protoc archive sha256 is $actualProtocSha, want $protocSha"
+	$script:Step = "acquire"
+	$releaseDir = Join-Path $WorkDir "lance-c-release"
+	$acquireLog = Join-Path $EvidenceDir "acquire-lance-c-release.txt"
+	Push-Location $RepoRoot
+	try {
+		Invoke-Logged -FilePath "go" -ArgumentList @(
+			"run", "./internal/tools/fetch-lance-c-release",
+			"-target", "windows/$Architecture",
+			"-out", $releaseDir
+		) -LogPath $acquireLog -Label "acquire pinned lance-c release"
+	} finally {
+		Pop-Location
 	}
-	New-Item -ItemType Directory -Force -Path $protocDir | Out-Null
-	Expand-Archive -LiteralPath $protocZip -DestinationPath $protocDir -Force
-	$env:PROTOC = Join-Path $protocDir "bin\protoc.exe"
-	$env:PROTOC_INCLUDE = Join-Path $protocDir "include"
-	if (-not (Test-Path -LiteralPath $env:PROTOC -PathType Leaf)) {
-		throw "protoc.exe not found after extracting $protocZip"
+	$acquisitionPath = Join-Path $releaseDir "acquisition.txt"
+	if (-not (Test-Path -LiteralPath $acquisitionPath -PathType Leaf)) {
+		throw "acquisition record not found at $acquisitionPath"
 	}
-	if (-not (Test-Path -LiteralPath (Join-Path $env:PROTOC_INCLUDE "google\protobuf\descriptor.proto") -PathType Leaf)) {
-		throw "protoc include tree not found under $env:PROTOC_INCLUDE"
+	$acquisition = Read-AcquisitionRecord -Path $acquisitionPath
+	if ($acquisition["target"] -ne "windows/$Architecture") {
+		throw "acquisition target is $($acquisition['target']), want windows/$Architecture"
 	}
-	$protocPe = Get-PeImageInfo -Path $env:PROTOC
-	if ($protocPe.Machine -ne 0x8664) {
-		throw ("protoc.exe PE machine is 0x{0:X4}, want 0x8664 for the pinned protoc-{1}-win64 archive" -f $protocPe.Machine, $protocVersion)
+	if ($acquisition["library_format"] -ne "PE32+" -or $acquisition["library_machine"] -ne $script:ExpectedAcquisitionMachine) {
+		throw "acquisition library identity is $($acquisition['library_format'])/$($acquisition['library_machine']), want PE32+/$($script:ExpectedAcquisitionMachine)"
 	}
-	$script:ProtocMachine = "x86_64 (0x8664)"
-	if ($Architecture -eq "arm64") {
-		$script:ProtocMachine = "x86_64 (0x8664), build-time only under OS emulation on arm64"
+	$upstreamRepo = $acquisition["upstream_repo"]
+	$sourceCommit = $acquisition["upstream_commit"]
+	$headerSha = $acquisition["upstream_header_sha256"]
+	$script:UpstreamRelease = $acquisition["upstream_release"]
+	$script:ArchiveName = $acquisition["archive_name"]
+	$script:ArchiveSha256 = $acquisition["archive_sha256"]
+	$script:SourceCommit = $sourceCommit
+	$script:HeaderSha256 = $headerSha
+	if ($sourceCommit -notmatch "^[0-9a-f]{40}$") {
+		throw "acquisition record has a malformed upstream commit: $sourceCommit"
 	}
-	$env:PATH = "$(Split-Path -Parent $env:PROTOC);$env:PATH"
-	$protocVersionOutput = Invoke-Capture -FilePath $env:PROTOC -ArgumentList @("--version") -Label "protoc --version"
-	Write-Log "protoc=$($protocVersionOutput -join ' ')"
-	Write-Log "protoc_sha256=$actualProtocSha"
+	if ($headerSha -notmatch "^[0-9a-f]{64}$" -or $script:ArchiveSha256 -notmatch "^[0-9a-f]{64}$" -or $acquisition["library_sha256"] -notmatch "^[0-9a-f]{64}$") {
+		throw "acquisition record has a malformed SHA-256"
+	}
+	if ($acquisition["header_sha256"] -ne $headerSha) {
+		throw "acquisition canonical header sha is $($acquisition['header_sha256']), want $headerSha"
+	}
+	Write-Log "pinned_repo=$upstreamRepo"
+	Write-Log "pinned_release=$($script:UpstreamRelease)"
+	Write-Log "pinned_commit=$sourceCommit"
+	Write-Log "pinned_header_sha256=$headerSha"
+	Write-Log "release_archive=$($script:ArchiveName) sha256=$($script:ArchiveSha256)"
 
 	$provenance = @(
 		"architecture: $Architecture",
 		"target_triple: $($script:TargetTriple)",
-		"source_repo: $upstreamRepo",
-		"source_commit: $sourceCommit",
-		"source_header_sha256: $headerSha",
-		"protoc_version: $protocVersion",
-		"protoc_archive_sha256: $actualProtocSha",
-		"protoc_pe_machine: $($script:ProtocMachine)",
-		"rustc: $(($rustcVerbose | Select-Object -First 1) -as [string])",
-		"rustup_active_toolchain: $(($rustupShow -join ' ') -as [string])",
-		"rust_targets: $(($rustupTargets -join ', ') -as [string])",
-		"cargo: $(Get-ToolVersion 'cargo')",
+		"native_input: official lance-c release archive",
+		"upstream_repo: $upstreamRepo",
+		"upstream_release: $($script:UpstreamRelease)",
+		"upstream_commit: $sourceCommit",
+		"upstream_header_sha256: $headerSha",
+		"release_archive: $($script:ArchiveName)",
+		"release_archive_sha256: $($script:ArchiveSha256)",
+		"release_library_sha256: $($acquisition['library_sha256'])",
 		"go: $goVersion",
 		"go_environment: GOOS=$($goEnv.GOOS) GOARCH=$($goEnv.GOARCH) GOHOSTOS=$($goEnv.GOHOSTOS) GOHOSTARCH=$($goEnv.GOHOSTARCH) GOVERSION=$($goEnv.GOVERSION) CGO_ENABLED=$($goEnv.CGO_ENABLED)",
 		"vs_developer_shell: $($script:VsDeveloperShell)",
 		"vs_host_arch: $($script:VsHostArch)",
 		"vs_target_arch: $($script:VsTargetArch)",
-		"cmake: $(Get-ToolVersion 'cmake')",
 		"git: $(Get-ToolVersion 'git')",
 		"cl: $clVersion",
 		"dumpbin: $dumpbinVersion",
@@ -1109,119 +1022,43 @@ try {
 	$provenance | Set-Content -LiteralPath (Join-Path $EvidenceDir "provenance.txt")
 	Write-Log "provenance recorded"
 
-	$script:Step = "source"
-	$src = Join-Path $WorkDir "src"
-	Invoke-Logged -FilePath "git" -ArgumentList @("clone", "--filter=blob:none", "--no-checkout", $upstreamRepo, $src) -LogPath (Join-Path $EvidenceDir "git-clone.log") -Label "git clone"
-	Invoke-Logged -FilePath "git" -ArgumentList @("-C", $src, "config", "core.autocrlf", "false") -LogPath (Join-Path $EvidenceDir "git-config.log") -Label "git config core.autocrlf"
-	Invoke-Logged -FilePath "git" -ArgumentList @("-C", $src, "config", "core.eol", "lf") -LogPath (Join-Path $EvidenceDir "git-config.log") -Label "git config core.eol"
-	Invoke-Logged -FilePath "git" -ArgumentList @("-C", $src, "config", "advice.detachedHead", "false") -LogPath (Join-Path $EvidenceDir "git-config.log") -Label "git config advice.detachedHead"
-	Invoke-Logged -FilePath "git" -ArgumentList @("-C", $src, "fetch", "--depth", "1", "origin", $sourceCommit) -LogPath (Join-Path $EvidenceDir "git-fetch.log") -Label "git fetch pinned commit"
-	Invoke-Logged -FilePath "git" -ArgumentList @("-C", $src, "checkout", "--detach", "FETCH_HEAD") -LogPath (Join-Path $EvidenceDir "git-checkout.log") -Label "git checkout pinned commit"
-	$actualCommit = (Invoke-Capture -FilePath "git" -ArgumentList @("-C", $src, "rev-parse", "HEAD") -Label "git rev-parse HEAD") -join ""
-	$actualCommit = $actualCommit.Trim()
-	if ($actualCommit -ne $sourceCommit) {
-		throw "source checkout is at $actualCommit, want $sourceCommit"
-	}
-	$sourceTree = (Invoke-Capture -FilePath "git" -ArgumentList @("-C", $src, "rev-parse", "HEAD^{tree}") -Label "git rev-parse HEAD tree") -join ""
-	$sourceTree = $sourceTree.Trim()
-	if ($sourceTree -notmatch "^[0-9a-f]{40}$") {
-		throw "source tree is not a full 40-character SHA-1: $sourceTree"
-	}
-	$script:SourceTree = $sourceTree
-	Add-Content -LiteralPath (Join-Path $EvidenceDir "provenance.txt") -Value "source_tree: $sourceTree"
-	$dirty = (Invoke-Capture -FilePath "git" -ArgumentList @("-C", $src, "status", "--porcelain") -Label "git status") -join "`n"
-	if (-not [string]::IsNullOrWhiteSpace($dirty)) {
-		throw "source checkout is dirty after checkout: $dirty"
-	}
-
-	$sourceHeader = Join-Path $src "include\lance\lance.h"
-	if (-not (Test-Path -LiteralPath $sourceHeader -PathType Leaf)) {
-		throw "pinned source does not contain include\lance\lance.h"
-	}
-	$actualHeaderSha = (Get-FileHash -LiteralPath $sourceHeader -Algorithm SHA256).Hash.ToLowerInvariant()
-	if ($actualHeaderSha -ne $headerSha) {
-		throw "source header sha256 is $actualHeaderSha, want $headerSha (line ending or checkout mismatch)"
-	}
-	Write-Log "source header verified"
-
-	$cargoLock = Join-Path $src "Cargo.lock"
-	if (-not (Test-Path -LiteralPath $cargoLock -PathType Leaf)) {
-		throw "pinned source does not contain Cargo.lock"
-	}
-	Copy-Item -LiteralPath $cargoLock -Destination (Join-Path $EvidenceDir "Cargo.lock")
-	$cargoLockSha = (Get-FileHash -LiteralPath $cargoLock -Algorithm SHA256).Hash.ToLowerInvariant()
-	Write-Log "Cargo.lock sha256=$cargoLockSha"
-
-	$script:Step = "cargo-build"
-	$cargoBuildRustFlags = [Environment]::GetEnvironmentVariable("CARGO_BUILD_RUSTFLAGS", "Process")
-	$staticCrt = Get-StaticCrtRustFlags -EncodedRustFlags $env:CARGO_ENCODED_RUSTFLAGS -RustFlags $env:RUSTFLAGS -BuildRustFlags $cargoBuildRustFlags
-	$savedStaticCrtEnv = Set-StaticCrtBuildEnvironment -Plan $staticCrt
-	$script:StaticCrtConfig = $staticCrt.EffectiveFlags
-	if ([string]::IsNullOrEmpty($cargoBuildRustFlags)) {
-		$cargoBuildRustFlags = "<unset>"
-	}
-	$staticCrtLines = @(
-		"static_crt_flag=-Ctarget-feature=+crt-static",
-		"inherited_source=$($staticCrt.Source)",
-		"inherited_flags=$($staticCrt.InheritedFlags)",
-		"effective_flags=$($staticCrt.EffectiveFlags)",
-		"cargo_encoded_rustflags=$($staticCrt.Encoded.Replace([string][char]0x1F, '<US>'))",
-		"cargo_precedence=CARGO_ENCODED_RUSTFLAGS over RUSTFLAGS, target/build config rustflags, and CARGO_BUILD_RUSTFLAGS",
-		"cargo_build_rustflags_env=$cargoBuildRustFlags",
-		"inherited_audit_scope=selected environment source only; per-target environment and Cargo config-file flags are overridden, not audited",
-		"source_contract=cc and aws-lc-sys read CARGO_CFG_TARGET_FEATURE for crt-static when static_crt is not set explicitly",
-		"upstream_contract_reference=https://github.com/lance-format/lance-c/blob/335dbacad90786a486ac69e7f9bf089ab63ea751/README.md",
-		"rustflags_env_cleared=true",
-		"restore_after_build=true"
-	)
-	$staticCrtLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "cargo-static-crt.txt")
-	Write-Log "static_crt_config=$($staticCrt.EffectiveFlags); inherited_source=$($staticCrt.Source)"
-	$targetRoot = Join-Path $WorkDir "target"
-	$env:CARGO_TARGET_DIR = $targetRoot
-	$targetDir = Join-Path $targetRoot "$($script:TargetTriple)\release"
-	$cargoLog = Join-Path $EvidenceDir "cargo-build.log"
-	Push-Location $src
-	try {
-		Invoke-Logged -FilePath "cargo" -ArgumentList @("build", "--locked", "--release", "--lib", "--target", $script:TargetTriple) -LogPath $cargoLog -Label "cargo build --locked --release --lib --target $($script:TargetTriple)"
-	} finally {
-		Pop-Location
-		Restore-StaticCrtBuildEnvironment -Saved $savedStaticCrtEnv
-	}
-
-	$dll = Join-Path $targetDir "lance_c.dll"
-	$importLib = Join-Path $targetDir "lance_c.dll.lib"
-	if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
-		$listing = @(Get-ChildItem -LiteralPath $targetDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
-		throw "cargo build succeeded but $dll is missing; target files: $($listing -join ', ')"
-	}
-	if (-not (Test-Path -LiteralPath $importLib -PathType Leaf)) {
-		$listing = @(Get-ChildItem -LiteralPath $targetDir -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
-		throw "cargo build succeeded but the MSVC import library $importLib is missing; target files: $($listing -join ', ')"
-	}
-
 	$script:Step = "stage"
-	Copy-Item -LiteralPath $dll -Destination (Join-Path $StageDir "bin\lance_c.dll")
-	Copy-Item -LiteralPath $importLib -Destination (Join-Path $StageDir "lib\lance_c.dll.lib")
+	$sourceDll = $acquisition["library"]
+	$sourceImportLib = $acquisition["import_library"]
+	$sourceHeader = $acquisition["header"]
+	foreach ($path in @($sourceDll, $sourceImportLib, $sourceHeader)) {
+		if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+			throw "acquired native input is missing: $path"
+		}
+	}
+	Copy-Item -LiteralPath $sourceDll -Destination (Join-Path $StageDir "bin\lance_c.dll") -Force
+	Copy-Item -LiteralPath $sourceImportLib -Destination (Join-Path $StageDir "lib\lance_c.dll.lib") -Force
 	$stageIncludeLance = Join-Path $StageDir "include\lance"
 	New-Item -ItemType Directory -Force -Path $stageIncludeLance | Out-Null
-	Get-ChildItem -LiteralPath (Join-Path $src "include\lance") -Force |
-		Copy-Item -Destination $stageIncludeLance -Recurse -Force
+	Copy-Item -LiteralPath $sourceHeader -Destination (Join-Path $stageIncludeLance "lance.h") -Force
 	$stagedDll = Join-Path $StageDir "bin\lance_c.dll"
 	$stagedHeader = Join-Path $StageDir "include\lance\lance.h"
-	if (-not (Test-Path -LiteralPath $stagedHeader -PathType Leaf)) {
-		throw "staged header missing at $stagedHeader"
-	}
+	$importLib = Join-Path $StageDir "lib\lance_c.dll.lib"
 	$stagedHeaderSha = (Get-FileHash -LiteralPath $stagedHeader -Algorithm SHA256).Hash.ToLowerInvariant()
 	if ($stagedHeaderSha -ne $headerSha) {
 		throw "staged header sha256 is $stagedHeaderSha, want $headerSha"
 	}
 	$script:DllSha256 = (Get-FileHash -LiteralPath $stagedDll -Algorithm SHA256).Hash.ToLowerInvariant()
 	$script:DllSize = (Get-Item -LiteralPath $stagedDll).Length
-
+	if ($script:DllSha256 -ne $acquisition["library_sha256"]) {
+		throw "staged DLL sha256 is $($script:DllSha256), acquisition record says $($acquisition['library_sha256']); the published bytes were modified"
+	}
+	if ([int64]$acquisition["library_bytes"] -ne [int64]$script:DllSize) {
+		throw "staged DLL is $($script:DllSize) bytes, acquisition record says $($acquisition['library_bytes'])"
+	}
+	$stagedImportLibSha = (Get-FileHash -LiteralPath $importLib -Algorithm SHA256).Hash.ToLowerInvariant()
+	if ($stagedImportLibSha -ne $acquisition["import_library_sha256"]) {
+		throw "staged import library sha256 is $stagedImportLibSha, acquisition record says $($acquisition['import_library_sha256'])"
+	}
 	$dllPe = Assert-NativePe -Path $stagedDll -Label "staged lance_c.dll"
 	$script:PeMachine = "$($script:PeMachineLabel) (0x{0:X4})" -f $dllPe.Machine
 	$manifestPeMachine = "0x{0:X4}" -f $dllPe.Machine
-
+	$script:ImportLibSha256 = $stagedImportLibSha
 	$script:Step = "pe-provenance"
 	$peFacts = Get-PeProvenanceInfo -Path $stagedDll
 	$debugSectionText = if ($peFacts.DebugSections.Count -eq 0) {
@@ -1276,11 +1113,13 @@ try {
 	$manifest = @(
 		"architecture=$Architecture",
 		"target_triple=$($script:TargetTriple)",
-		"source_repo=$upstreamRepo",
-		"source_commit=$sourceCommit",
-		"source_tree=$sourceTree",
-		"source_header_sha256=$headerSha",
-		"cargo_lock_sha256=$cargoLockSha",
+		"native_input=official-lance-c-release",
+		"upstream_repo=$upstreamRepo",
+		"upstream_release=$($script:UpstreamRelease)",
+		"upstream_commit=$sourceCommit",
+		"upstream_header_sha256=$headerSha",
+		"release_archive=$($script:ArchiveName)",
+		"release_archive_sha256=$($script:ArchiveSha256)",
 		"dll=bin/lance_c.dll",
 		"dll_sha256=$script:DllSha256",
 		"dll_size=$script:DllSize",
@@ -1291,10 +1130,8 @@ try {
 		"pdata_section=$pdataText",
 		"pdb_reference=$pdbText",
 		"unix_strip_applied=false",
-		"static_crt_config=$script:StaticCrtConfig",
 		"import_library=lib/lance_c.dll.lib",
-		"protoc_version=$protocVersion",
-		"protoc_archive_sha256=$actualProtocSha",
+		"import_library_sha256=$($script:ImportLibSha256)",
 		"staged_at=$((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"))"
 	)
 	$manifest | Set-Content -LiteralPath (Join-Path $StageDir "manifest.txt")
@@ -1410,7 +1247,6 @@ try {
 	# for the distributed runtime. Do not satisfy dependencies from an arbitrary
 	# developer PATH entry: those DLLs would not be present for a consumer.
 	$searchDirs = @(
-		$targetDir,
 		(Join-Path $StageDir "bin"),
 		$runtimeDir,
 		$system32,
@@ -1578,7 +1414,7 @@ try {
 	$abiLog = Join-Path $EvidenceDir "abi-check.log"
 	Push-Location $RepoRoot
 	try {
-		Invoke-Logged -FilePath "go" -ArgumentList @("run", "./scripts/check-abi-symbols.go") -LogPath $abiLog -Label "check-abi-symbols"
+		Invoke-Logged -FilePath "go" -ArgumentList @("run", "./internal/tools/check-abi-symbols") -LogPath $abiLog -Label "check-abi-symbols"
 	} finally {
 		Pop-Location
 	}
@@ -1666,10 +1502,10 @@ try {
 	}
 	$script:CrtLoadedModules = "before=$($crtPhases['loaded_crt_modules_before']); after=$($crtPhases['loaded_crt_modules_after'])"
 	$crtContractLines = @(
-		"static_crt_config=$script:StaticCrtConfig",
-		"static_crt_env=CARGO_ENCODED_RUSTFLAGS",
-		"static_crt_source=$($staticCrt.Source)",
-		"inherited_rustflags=$($staticCrt.InheritedFlags)",
+		"native_input=official-lance-c-release",
+		"release_archive=$($script:ArchiveName)",
+		"release_archive_sha256=$($script:ArchiveSha256)",
+		"native_commit=$sourceCommit",
 		"direct_imports=$(if ($dependencies.Count -gt 0) { $dependencies -join ', ' } else { 'none' })",
 		"delay_imports=$(if ($imports.Delay.Count -gt 0) { $imports.Delay -join ', ' } else { 'none' })",
 		"direct_and_delay_import_closure=$script:CrtImportClosure",
@@ -1681,7 +1517,7 @@ try {
 		"redistributable_crt_modules_after=none",
 		"consumer_crt_guard=PASS",
 		"os_crt_allowlist=msvcp_win.dll,msvcrt.dll,ucrtbase.dll",
-		"crt_contract_scope=compiler configuration and native evidence only; not a supported distribution claim",
+		"crt_contract_scope=published native bytes and native evidence only; not a supported distribution claim",
 		"issue_215=https://github.com/lance-format/lance-c/issues/215"
 	)
 	$crtContractLines | Set-Content -LiteralPath (Join-Path $EvidenceDir "crt-contract.txt")
@@ -1893,7 +1729,7 @@ try {
 	Push-Location $RepoRoot
 	try {
 		Invoke-Logged -FilePath "go" -ArgumentList @(
-			"run", "./scripts/sync-lance-c-gen",
+			"run", "./internal/tools/sync-lance-c-gen",
 			"-library", $stagedDll,
 			"-header", $stagedHeader,
 			"-target", "windows/$Architecture",
@@ -1968,7 +1804,7 @@ try {
 	Push-Location $RepoRoot
 	try {
 		Invoke-Logged -FilePath "go" -ArgumentList @(
-			"run", "./scripts/verify-lance-c-artifact",
+			"run", "./internal/tools/verify-lance-c-artifact",
 			"-module", $candidateModule,
 			"-library", $stagedDll,
 			"-pin", (Join-Path $RepoRoot "internal\ffi\upstream.go"),
@@ -2060,7 +1896,7 @@ try {
 		"target=windows/$Architecture",
 		"library_sha256=$script:DllSha256",
 		"library_bytes=$script:DllSize",
-		"static_crt_config=$script:StaticCrtConfig",
+		"native_archive_sha256=$($script:ArchiveSha256)",
 		"direct_and_delay_import_closure=$script:CrtImportClosure",
 		"loaded_module_crt_guard=PASS ($script:CrtLoadedModules)",
 		"payload_sha256=$payloadSha",

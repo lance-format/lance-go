@@ -1,0 +1,363 @@
+package main
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+const testPinFile = `package ffi
+
+const (
+	upstreamRepo         = "https://github.com/lancedb/lance-c"
+	upstreamRelease      = "v0.2.0-beta.1"
+	upstreamCommit       = "e2564b89be36bb18f5beff6d673daf9dfff8c986"
+	upstreamHeaderSHA256 = "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d"
+)
+`
+
+func writeFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}
+
+func TestReadPin(t *testing.T) {
+	dir := t.TempDir()
+	pinned, err := readPin(writeFile(t, dir, "upstream.go", testPinFile))
+	if err != nil {
+		t.Fatalf("readPin: %v", err)
+	}
+	if pinned.repo != "https://github.com/lancedb/lance-c" ||
+		pinned.release != "v0.2.0-beta.1" ||
+		pinned.commit != "e2564b89be36bb18f5beff6d673daf9dfff8c986" ||
+		pinned.headerSHA != "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d" {
+		t.Fatalf("unexpected pin: %+v", pinned)
+	}
+
+	cases := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{
+			name:    "missing release",
+			content: strings.Replace(testPinFile, "\tupstreamRelease      = \"v0.2.0-beta.1\"\n", "", 1),
+			want:    "missing upstreamRelease",
+		},
+		{
+			name:    "duplicate commit",
+			content: testPinFile + "\nconst upstreamCommit = \"e2564b89be36bb18f5beff6d673daf9dfff8c986\"\n",
+			want:    "declares upstreamCommit more than once",
+		},
+		{
+			name:    "short commit",
+			content: strings.Replace(testPinFile, "e2564b89be36bb18f5beff6d673daf9dfff8c986", "e2564b89", 1),
+			want:    "upstreamCommit",
+		},
+		{
+			name:    "plain http repo",
+			content: strings.Replace(testPinFile, "https://github.com", "http://github.com", 1),
+			want:    "upstreamRepo",
+		},
+		{
+			name:    "tag with a path separator",
+			content: strings.Replace(testPinFile, `"v0.2.0-beta.1"`, `"release/v0.2.0-beta.1"`, 1),
+			want:    "upstreamRelease",
+		},
+		{
+			name:    "uppercase header hash",
+			content: strings.Replace(testPinFile, "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d", "90E52D19F7CEDB6CD52A83024927453F0DED5F13E24ED2ADAEA8684CD9D4B0D8D", 1),
+			want:    "upstreamHeaderSHA256",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := readPin(writeFile(t, t.TempDir(), "upstream.go", testCase.content))
+			if err == nil {
+				t.Fatal("readPin accepted an invalid pin")
+			}
+			if !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("error %q does not mention %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestResolveTarget(t *testing.T) {
+	cases := map[string]struct {
+		triple  string
+		library string
+		format  string
+		machine string
+		imports string
+	}{
+		"linux/amd64":   {"x86_64-unknown-linux-gnu", "./lib/liblance_c.so", "ELF64", "x86-64", ""},
+		"linux/arm64":   {"aarch64-unknown-linux-gnu", "./lib/liblance_c.so", "ELF64", "AArch64", ""},
+		"darwin/arm64":  {"aarch64-apple-darwin", "./lib/liblance_c.dylib", "Mach-O64", "arm64", ""},
+		"windows/amd64": {"x86_64-pc-windows-msvc", "./lib/lance_c.dll", "PE32+", "x86-64", "./lib/lance_c.dll.lib"},
+		"windows/arm64": {"aarch64-pc-windows-msvc", "./lib/lance_c.dll", "PE32+", "ARM64", "./lib/lance_c.dll.lib"},
+	}
+	for name, want := range cases {
+		spec, err := resolveTarget(name)
+		if err != nil {
+			t.Fatalf("resolveTarget(%q): %v", name, err)
+		}
+		if spec.triple != want.triple || spec.libraryMember != want.library ||
+			spec.format != want.format || spec.machine != want.machine || spec.importLibraryMember != want.imports {
+			t.Fatalf("resolveTarget(%q) = %+v, want %+v", name, spec, want)
+		}
+	}
+	if _, err := resolveTarget("darwin/amd64"); err == nil || !strings.Contains(err.Error(), "supported targets") {
+		t.Fatalf("resolveTarget accepted a retired target: %v", err)
+	}
+}
+
+func TestParsePublishedSHA256(t *testing.T) {
+	const asset = "lance-c-v0.2.0-beta.1-x86_64-unknown-linux-gnu.tar.xz"
+	const digest = "76df5338b16e02627e715a3bbe6df554ce7e280e2c2d7497fa01ff76bea7ebf5"
+
+	for name, content := range map[string]string{
+		"text form":                digest + "  " + asset + "\n",
+		"binary form":              digest + " *" + asset + "\n",
+		"crlf line endings":        digest + "  " + asset + "\r\n",
+		"missing trailing newline": digest + "  " + asset,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parsePublishedSHA256([]byte(content), asset)
+			if err != nil {
+				t.Fatalf("parsePublishedSHA256: %v", err)
+			}
+			if got != digest {
+				t.Fatalf("got %q, want %q", got, digest)
+			}
+		})
+	}
+
+	cases := map[string]struct {
+		content string
+		want    string
+	}{
+		"other asset":   {digest + "  lance-c-v0.2.0-beta.1-aarch64-apple-darwin.tar.xz\n", "do not belong together"},
+		"two lines":     {digest + "  " + asset + "\n" + digest + "  other.tar.xz\n", "one checksum line"},
+		"short digest":  {"abcd  " + asset + "\n", "lowercase SHA-256"},
+		"single field":  {digest + "\n", "malformed checksum line"},
+		"empty content": {"", "checksum file is empty"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := parsePublishedSHA256([]byte(testCase.content), asset)
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("parsePublishedSHA256 error = %v, want one mentioning %q", err, testCase.want)
+			}
+		})
+	}
+}
+
+func TestCanonicalHeader(t *testing.T) {
+	canonical := []byte("/* header */\nint lance_open(void);\nint lance_close(void);\n")
+	pinSHA := sha256Hex(canonical)
+
+	t.Run("canonical lf header", func(t *testing.T) {
+		path := writeFile(t, t.TempDir(), "lance.h", string(canonical))
+		gotSHA, archiveSHA, lineEndings, err := canonicalHeader(path, pinSHA)
+		if err != nil {
+			t.Fatalf("canonicalHeader: %v", err)
+		}
+		if gotSHA != pinSHA || archiveSHA != pinSHA || lineEndings != "lf" {
+			t.Fatalf("got sha=%s archive=%s endings=%s", gotSHA, archiveSHA, lineEndings)
+		}
+	})
+
+	t.Run("windows crlf header", func(t *testing.T) {
+		crlf := bytes.ReplaceAll(canonical, []byte("\n"), []byte("\r\n"))
+		path := writeFile(t, t.TempDir(), "lance.h", string(crlf))
+		gotSHA, archiveSHA, lineEndings, err := canonicalHeader(path, pinSHA)
+		if err != nil {
+			t.Fatalf("canonicalHeader: %v", err)
+		}
+		if gotSHA != pinSHA {
+			t.Fatalf("canonical sha is %s, want %s", gotSHA, pinSHA)
+		}
+		if archiveSHA != sha256Hex(crlf) {
+			t.Fatalf("archive sha is %s, want %s", archiveSHA, sha256Hex(crlf))
+		}
+		if lineEndings != "crlf" {
+			t.Fatalf("line endings are %q, want crlf", lineEndings)
+		}
+		written, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read rewritten header: %v", err)
+		}
+		if !bytes.Equal(written, canonical) {
+			t.Fatal("header was not rewritten in canonical LF form")
+		}
+	})
+
+	t.Run("different header", func(t *testing.T) {
+		path := writeFile(t, t.TempDir(), "lance.h", string(canonical)+"int lance_extra(void);\n")
+		_, _, _, err := canonicalHeader(path, pinSHA)
+		if err == nil || !strings.Contains(err.Error(), "does not contain the pinned header") {
+			t.Fatalf("canonicalHeader error = %v", err)
+		}
+	})
+}
+
+func syntheticELF(machine uint16) []byte {
+	header := make([]byte, 64)
+	copy(header, []byte{0x7f, 'E', 'L', 'F'})
+	header[4] = 2 // 64-bit
+	header[5] = 1 // little endian
+	binary.LittleEndian.PutUint16(header[16:], 3)
+	binary.LittleEndian.PutUint16(header[18:], machine)
+	return header
+}
+
+func syntheticMachO(cpuType uint32) []byte {
+	header := make([]byte, 32)
+	copy(header, []byte{0xcf, 0xfa, 0xed, 0xfe})
+	binary.LittleEndian.PutUint32(header[4:], cpuType)
+	binary.LittleEndian.PutUint32(header[12:], 6)
+	return header
+}
+
+func syntheticPE(machine uint16) []byte {
+	header := make([]byte, 0x200)
+	header[0] = 'M'
+	header[1] = 'Z'
+	binary.LittleEndian.PutUint32(header[0x3c:], 0x80)
+	copy(header[0x80:], []byte{'P', 'E', 0, 0})
+	binary.LittleEndian.PutUint16(header[0x80+4:], machine)
+	binary.LittleEndian.PutUint16(header[0x80+22:], 0x2000) // IMAGE_FILE_DLL
+	return header
+}
+
+func TestClassify(t *testing.T) {
+	cases := map[string]struct {
+		header  []byte
+		format  string
+		machine string
+	}{
+		"elf amd64":   {syntheticELF(62), "ELF64", "x86-64"},
+		"elf arm64":   {syntheticELF(183), "ELF64", "AArch64"},
+		"macho arm64": {syntheticMachO(0x0100000c), "Mach-O64", "arm64"},
+		"pe amd64":    {syntheticPE(0x8664), "PE32+", "x86-64"},
+		"pe arm64":    {syntheticPE(0xaa64), "PE32+", "ARM64"},
+	}
+	for name, testCase := range cases {
+		t.Run(name, func(t *testing.T) {
+			format, machine, err := classify(testCase.header)
+			if err != nil {
+				t.Fatalf("classify: %v", err)
+			}
+			if format != testCase.format || machine != testCase.machine {
+				t.Fatalf("classify = %s/%s, want %s/%s", format, machine, testCase.format, testCase.machine)
+			}
+		})
+	}
+
+	badPE := syntheticPE(0x8664)
+	binary.LittleEndian.PutUint16(badPE[0x80+22:], 0)
+	badELFType := syntheticELF(62)
+	binary.LittleEndian.PutUint16(badELFType[16:], 1)
+	badCases := map[string][]byte{
+		"not a library":    []byte("plain text"),
+		"elf relocatable":  badELFType,
+		"pe executable":    badPE,
+		"unsupported risk": syntheticELF(243),
+	}
+	for name, header := range badCases {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := classify(header); err == nil {
+				t.Fatal("classify accepted an unsupported library")
+			}
+		})
+	}
+}
+
+func TestIdentifyLibrary(t *testing.T) {
+	dir := t.TempDir()
+	library := append(syntheticELF(62), bytes.Repeat([]byte{0}, 128)...)
+	path := writeFile(t, dir, "liblance_c.so", string(library))
+
+	amd64, err := resolveTarget("linux/amd64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+	sha, size, format, machine, err := identifyLibrary(path, amd64)
+	if err != nil {
+		t.Fatalf("identifyLibrary: %v", err)
+	}
+	sum := sha256.Sum256(library)
+	if sha != hex.EncodeToString(sum[:]) || size != int64(len(library)) || format != "ELF64" || machine != "x86-64" {
+		t.Fatalf("identifyLibrary = %s %d %s/%s", sha, size, format, machine)
+	}
+
+	arm64, err := resolveTarget("linux/arm64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+	if _, _, _, _, err := identifyLibrary(path, arm64); err == nil || !strings.Contains(err.Error(), "want ELF64/AArch64") {
+		t.Fatalf("identifyLibrary accepted the wrong target: %v", err)
+	}
+}
+
+func TestRetryable(t *testing.T) {
+	if retryable(statusError{code: 404, status: "404 Not Found"}) {
+		t.Fatal("404 must not be retried")
+	}
+	if !retryable(statusError{code: 500, status: "500 Internal Server Error"}) {
+		t.Fatal("500 must be retried")
+	}
+	if !retryable(statusError{code: 429, status: "429 Too Many Requests"}) {
+		t.Fatal("429 must be retried")
+	}
+}
+
+func TestDownloadOnce(t *testing.T) {
+	content := []byte("archive bytes")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/asset" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(content)
+	}))
+	defer server.Close()
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	destination := filepath.Join(t.TempDir(), "asset")
+	digest, size, err := downloadOnce(client, server.URL+"/asset", destination)
+	if err != nil {
+		t.Fatalf("downloadOnce: %v", err)
+	}
+	sum := sha256.Sum256(content)
+	if digest != hex.EncodeToString(sum[:]) || size != int64(len(content)) {
+		t.Fatalf("downloadOnce = %s, %d bytes", digest, size)
+	}
+	written, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatalf("read download: %v", err)
+	}
+	if !bytes.Equal(written, content) {
+		t.Fatal("downloaded bytes differ from the response")
+	}
+
+	_, _, err = downloadOnce(client, server.URL+"/missing", filepath.Join(t.TempDir(), "missing"))
+	var failure statusError
+	if !errors.As(err, &failure) || failure.code != http.StatusNotFound || retryable(err) {
+		t.Fatalf("missing asset returned %v, want a non-retryable HTTP 404", err)
+	}
+}

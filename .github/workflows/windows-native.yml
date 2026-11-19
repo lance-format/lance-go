@@ -1,21 +1,18 @@
-# Native Windows evidence for the lance-c DLL.
+# Native Windows evidence for the published lance-c DLL.
 #
-# Each matrix entry builds the pinned upstream source with the host-native MSVC
-# toolchain, then verifies the PE identity, header/export agreement, staged
-# dependencies, a native C consumer, and the full Go SDK suite. The suite runs
-# the external tag at CGO 0, the default tag with the staged DLL supplied
-# through LANCE_LIB_PATH, and on amd64 a CGO 1 -race lane with the host gcc;
-# windows/arm64 has no supported Go race build, which is recorded as such
-# rather than skipped. The same script and checks run on both architectures;
-# -Architecture only selects the target triple and expected host/target
-# metadata.
+# Each matrix entry acquires the pinned official lance-c release archive for its
+# architecture with the shared acquisition tool, then verifies the PE identity,
+# header/export agreement, staged dependencies, a native C consumer, and the
+# full Go SDK suite. The suite runs the external tag at CGO 0, the default tag with the
+# staged DLL supplied through LANCE_LIB_PATH, and on amd64 a CGO 1 -race lane
+# with the host gcc; windows/arm64 has no supported Go race build, which is
+# recorded as such rather than skipped. A missing or mismatched release asset
+# fails the job; nothing builds lance-c from source.
 #
-# amd64 runs on windows-2022 with x86_64-pc-windows-msvc.
-# arm64 runs on the GitHub-hosted windows-11-vs2026-arm image with
-# aarch64-pc-windows-msvc. That image provides a native ARM64 Visual Studio
-# developer shell; the script asserts the host/target architecture and compiler
-# PE machine instead of trusting the shell name. The pinned protoc win64 build
-# tool may run under OS emulation on arm64; it is not linked into the DLL.
+# amd64 runs on windows-2022 and arm64 on the GitHub-hosted
+# windows-11-vs2026-arm image. Both provide a native Visual Studio developer
+# shell; the script asserts the host/target architecture and compiler PE
+# machine instead of trusting the shell name.
 #
 # This is evidence only: it does not publish a release, tag, or Go module. After
 # the native gates pass, the script evaluates whether the actual DLL dependency
@@ -24,8 +21,8 @@
 # verifier and exercised by the external-tag roundtrip against the exact staged
 # DLL. A redistributable or unclassified dependency blocks that candidate
 # explicitly after native evidence; hosted System32 presence is not treated as
-# OS-only availability. No push trigger is added, so pushing a topic branch does
-# not start a build before review.
+# OS-only availability. No push trigger is added, so pushing a topic branch
+# does not start a build before review.
 name: Windows native
 
 on:
@@ -33,7 +30,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/windows-native.yml"
-      - "scripts/windows-native-build.ps1"
+      - "scripts/windows-native-verify.ps1"
       - "scripts/windows-native/**"
       - "scripts/check-abi-symbols.go"
       - "scripts/sync-lance-c-gen/**"
@@ -59,24 +56,20 @@ concurrency:
 env:
   CGO_ENABLED: "0"
   GOTOOLCHAIN: local
-  PROTOC_VERSION: "21.12"
-  PROTOC_SHA256: "71852a30cf62975358edfcbbff93086e8857a079c8e4d6904881aa968d65c7f9"
 
 jobs:
   windows-native:
     name: windows-native-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
             runner: windows-2022
-            rust_target: x86_64-pc-windows-msvc
           - arch: arm64
             runner: windows-11-vs2026-arm
-            rust_target: aarch64-pc-windows-msvc
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,20 +82,10 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master @ 2026-10-16
-        with:
-          toolchain: stable
-          targets: ${{ matrix.rust_target }}
-
-      - name: Enable Git long paths for Lance dependency checkout
+      - name: Verify published native Windows ${{ matrix.arch }}
         shell: pwsh
-        run: git config --global core.longpaths true
-
-      - name: Build and verify native Windows ${{ matrix.arch }}
-        shell: pwsh
-        timeout-minutes: 140
-        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-build.ps1 -Architecture ${{ matrix.arch }}
+        timeout-minutes: 110
+        run: pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/windows-native-verify.ps1 -Architecture ${{ matrix.arch }}
 
       - name: Upload native evidence
         if: always()
