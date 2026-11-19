@@ -85,6 +85,10 @@ type FTSBoostOptions struct {
 
 // FTSQuery is an immutable full-text query. Close releases the native query
 // after any scanners that attached it have cloned it.
+//
+// Constructors return an *Error with ErrInvalidArgument for invalid input.
+// Boolean and Boost reject nil or uninitialized subqueries as invalid; using a
+// closed subquery reports ErrClosed.
 type FTSQuery struct {
 	native *ffi.FTSQuery
 }
@@ -189,8 +193,8 @@ func NewFTSBooleanQuery(occurs []FTSOccur, queries []*FTSQuery) (*FTSQuery, erro
 			return nil, invalidError("", "", "FTS boolean occur %d is invalid", occur)
 		}
 		nativeOccurs[i] = int32(occur)
-		if queries[i] == nil {
-			return nil, invalidError("", "", "FTS boolean query %d is nil", i)
+		if err := validateFTSQueryOperand(fmt.Sprintf("FTS boolean query %d", i), queries[i]); err != nil {
+			return nil, err
 		}
 		nativeQueries[i] = queries[i].native
 	}
@@ -206,6 +210,12 @@ func NewFTSBooleanQuery(occurs []FTSOccur, queries []*FTSQuery) (*FTSQuery, erro
 func NewFTSBoostQuery(positive, negative *FTSQuery, options FTSBoostOptions) (*FTSQuery, error) {
 	if positive == nil || negative == nil {
 		return nil, invalidError("", "", "FTS boost query requires both positive and negative queries")
+	}
+	if err := validateFTSQueryOperand("FTS boost query positive", positive); err != nil {
+		return nil, err
+	}
+	if err := validateFTSQueryOperand("FTS boost query negative", negative); err != nil {
+		return nil, err
 	}
 	native, err := ffi.NewFTSBoostQuery(positive.native, negative.native, ffi.FTSBoostOptions{
 		NegativeBoost: options.NegativeBoost,
@@ -320,6 +330,19 @@ func (q *FTSPreparedQuery) Close() error {
 	}
 	if err := q.native.Close(); err != nil {
 		return wrapError("close FTS prepared query", "", err)
+	}
+	return nil
+}
+
+func validateFTSQueryOperand(name string, query *FTSQuery) error {
+	if query == nil {
+		return invalidError("", "", "%s is nil", name)
+	}
+	if query.native == nil {
+		return invalidError("", "", "%s is not initialized", name)
+	}
+	if query.native.IsClosed() {
+		return closedError(name, "")
 	}
 	return nil
 }

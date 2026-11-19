@@ -67,11 +67,15 @@ func (d *Dataset) Scan(opts ...ScanOption) (*Scanner, error) {
 	}
 
 	native, err := ffi.NewScanner(d.native, nativeScannerOptions(config), func(native *ffi.Scanner) error {
-		return applyFTSScan(native, &config)
+		return applyFTSScan(native, &config, "scan", d.uri)
 	})
 	// Native query setters copy their input before returning.
 	runtime.KeepAlive(&config)
 	if err != nil {
+		var lanceErr *Error
+		if errors.As(err, &lanceErr) {
+			return nil, err
+		}
 		return nil, wrapError("scan", d.uri, err)
 	}
 	return &Scanner{

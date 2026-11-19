@@ -207,6 +207,85 @@ func requireProgressInvariants(t *testing.T, events []lance.Progress) map[string
 	return completed
 }
 
+func TestIndexSegmentAndTrainerValidationErrors(t *testing.T) {
+	dataset, _, _ := newMutationDataset(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "vector builder column NUL",
+			call: func() error {
+				_, err := dataset.NewVectorSegmentBuilder(ctx, "vector\x00", "name", index.VectorOptions{}, index.SegmentScope{})
+				return err
+			},
+		},
+		{
+			name: "vector builder name NUL",
+			call: func() error {
+				_, err := dataset.NewVectorSegmentBuilder(ctx, "vector", "name\x00", index.VectorOptions{}, index.SegmentScope{})
+				return err
+			},
+		},
+		{
+			name: "scalar builder column NUL",
+			call: func() error {
+				_, err := dataset.NewScalarSegmentBuilder(ctx, "id\x00", "name", index.ScalarBTree, nil, index.ScalarOptions{}, index.SegmentScope{})
+				return err
+			},
+		},
+		{
+			name: "scalar builder name NUL",
+			call: func() error {
+				_, err := dataset.NewScalarSegmentBuilder(ctx, "id", "name\x00", index.ScalarBTree, nil, index.ScalarOptions{}, index.SegmentScope{})
+				return err
+			},
+		},
+		{
+			name: "commit index name NUL",
+			call: func() error {
+				_, err := dataset.CommitIndexSegments(ctx, "index\x00", "id", [][]byte{{0}})
+				return err
+			},
+		},
+		{
+			name: "commit column NUL",
+			call: func() error {
+				_, err := dataset.CommitIndexSegments(ctx, "index", "id\x00", [][]byte{{0}})
+				return err
+			},
+		},
+		{
+			name: "merge index type NUL",
+			call: func() error {
+				return dataset.MergeIndexMetadata(ctx, index.UUID{}, "type\x00", index.MergeMetadataOptions{})
+			},
+		},
+		{
+			name: "train IVF column NUL",
+			call: func() error {
+				_, err := dataset.TrainIVFModel(ctx, "vector\x00", 4, index.MetricL2, nil, index.TrainerOptions{})
+				return err
+			},
+		},
+		{
+			name: "train PQ column NUL",
+			call: func() error {
+				_, err := dataset.TrainPQModel(ctx, "vector\x00", 2, 4, index.MetricL2, nil, nil, index.TrainerOptions{})
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requireInvalidArgumentError(t, tt.call(), "string contains an embedded NUL byte")
+		})
+	}
+}
+
 func TestDistributedVectorIndexSegments(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
@@ -637,12 +716,10 @@ func TestIndexSegmentProgressAndMetadata(t *testing.T) {
 		t.Fatalf("close empty coverage clone: %v", err)
 	}
 
-	if _, err := lance.ParseIndexSegmentMetadata(nil); !errors.Is(err, lance.ErrInvalidArgument) {
-		t.Fatalf("ParseIndexSegmentMetadata(nil) error = %v, want ErrInvalidArgument", err)
-	}
-	if _, err := lance.ParseIndexSegmentMetadata([]byte("not index metadata")); !errors.Is(err, lance.ErrInvalidArgument) {
-		t.Fatalf("ParseIndexSegmentMetadata(garbage) error = %v, want ErrInvalidArgument", err)
-	}
+	_, err = lance.ParseIndexSegmentMetadata(nil)
+	requireInvalidArgumentError(t, err, "segment metadata must not be empty")
+	_, err = lance.ParseIndexSegmentMetadata([]byte("not index metadata"))
+	requireInvalidArgumentError(t, err, "")
 
 	// Bitmap segments carry a present but empty details payload, which must stay
 	// distinguishable from an absent payload.

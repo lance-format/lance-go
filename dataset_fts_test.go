@@ -3,7 +3,6 @@ package lance_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -327,29 +326,111 @@ func TestFTSQueryValidationErrors(t *testing.T) {
 			},
 			want: "FTS boost query requires both positive and negative queries",
 		},
+		{
+			name: "boolean zero-value query",
+			call: func() error {
+				_, err := lance.NewFTSBooleanQuery([]lance.FTSOccur{lance.FTSOccurShould}, []*lance.FTSQuery{{}})
+				return err
+			},
+			want: "FTS boolean query 0 is not initialized",
+		},
+		{
+			name: "boost zero-value query",
+			call: func() error {
+				_, err := lance.NewFTSBoostQuery(&lance.FTSQuery{}, &lance.FTSQuery{}, lance.FTSBoostOptions{})
+				return err
+			},
+			want: "FTS boost query positive is not initialized",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.call()
-			if err == nil {
-				t.Fatal("validation succeeded")
-			}
-			if !errors.Is(err, lance.ErrInvalidArgument) {
-				t.Fatalf("error = %v, want ErrInvalidArgument", err)
-			}
-			var lanceErr *lance.Error
-			if !errors.As(err, &lanceErr) {
-				t.Fatalf("error = %T, want *lance.Error", err)
-			}
-			if lanceErr.Code != lance.CodeInvalidArgument {
-				t.Fatalf("error code = %v, want %v", lanceErr.Code, lance.CodeInvalidArgument)
-			}
-			if !strings.Contains(err.Error(), tt.want) {
-				t.Fatalf("error = %q, want substring %q", err, tt.want)
-			}
+			requireInvalidArgumentError(t, tt.call(), tt.want)
 		})
 	}
+}
+
+func TestFTSClosedSubqueryErrors(t *testing.T) {
+	requireNative(t)
+	newQuery := func(t *testing.T) *lance.FTSQuery {
+		t.Helper()
+		query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})
+		if err != nil {
+			t.Fatalf("NewFTSMatchQuery: %v", err)
+		}
+		if err := query.Close(); err != nil {
+			t.Fatalf("Close query: %v", err)
+		}
+		return query
+	}
+
+	t.Run("boolean", func(t *testing.T) {
+		closed := newQuery(t)
+		_, err := lance.NewFTSBooleanQuery([]lance.FTSOccur{lance.FTSOccurShould}, []*lance.FTSQuery{closed})
+		requireClosedError(t, err, "FTS boolean query 0")
+	})
+	t.Run("boost positive", func(t *testing.T) {
+		closed := newQuery(t)
+		valid, err := lance.NewFTSMatchQuery("beta", "", lance.FTSMatchOptions{})
+		if err != nil {
+			t.Fatalf("NewFTSMatchQuery valid: %v", err)
+		}
+		defer valid.Close()
+		_, err = lance.NewFTSBoostQuery(closed, valid, lance.FTSBoostOptions{})
+		requireClosedError(t, err, "FTS boost query positive")
+	})
+	t.Run("boost negative", func(t *testing.T) {
+		closed := newQuery(t)
+		valid, err := lance.NewFTSMatchQuery("beta", "", lance.FTSMatchOptions{})
+		if err != nil {
+			t.Fatalf("NewFTSMatchQuery valid: %v", err)
+		}
+		defer valid.Close()
+		_, err = lance.NewFTSBoostQuery(valid, closed, lance.FTSBoostOptions{})
+		requireClosedError(t, err, "FTS boost query negative")
+	})
+}
+
+func TestFTSScanValidationErrors(t *testing.T) {
+	requireNative(t)
+	dataset, _ := ftsTestDataset(t)
+
+	t.Run("zero query", func(t *testing.T) {
+		_, err := dataset.Scan(lance.WithFTSQuery(&lance.FTSQuery{}))
+		requireInvalidArgumentError(t, err, "FTS query is not initialized")
+	})
+	t.Run("zero prepared context", func(t *testing.T) {
+		_, err := dataset.Scan(lance.WithFTSQueryContext(&lance.FTSPreparedQuery{}))
+		requireInvalidArgumentError(t, err, "FTS prepared query is not initialized")
+	})
+	t.Run("mutually exclusive", func(t *testing.T) {
+		query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})
+		if err != nil {
+			t.Fatalf("NewFTSMatchQuery: %v", err)
+		}
+		defer query.Close()
+		_, err = dataset.Scan(
+			lance.WithFTSQuery(query),
+			lance.WithMinHashQuery("name", "alpha"),
+		)
+		requireInvalidArgumentError(t, err, "mutually exclusive")
+	})
+	t.Run("segments without context", func(t *testing.T) {
+		_, err := dataset.Scan(lance.WithFTSIndexSegments(index.UUID{1}))
+		requireInvalidArgumentError(t, err, "FTS index segments require a prepared query context")
+	})
+	t.Run("closed query", func(t *testing.T) {
+		query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})
+		if err != nil {
+			t.Fatalf("NewFTSMatchQuery: %v", err)
+		}
+		if err := query.Close(); err != nil {
+			t.Fatalf("Close query: %v", err)
+		}
+		_, err = dataset.Scan(lance.WithFTSQuery(query))
+		requireClosedError(t, err, "")
+	})
 }
 
 func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {

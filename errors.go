@@ -66,7 +66,8 @@ var (
 	ErrPanic           = errors.New("lance: native panic")
 )
 
-// Error is returned by dataset, writer, scanner and session operations.
+// Error is returned by dataset, writer, scanner, session, FTS query and other
+// public operations that expose classified argument or native failures.
 type Error struct {
 	Op      string
 	URI     string

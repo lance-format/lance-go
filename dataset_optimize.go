@@ -842,9 +842,6 @@ func snapshotIndexSegmentResult(native *ffi.IndexSegmentResult) (*IndexSegmentRe
 }
 
 func encodeOwnedSegmentMetadata(metadata *ffi.SegmentMetadata) ([]byte, error) {
-	if metadata == nil {
-		return nil, invalidError("optimize index segment metadata", "", "segment metadata is nil")
-	}
 	defer func() {
 		_ = metadata.Close()
 	}()
