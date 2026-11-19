@@ -5,6 +5,7 @@ package lance_test
 import (
 	"context"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -28,14 +29,24 @@ func closeDatasetURI(t *testing.T, dataset *lance.Dataset, want, label string) {
 	}
 }
 
+func comparableDatasetPath(value string) string {
+	value = strings.TrimPrefix(value, "file://")
+	if runtime.GOOS == "windows" && len(value) >= 3 && value[0] == '/' && value[2] == ':' {
+		value = value[1:]
+	}
+	return filepath.Clean(filepath.FromSlash(value))
+}
+
 func requireDatasetURIMatchesLocation(t *testing.T, dataset *lance.Dataset, location, label string) {
 	t.Helper()
 	got := dataset.URI()
-	normalized := got
-	if !strings.Contains(location, "://") {
-		normalized = strings.TrimPrefix(got, "file://")
+	gotPath := comparableDatasetPath(got)
+	wantPath := comparableDatasetPath(location)
+	matches := gotPath == wantPath
+	if runtime.GOOS == "windows" {
+		matches = strings.EqualFold(gotPath, wantPath)
 	}
-	if normalized != location {
+	if !matches {
 		t.Fatalf("%s URI = %q, want the native URI for describe_table location %q", label, got, location)
 	}
 }
