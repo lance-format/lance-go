@@ -9,7 +9,7 @@ per-target library checksums. Versions follow Semantic Versioning; within
 and necessary breaking changes move to the next minor release with migration
 notes.
 
-## [Unreleased]
+## [v0.1.0] - 2026-11-20
 
 ### Added
 
@@ -76,6 +76,10 @@ companion library and its new checksum. No Go source changes are required.
   companion. The macOS companion uses deployment target 11.0. The README and
   [artifacts/README.md](artifacts/README.md) record which runtime evidence
   exists for each target and what remains unclaimed.
+
+See the [v0.1.0 release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)
+for the exact artifact identities, the post-tag consumer runs and the evidence
+archive.
 
 ## [v0.1.0-preview.2] - 2026-11-19
 

@@ -37,16 +37,17 @@ The root module requires these three published Unix data-only modules, plus
 the two Windows modules described below:
 
 ```text
-github.com/lance-format/lance-go/artifacts/linux-amd64   v0.1.0-preview.2
-github.com/lance-format/lance-go/artifacts/linux-arm64   v0.1.0-preview.2
-github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.1.0-preview.2
+github.com/lance-format/lance-go/artifacts/linux-amd64   v0.1.0
+github.com/lance-format/lance-go/artifacts/linux-arm64   v0.1.0
+github.com/lance-format/lance-go/artifacts/darwin-arm64  v0.1.0
 ```
 
 The metadata snapshots are nested modules, so root builds resolve requirements
 through the Go module proxy rather than using the local directories. Complete
 sources and payloads remain at publication commits
-`73cf23dc609cb81a7316fa07f91aca555b2c6e88` (Unix) and
-`a0219baa9da8a6b282f18a9bf219ff4e9c919970` (Windows). The preview.1 companion
+`45a631d866d419d3046fdf3a70a801ebf8b7e87f` (Unix) and
+`b0990720744a7ad9de644bf018f3a80496e205cc` (Windows), tagged
+`artifacts/<target>/v0.1.0`. The preview.1 companion
 versions remain available at their original publication commits, branches,
 and release notes; the current tree carries only metadata snapshots.
 
@@ -59,31 +60,31 @@ current selector registers it.
 
 The published `linux/amd64` module is
 `github.com/lance-format/lance-go/artifacts/linux-amd64` at
-`v0.1.0-preview.2`.
+`v0.1.0`.
 
 | Property | Value |
 | --- | --- |
 | Target | `linux/amd64` |
 | Library | `liblance_c.so` |
-| Compressed size | 87177503 bytes |
-| Compressed SHA-256 | `1de588c93d23b5ecbe0288ce67e7ba236089d3b66e37d55f565812937b26eba0` |
-| Uncompressed size | 342441416 bytes |
-| Uncompressed SHA-256 | `8e00a4c9fd401d0e99723222d6dfeea47855c57a2e442409b1c32dfed0559c13` |
-| Upstream release | `lance-c v0.2.0-beta.1` |
-| Upstream commit | `e2564b89be36bb18f5beff6d673daf9dfff8c986` |
-| Header SHA-256 | `90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d` |
+| Compressed size | 87405187 bytes |
+| Compressed SHA-256 | `8a6af22b6604a2525a04416ddd76441bd020a8cba0a2c3e50ad7fce003ce1b7f` |
+| Uncompressed size | 342712936 bytes |
+| Uncompressed SHA-256 | `4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac` |
+| Upstream release | `lance-c v0.2.0` |
+| Upstream commit | `facb369c9fa98b7a3e5ce2ed12e2d8be090627ce` |
+| Header SHA-256 | `947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c` |
 
 ### Published Unix companion payloads
 
 The active companions use `UpstreamCommit`
-`e2564b89be36bb18f5beff6d673daf9dfff8c986` and `HeaderSHA256`
-`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`. The
+`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce` and `HeaderSHA256`
+`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`. The
 `darwin/amd64` module is historical and is not part of this table.
 
 | Target | Compressed size | Compressed SHA-256 | Uncompressed size | Uncompressed SHA-256 |
 | --- | --- | --- | --- | --- |
-| `linux/arm64` | 82989526 | `55c3727cf5f68815d36c887dc1aa9762303ff751e91dc9a019be5c5ff437203b` | 306949136 | `725e77b3bc86b5301750130bef7ff62cea004e9f71bd19552720cfe6b304d324` |
-| `darwin/arm64` | 76875890 | `e34343a21ab26f62d657fb2a521e26526d87c4b933016271f0188c0e194102b4` | 288099632 | `221acab4931254991ff22549aac6f439b48ba9f2eac52e79bb43467aebf52385` |
+| `linux/arm64` | 83284195 | `e0565b2beacf5a77d06202e6b53c4d022d25a7bbd0694c2f40b4e284ab7938b1` | 307212464 | `24d3ab583b6ba60c82c49db946cc641309ca3eb3b519250eda23e2a1ff837146` |
+| `darwin/arm64` | 77047524 | `586eb4b804b796e343b22f904bed3d7356dbe14f85e302f121373e43b248aa4c` | 288398992 | `818c0a912c13b756b84907edeaa0e51319cc123360a813d4cdd4ce1a85600463` |
 
 The active generated selectors are
 `internal/bundled/lance_bundle_linux_arm64.go` and
@@ -107,23 +108,23 @@ load, or execute native code; the loader decompresses and maps it on first use.
 ## Published Windows companions
 
 The root module requires `artifacts/windows-amd64` and
-`artifacts/windows-arm64` at `v0.1.0-preview.2`.
+`artifacts/windows-arm64` at `v0.1.0`.
 Both public proxy archives and checksum-database entries match publication
-commit `a0219baa9da8a6b282f18a9bf219ff4e9c919970`. The four-file modules
+commit `b0990720744a7ad9de644bf018f3a80496e205cc`. The four-file modules
 contain `artifact.go`, `go.mod`, `LICENSE`, and `lance_c.dll.zst`.
 
 | Target | Compressed size | Compressed SHA-256 | DLL size | DLL SHA-256 |
 | --- | --- | --- | --- | --- |
-| `windows/amd64` | 99581215 | `0fe6f237ee1e8e2303fb14353d9e9d3539c8051bc859cbfa7cd5525072688769` | 402987008 | `fecd7f52765fcefbb80a8157882eae83192485303dcc80c41dcd50c9f6d237f1` |
-| `windows/arm64` | 89412335 | `ba266ee4306b847e515b5114796fed08758fdcbda975be19daefef508c12597e` | 329247744 | `5c76312e299ee1c68876f4176f2cb2f269511e37cd81a1cc262db716ffe6200c` |
+| `windows/amd64` | 99776578 | `800876361b44256e2480217d57810a95d75663cd1e9a54a67b9936eb19790faf` | 402994176 | `8e825f7a0b7d0f5facfc1e62a379884236010e8d681955810eb48a643f430e1a` |
+| `windows/arm64` | 89386379 | `faa3ac6549172cccd33f8637d32ba281e2f91b590e6493273cbe4f4bed8b6ed9` | 329314304 | `51e927bf7660862331884115c7205c04a44d85c961b4e03cddefcbbf285c7f12` |
 
-Both use upstream `lance-c v0.2.0-beta.1` at
-`e2564b89be36bb18f5beff6d673daf9dfff8c986`. Their generated selectors are
+Both use upstream `lance-c v0.2.0` at
+`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`. Their generated selectors are
 `internal/bundled/lance_bundle_windows_<arch>.go`, with build constraint
 `!lance_external_lib && windows && <arch>`. `LANCE_LIB_PATH` retains
 precedence over a registered bundle.
 
-For the official `lance-c-v0.2.0-beta.1` Windows assets, both
+For the official `lance-c-v0.2.0` Windows assets, both
 `include/lance/lance.h` files are CRLF copies of the canonical LF header.
 `scripts/sync-lance-c.sh` validates the supplied header bytes against the
 canonical pin; it does not normalize them. Create a canonical LF copy before
@@ -138,18 +139,18 @@ from pathlib import Path
 Path(sys.argv[2]).write_bytes(Path(sys.argv[1]).read_bytes().replace(b"\r\n", b"\n"))
 PY
 sha256sum "$dst"
-# 90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d
+# 947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c
 ```
 
 The raw archive header hashes are
-`649e88841ebf09faa97354cae797de1376e0ada2ea69189c6fd4c4c6631aad66` for both
-`lance-c-v0.2.0-beta.1-x86_64-pc-windows-msvc.tar.xz` and
-`lance-c-v0.2.0-beta.1-aarch64-pc-windows-msvc.tar.xz`. Packaging records the
+`4db7674d59edba47e920ecf091c6135e077f060e8ec9b00c0b508a02d487338b` for both
+`lance-c-v0.2.0-x86_64-pc-windows-msvc.tar.xz` and
+`lance-c-v0.2.0-aarch64-pc-windows-msvc.tar.xz`. Packaging records the
 canonical `HeaderSHA256`
-`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`.
+`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`.
 
 The published payloads decompress byte-for-byte to the DLLs in the official
-`v0.2.0-beta.1` Windows archives. The C release workflow verified the staged
+`v0.2.0` Windows archives. The C release workflow verified the staged
 PE images and public export set; the Go public-consumer lane verifies the
 loaded DLL, cache identity, OS-only import closure and external supplied-DLL
 path. Older Windows versions and redistributable CRT deployment remain
@@ -157,7 +158,7 @@ unclaimed.
 
 ## Platform and runtime scope
 
-Three Unix targets have active bundles. The official `lance-c v0.2.0-beta.1`
+Three Unix targets have active bundles. The official `lance-c v0.2.0`
 Linux packages are generic x86_64 and AArch64 builds with glibc 2.28 as the
 verified floor; the `linux/amd64` and `linux/arm64` libraries passed the local
 ELF/export/glibc checks against that floor. The macOS package uses deployment
@@ -263,7 +264,7 @@ packaging-time provenance claims. lance-c exposes no runtime version symbol,
 so the loader cannot prove from the shared library which commit built it. The
 packaging host and the release process must supply a library built from the
 pinned commit. The active bundles were packaged from
-`e2564b89be36bb18f5beff6d673daf9dfff8c986`; their `artifact.go` records the
+`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`; their `artifact.go` records the
 values in the tables above.
 
 ### Preparing a source-built production candidate
@@ -359,16 +360,16 @@ generator uses only that same compression package plus the standard library.
 The root requirement for the artifact modules adds these `go.sum` entries:
 
 ```text
-github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.1.0-preview.2 h1:WLuakk1rUM2wjyLV9nxZETOIAIhCjUGLGFZbhzBnjFU=
-github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.1.0-preview.2/go.mod h1:fQfHodK/kxZC5w9/Q3YPXfAFpacMYvc2TshI9luW6Xw=
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.1.0-preview.2 h1:WINPLF7iX+miMSFX+r1soIi3RypNZm5j7I7PicKWTGk=
-github.com/lance-format/lance-go/artifacts/linux-amd64 v0.1.0-preview.2/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
-github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.0-preview.2 h1:pOdyshAyHjmZ9xTYlIEoyxl0KeKNnA7PkV/SnzyhL+M=
-github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.0-preview.2/go.mod h1:/PZX6MQ09uUxT+97jTAFTnOmBb8Eaya+Fo6/Cx8oR10=
-github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.0-preview.2 h1:lT/A1Yp8v4PTsb5gQigCH9QMW5CvntkKSvmtrkuyD3Q=
-github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.0-preview.2/go.mod h1:poapOGoG8Ov6b55dD9mnGnIvYAtPMZorCUDbhiWhodQ=
-github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.0-preview.2 h1:vqOfOwzGi2W/FqxWW4DRfBCFvrwMqLfV0UpRhjuFpLI=
-github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.0-preview.2/go.mod h1:0TJauP68uQ0eNmpLzDvdN9HDjzS1DzYQXcElTM/mqYE=
+github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.1.0 h1:mBBFnJw6IZm4jrz/IfNcyc7jN3Fc3pvXHKmQ10BK4mY=
+github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.1.0/go.mod h1:fQfHodK/kxZC5w9/Q3YPXfAFpacMYvc2TshI9luW6Xw=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.1.0 h1:+PqbXm9kZXdzJEfjhnhBiqOPXiIHy8g9qerusomD/Ck=
+github.com/lance-format/lance-go/artifacts/linux-amd64 v0.1.0/go.mod h1:hmgfCi9X6+yByjEXjF26x8U4yNmD+NK5tFKAPQ2JXtI=
+github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.0 h1:vC8sh+LjsOkqy5h6XIm52pkH48KcpcllytA7GZvNMew=
+github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.0/go.mod h1:/PZX6MQ09uUxT+97jTAFTnOmBb8Eaya+Fo6/Cx8oR10=
+github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.0 h1:WZryR01CNOaRcxhQsH6NRkeo55unY5mS/jLQa7y1vSk=
+github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.0/go.mod h1:poapOGoG8Ov6b55dD9mnGnIvYAtPMZorCUDbhiWhodQ=
+github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.0 h1:DgMfh+lnjWMk6r1dkAFAnyzpTv6a8L5NH4eFV+4G124=
+github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.0/go.mod h1:0TJauP68uQ0eNmpLzDvdN9HDjzS1DzYQXcElTM/mqYE=
 ```
 
 `lance_external_lib` builds compile out `bundle.go`, `cache.go`,
@@ -378,35 +379,34 @@ where the platform needs them.
 
 ## Verification status and remaining gates
 
-The adopted native input is the annotated `lance-c v0.2.0-beta.1` tag object
-`f19335330b0c2b28bd370e94f5c867c60ce81ed9`, peeled to
-`e2564b89be36bb18f5beff6d673daf9dfff8c986`, with canonical header SHA-256
-`90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d`. The
-header adds `LANCE_SCALAR_RTREE=9` and nine C exports, taking the source export
-set from 878 to 887 with no removals. All 603 Go bindings match the new header.
+The adopted native input is the annotated `lance-c v0.2.0` tag object
+`84a7d564a961a6de6d68e6fef206e91d9363ab0a`, peeled to
+`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`, with canonical header SHA-256
+`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`. The
+header declares three new exports — `lance_c_version`, `lance_dataset_uri` and
+`lance_init_logging` — taking the source export set from 887 to 890. All 607 Go
+bindings match it.
 
 The five release archives, their `.sha256`/`.sha512` pairs and `SHA512SUMS`
 were verified against the published assets. Each companion payload decompressed
 byte-for-byte to the shared library in the matching official archive, and each
-`v0.1.0-preview.2` module resolved through `proxy.golang.org` and
-`sum.golang.org`. Compressed sizes and hashes in this file come from
-`internal/tools/verify-lance-c-artifact` and the public module ZIPs, not the
-earlier pre-best-compression intermediate metadata log. Full per-target
-digests are recorded in the preview.2 release evidence rather than duplicated here.
+`v0.1.0` module resolved through `proxy.golang.org` and `sum.golang.org` with a
+ZIP payload identical to the generated one. Compressed sizes and hashes in this
+file come from `internal/tools/verify-lance-c-artifact` and the public module
+ZIPs. Full per-target digests are recorded in the v0.1.0 release evidence
+rather than duplicated here.
 
 The preview.1 consumer evidence remains historical and records the older
-six-target module set. The published preview.2 release passed the exact-tag
-public-consumer gate on all five targets. The
-[Unix run 44401996663](https://github.com/lance-format/lance-go/actions/runs/44401996663)
-covered linux/amd64, linux/arm64 and darwin/arm64; the
-[Windows run 44402002254](https://github.com/lance-format/lance-go/actions/runs/44402002254)
-covered windows/amd64 and windows/arm64. All 15 default, namespace-only and
-external modes passed, including the default-bundle RTree and raw v2.2 Blob
-checks on every target. The
-[release record](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2)
-links the checksummed post-tag evidence archive
-(`fab6a791e58a392e396363dc62ae8bf85fa4ceb8747c36219e20324e577630c7`,
-531242 bytes) and the main CI, Unix native and Windows runs.
+six-target module set. The pre-publication candidate for v0.1.0 passed the
+native lanes on all five targets: the
+[Unix run 44603962255](https://github.com/lance-format/lance-go/actions/runs/44603962255)
+covered linux/amd64, linux/arm64 and darwin/arm64, and the
+[Windows run 44603966063](https://github.com/lance-format/lance-go/actions/runs/44603966063)
+covered windows/amd64 and windows/arm64 (OS-only import closure, CRT guards,
+411/427 top-level tests without skips, and the windows/amd64 tagged race
+suite). The v0.1.0 exact-tag public-consumer runs and their checksummed
+evidence archive are recorded in the
+[v0.1.0 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0).
 
 The CI default Go lane exercises the real public path: it runs
 `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
@@ -420,13 +420,12 @@ installation behavior, not target selection. The public-consumer lanes record
 installation and each fresh-cache target build separately. The preview.1
 [Unix run 43284438211](https://github.com/lance-format/lance-go/actions/runs/43284438211)
 and [Windows run 43284438526](https://github.com/lance-format/lance-go/actions/runs/43284438526)
-remain historical evidence for the older six-target module set. The exact-tag
-preview.2 runs above are the current public-consumer record.
+remain historical evidence for the older six-target module set.
 
 Windows module publication, selector activation and hosted cold-cache loading
 were verified on the published tag by the Windows run above. Broader
 glibc/musl, older-macOS and older-Windows runtime coverage remain unaccepted.
-The preview.2 post-tag runs satisfy this tag's public-consumer gate; future
+The v0.1.0 post-tag runs satisfy this tag's public-consumer gate; future
 companion tags still need their own post-tag acceptance.
 
 ## Native Unix validation workflow

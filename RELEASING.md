@@ -356,7 +356,7 @@ The artifact publication commit tracks the compressed archive. The current
 `linux/amd64` payload is 87,405,187 bytes compressed and 342,712,936 bytes
 uncompressed; exact hashes and counts are recorded in
 [artifacts/README.md](artifacts/README.md). The published Go module archive is
-87,186,200 bytes, a different value because it also contains module metadata;
+87,415,140 bytes, a different value because it also contains module metadata;
 `scripts/verify-quickstart.sh` pins it separately. The raw library is never
 committed. GitHub rejects ordinary Git blobs over 100 MiB, and warns above
 50 MiB. Keep each tracked compressed payload below that hard limit. A future
