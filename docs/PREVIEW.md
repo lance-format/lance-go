@@ -3,8 +3,10 @@
 These notes are the preparation record for the first Go preview. They are
 historical: the source was published as `v0.1.0-preview.1`, and its
 [release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1)
-are the release record. Keep this file for provenance and evidence boundaries,
-not as a statement of current release status or support.
+are the release record. They were later archived from the repository root to
+`docs/PREVIEW.md`; only link targets moved with them. Keep this file for
+provenance and evidence boundaries, not as a statement of current release
+status or support.
 
 The validated SDK candidate is `807cb84305302dc3ff3b40809d817a876efd2909` (PR #47).
 Its public pseudo-version is `v0.0.0-20261112185256-807cb8430530`. PR #47 was
@@ -23,8 +25,8 @@ The SDK provides pure-Go bindings to Lance with `CGO_ENABLED=0`. The API covers
 dataset writes and immutable snapshots, scans and row selection, vector and
 full-text queries, staged fragments and transactions, Blob reads, raw files,
 table maintenance and directory/REST namespace integration. See
-[docs/api-guide.md](docs/api-guide.md) for API examples and
-[docs/development.md](docs/development.md#build-tags) for the
+[docs/api-guide.md](api-guide.md) for API examples and
+[docs/development.md](development.md#build-tags) for the
 external-library build option.
 
 Default builds select a published native companion for each of the six
@@ -62,7 +64,8 @@ header SHA-256 `c19789e9e003930c6065181b5cd9f6f7b464e08a5dc4daca8b21ad82d5160f5b
 It declares 878 C exports; the SDK binds 603. This is an exact native commit,
 not a claim that the older `v0.1.9` release contains the same ABI. Preserve the
 existing published versions, payload hashes and publication branches listed
-in [artifacts/README.md](artifacts/README.md); SDK metadata snapshots alone are
+in [artifacts/README.md](../artifacts/README.md); SDK metadata snapshots
+alone are
 not complete publishable modules.
 
 ## Historical release gates and limitations
@@ -74,7 +77,7 @@ not complete publishable modules.
   14.0.2 / pyarrow 22.0.0, lance-java 14.0.2 / Arrow 18.3.0, and Rust core
   `40f15ed1b71b66950961b175829fdf17a763f108` / Arrow 58.3.0. This is Linux
   storage 2.1 evidence; it does not establish storage 2.2 or a cross-platform
-  compatibility matrix. See [the suite record](internal/compat/README.md#accepted-execution).
+  compatibility matrix. See [the suite record](../internal/compat/README.md#accepted-execution).
 - The current ac263 Linux lifecycle/RSS run completed 30 measured minutes
   with zero workload errors and zero sampled callback-handle delta. RSS grew;
   the measurement does not establish leak absence or a memory budget.
@@ -86,7 +89,7 @@ not complete publishable modules.
   and [lance-c#167](https://github.com/lance-format/lance-c/issues/167). No fork or
   backport is included. Do not claim complete SDK parity or issue #1 completion.
 - Select the final merged source and preview version, then follow
-  [RELEASING.md](RELEASING.md). After publishing the authorized tag, run both
+  [RELEASING.md](../RELEASING.md). After publishing the authorized tag, run both
   public-consumer workflows against that tag with fresh evidence/cache roots.
   A successful pseudo-version run does not prove the tag resolves correctly.
 
