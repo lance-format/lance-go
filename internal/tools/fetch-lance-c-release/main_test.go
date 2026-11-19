@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
+	"github.com/ulikunitz/xz"
 )
 
 const testPinFile = `package ffi
@@ -522,5 +524,108 @@ func TestCheckedInCompanionsMatchTargets(t *testing.T) {
 		if want := filepath.Base(spec.libraryMember); md.LibraryName != want {
 			t.Fatalf("%s metadata library is %q, want %q", spec.name, md.LibraryName, want)
 		}
+	}
+}
+
+type tarEntry struct {
+	name     string
+	data     []byte
+	typeflag byte
+}
+
+func writeTarXZ(t *testing.T, path string, entries []tarEntry) {
+	t.Helper()
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create archive: %v", err)
+	}
+	defer file.Close()
+	xzWriter, err := xz.NewWriter(file)
+	if err != nil {
+		t.Fatalf("create xz writer: %v", err)
+	}
+	tarWriter := tar.NewWriter(xzWriter)
+	for _, entry := range entries {
+		typeflag := entry.typeflag
+		if typeflag == 0 {
+			typeflag = tar.TypeReg
+		}
+		header := &tar.Header{Name: entry.name, Mode: 0o644, Size: int64(len(entry.data)), Typeflag: typeflag}
+		if typeflag == tar.TypeDir {
+			header.Mode = 0o755
+		}
+		if err := tarWriter.WriteHeader(header); err != nil {
+			t.Fatalf("write tar header %s: %v", entry.name, err)
+		}
+		if typeflag == tar.TypeReg {
+			if _, err := tarWriter.Write(entry.data); err != nil {
+				t.Fatalf("write tar entry %s: %v", entry.name, err)
+			}
+		}
+	}
+	if err := tarWriter.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	if err := xzWriter.Close(); err != nil {
+		t.Fatalf("close xz writer: %v", err)
+	}
+}
+
+func TestExtractMembers(t *testing.T) {
+	lib := bytes.Repeat([]byte("library bytes"), 1024)
+	archive := filepath.Join(t.TempDir(), "release.tar.xz")
+	writeTarXZ(t, archive, []tarEntry{
+		{name: "./", typeflag: tar.TypeDir},
+		{name: "./include/", typeflag: tar.TypeDir},
+		{name: "./include/lance/", typeflag: tar.TypeDir},
+		{name: "./include/lance/lance.h", data: []byte("header bytes")},
+		{name: "./lib/", typeflag: tar.TypeDir},
+		{name: "./lib/liblance_c.so", data: lib},
+		{name: "./lib/liblance_c.so.zst", data: []byte("not wanted")},
+	})
+
+	out := t.TempDir()
+	seen, err := extractMembers(archive, out, []string{"./include/lance/lance.h", "./lib/liblance_c.so"})
+	if err != nil {
+		t.Fatalf("extractMembers: %v", err)
+	}
+	if len(seen) != 7 {
+		t.Fatalf("seen %d members, want 7: %v", len(seen), seen)
+	}
+	header, err := os.ReadFile(filepath.Join(out, "include", "lance", "lance.h"))
+	if err != nil || string(header) != "header bytes" {
+		t.Fatalf("header = %q, %v", header, err)
+	}
+	library, err := os.ReadFile(filepath.Join(out, "lib", "liblance_c.so"))
+	if err != nil || !bytes.Equal(library, lib) {
+		t.Fatalf("library mismatch: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "lib", "liblance_c.so.zst")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unwanted member was extracted: %v", err)
+	}
+
+	_, err = extractMembers(archive, t.TempDir(), []string{"./lib/lance_c.dll"})
+	if err == nil || !strings.Contains(err.Error(), "does not contain ./lib/lance_c.dll") {
+		t.Fatalf("missing member error = %v", err)
+	}
+
+	linkArchive := filepath.Join(t.TempDir(), "link.tar.xz")
+	writeTarXZ(t, linkArchive, []tarEntry{
+		{name: "./lib/liblance_c.so", data: []byte("target")},
+		{name: "./include/lance/lance.h", typeflag: tar.TypeSymlink},
+	})
+	if _, err := extractMembers(linkArchive, t.TempDir(), []string{"./include/lance/lance.h", "./lib/liblance_c.so"}); err == nil ||
+		!strings.Contains(err.Error(), "unsupported type") {
+		t.Fatalf("symlink member error = %v", err)
+	}
+
+	duplicateArchive := filepath.Join(t.TempDir(), "duplicate.tar.xz")
+	writeTarXZ(t, duplicateArchive, []tarEntry{
+		{name: "./lib/liblance_c.so", data: []byte("one")},
+		{name: "./lib/liblance_c.so", data: []byte("two")},
+	})
+	if _, err := extractMembers(duplicateArchive, t.TempDir(), []string{"./lib/liblance_c.so"}); err == nil ||
+		!strings.Contains(err.Error(), "appears more than once") {
+		t.Fatalf("duplicate member error = %v", err)
 	}
 }

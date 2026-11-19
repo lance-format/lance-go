@@ -11,6 +11,7 @@ require (
 	github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.0-preview.2
 	github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.0-preview.2
 	github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.0-preview.2
+	github.com/ulikunitz/xz v0.5.17
 	golang.org/x/sys v0.35.0
 )
 

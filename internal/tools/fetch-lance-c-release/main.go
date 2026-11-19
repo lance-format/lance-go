@@ -14,6 +14,9 @@
 //	  -target linux/amd64 \
 //	  -out /tmp/lance-c-release
 //
+// Extraction uses in-process xz and tar readers, so acquisition does not depend
+// on the platform tar implementation.
+//
 // The output directory must not exist. The command writes:
 //
 //	acquisition.txt                 verified provenance for the rest of the lane
@@ -41,6 +44,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
@@ -56,7 +60,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -65,6 +69,7 @@ import (
 	"time"
 
 	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
+	"github.com/ulikunitz/xz"
 )
 
 const pinPath = "internal/ffi/upstream.go"
@@ -172,21 +177,13 @@ func acquire(pinned pin, spec targetSpec, outDir, artifactsRoot string) error {
 		return err
 	}
 
-	members, err := listArchiveMembers(archivePath)
-	if err != nil {
-		return err
-	}
 	expected := []string{headerMember, spec.libraryMember}
 	if spec.importLibraryMember != "" {
 		expected = append(expected, spec.importLibraryMember)
 	}
-	for _, member := range expected {
-		if !members[member] {
-			return fmt.Errorf("archive %s does not contain %s; published members: %s", assetName, member, memberSummary(members))
-		}
-	}
-	if err := extractMembers(archivePath, outDir, expected); err != nil {
-		return err
+	fmt.Printf("extract: %s (header and shared library only)\n", assetName)
+	if _, err := extractMembers(archivePath, outDir, expected); err != nil {
+		return fmt.Errorf("extract from %s: %w", assetName, err)
 	}
 
 	headerPath := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(headerMember, "./")))
@@ -765,67 +762,83 @@ func verifyIndependentIdentity(artifactsRoot string, spec targetSpec, pinned pin
 	return result, nil
 }
 
-// listArchiveMembers returns the exact member names in the archive.
-func listArchiveMembers(archivePath string) (map[string]bool, error) {
-	output, err := runTar("-tJf", archivePath)
-	if err != nil {
-		return nil, fmt.Errorf("list archive %s: %w", archivePath, err)
+// extractMembers streams the compressed tar archive once and writes only the
+// requested regular-file members. It returns every member name it saw so a
+// missing expected member can be reported against the published layout.
+func extractMembers(archivePath, outDir string, members []string) ([]string, error) {
+	wanted := make(map[string]bool, len(members))
+	for _, member := range members {
+		wanted[member] = true
 	}
-	members := map[string]bool{}
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	archive, err := os.Open(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+	xzReader, err := xz.NewReader(archive)
+	if err != nil {
+		return nil, fmt.Errorf("open xz stream: %w", err)
+	}
+	reader := tar.NewReader(xzReader)
+	extracted := make(map[string]bool, len(members))
+	var seen []string
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return seen, fmt.Errorf("read tar stream: %w", err)
+		}
+		seen = append(seen, header.Name)
+		switch header.Typeflag {
+		case tar.TypeDir:
+			continue
+		case tar.TypeReg:
+		default:
+			return seen, fmt.Errorf("archive member %s has unsupported type %q; the release archive must contain only regular files and directories", header.Name, header.Typeflag)
+		}
+		if !wanted[header.Name] {
 			continue
 		}
-		members[line] = true
-	}
-	return members, nil
-}
-
-func extractMembers(archivePath, outDir string, members []string) error {
-	args := append([]string{"-xJf", archivePath, "-C", outDir}, members...)
-	if _, err := runTar(args...); err != nil {
-		return fmt.Errorf("extract %s from %s: %w", strings.Join(members, ", "), archivePath, err)
+		if extracted[header.Name] {
+			return seen, fmt.Errorf("archive member %s appears more than once", header.Name)
+		}
+		if header.Size <= 0 {
+			return seen, fmt.Errorf("archive member %s is empty", header.Name)
+		}
+		clean := path.Clean(header.Name)
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
+			return seen, fmt.Errorf("archive member %q escapes the output directory", header.Name)
+		}
+		destination := filepath.Join(outDir, filepath.FromSlash(clean))
+		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+			return seen, fmt.Errorf("extract %s: %w", header.Name, err)
+		}
+		file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err != nil {
+			return seen, fmt.Errorf("extract %s: %w", header.Name, err)
+		}
+		_, copyErr := io.Copy(file, reader)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return seen, fmt.Errorf("extract %s: %w", header.Name, copyErr)
+		}
+		if closeErr != nil {
+			return seen, fmt.Errorf("extract %s: %w", header.Name, closeErr)
+		}
+		extracted[header.Name] = true
 	}
 	for _, member := range members {
-		path := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(member, "./")))
-		// Reject symlinks: a published archive must contain the header and
-		// library as regular files, and a link could point outside the output
-		// directory.
-		info, err := os.Lstat(path)
-		if err != nil {
-			return fmt.Errorf("extract %s from %s: %w", member, archivePath, err)
-		}
-		if !info.Mode().IsRegular() || info.Size() == 0 {
-			return fmt.Errorf("extract %s from %s: extracted member is empty, not a regular file, or a symlink", member, archivePath)
+		if !extracted[member] {
+			return seen, fmt.Errorf("archive does not contain %s; published members: %s", member, memberSummary(seen))
 		}
 	}
-	return nil
+	return seen, nil
 }
 
-func runTar(args ...string) (string, error) {
-	if _, err := exec.LookPath("tar"); err != nil {
-		return "", errors.New("tar is required to read the .tar.xz release archive; install a tar with xz support")
-	}
-	command := exec.Command("tar", args...)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		return "", errors.New(message)
-	}
-	return stdout.String(), nil
-}
-
-func memberSummary(members map[string]bool) string {
-	names := make([]string, 0, len(members))
-	for name := range members {
-		names = append(names, name)
-	}
+func memberSummary(members []string) string {
+	names := append([]string(nil), members...)
 	sort.Strings(names)
 	if len(names) > 12 {
 		names = append(names[:12], "...")
