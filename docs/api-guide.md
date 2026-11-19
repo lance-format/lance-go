@@ -2,6 +2,8 @@
 
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
+This guide describes the `main` branch and the public Go APIs it contains. The latest published tag is `v0.1.0-preview.2`, which bundles lance-c v0.2.0-beta.1. APIs added after that tag are marked **main only** below; they are not available from the preview.2 module.
+
 ## Read a dataset
 
 On a target with a published selector (`linux/amd64`, `linux/arm64`,
@@ -71,15 +73,11 @@ only drops the caller's owner; native datasets retain the lock they need.
 Namespace opens, writes, and commits reject their matching commit-lock
 options; fragment creation rejects `WithWriteCommitLock`.
 
-`Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` mutate a cloned native
-snapshot and return a new committed `Dataset`. The receiver keeps its version
-and any open scanners. `MergeInsert` and `Merge` may advance the source reader, including on failure.
-The caller retains ownership and releases the reader after the call.
-
-`AddColumnsSQL`, `AddColumnsNulls`, `AddColumnsStream`, `AddColumnsBatchUDF`,
-`AlterColumns` and `DropColumns` return independent dataset snapshots. Metadata
-and config updates use the same snapshot contract, with explicit merge/replace
-modes; a nil metadata value deletes a key, while an empty string is stored.
+Row mutations and schema evolution return independent dataset snapshots; see
+[Mutations and schema evolution](#mutations-and-schema-evolution) for the
+snapshot and reader ownership rules. Metadata and config updates use the same
+contract, with explicit merge/replace modes; a nil metadata value deletes a
+key, while an empty string is stored.
 
 `BatchUDF` supports batch and fragment checkpoints. The mapper borrows a Go-owned
 copy of its native input and returns an owned batch reference. Call `Retain`
@@ -217,6 +215,98 @@ native field IDs that the lossy Arrow schema view does not. Schemas, data files
 and fragments returned by operations are independently owned and remain valid
 after their parent object is closed.
 
+## Mutations and schema evolution
+
+`Delete`, `Update`, `MergeInsert`, `Merge` and `Truncate` apply one mutation to
+a clone of the receiver and return a new committed `Dataset`. The receiver is
+unchanged: its version, rows and open scanners keep the pre-mutation snapshot.
+Close each result when finished, and use `Versions` or a fresh open to inspect
+the committed history.
+
+```go
+deleted, deletedRows, err := ds.Delete(ctx, "id > 100")
+if err != nil {
+    return err
+}
+defer deleted.Close()
+
+updated, updatedRows, err := deleted.Update(ctx, "id = 7",
+    lance.ColumnUpdate{Column: "status", Value: "'archived'"},
+    lance.ColumnUpdate{Column: "attempts", Value: "attempts + 1"},
+)
+if err != nil {
+    return err
+}
+defer updated.Close()
+```
+
+`Delete` removes rows matching its SQL predicate. `Update` requires at least one
+`ColumnUpdate`; each `Value` is a SQL scalar expression evaluated per matched
+row, not a Go value or a SQL fragment embedded by the caller. An empty update
+predicate updates every row.
+
+`MergeInsert` joins a compatible `array.RecordReader` on one or more key
+columns. Its zero `MergeInsertParams` value performs find-or-create: matching
+rows are kept and missing source rows are inserted. Explicit modes can update,
+delete or fail on matches, and can delete unmatched target rows:
+
+```go
+merged, stats, err := updated.MergeInsert(ctx, []string{"id"}, source,
+    lance.MergeInsertParams{
+        WhenMatched:    lance.MergeWhenMatchedUpdateAll,
+        WhenNotMatched: lance.MergeWhenNotMatchedInsertAll,
+    })
+if err != nil {
+    return err
+}
+defer merged.Close()
+fmt.Println(stats.InsertedRows, stats.UpdatedRows, stats.DeletedRows)
+```
+
+The source reader is borrowed and may be partially or fully advanced, including
+on failure. The caller retains ownership and releases it after `MergeInsert`.
+`Merge` similarly left-joins new non-key columns into the dataset, and
+`Truncate` returns a new snapshot with no rows. Historical versions remain
+readable after any of these operations.
+
+Schema evolution uses the same snapshot contract:
+
+```go
+evolved, err := merged.AddColumnsSQL(ctx, []lance.SQLColumn{
+    {Name: "double_id", Expression: "id * 2"},
+})
+if err != nil {
+    return err
+}
+defer evolved.Close()
+
+renamed := "state"
+nullable := true
+renamedDataset, err := evolved.AlterColumns(ctx,
+    lance.ColumnAlteration{
+        Path:     "status",
+        Rename:   &renamed,
+        Nullable: &nullable,
+    },
+)
+if err != nil {
+    return err
+}
+defer renamedDataset.Close()
+
+final, err := renamedDataset.DropColumns(ctx, "scratch")
+if err != nil {
+    return err
+}
+defer final.Close()
+```
+
+`AddColumnsNulls` adds nullable fields filled with nulls, `AddColumnsStream`
+appends columns from an equal-length reader, and `AddColumnsBatchUDF` supports
+checkpointed batch mapping. `AlterColumns` changes a name, nullability or type;
+`DropColumns` removes columns. All return independent datasets and leave the
+receiver's schema and version unchanged.
+
 ## Compaction and cleanup
 
 `CompactFiles` rewrites small fragments through the native V2 compaction API
@@ -308,6 +398,9 @@ column carrying blob metadata.
 
 ### Query plan diagnostics
 
+These scanner diagnostics and `Scanner.CountRows` are **main only**; the
+published preview.2 module does not contain them.
+
 `Scanner.ExplainPlan(ctx, verbose)` returns the native plan for the configured
 scan without starting it. `Scanner.AnalyzePlan(ctx)` executes that plan and
 returns the native runtime analysis, including elapsed time and operator
@@ -345,12 +438,63 @@ while waiting. Synchronous native operations cannot be interrupted once started.
 In particular, a write that commits after context cancellation returns its
 committed dataset, avoiding an error that could encourage duplicate writes.
 
-## Storage options providers
+## Storage options
 
 Static options and a dynamic accessor are mutually exclusive. Passing
 `WithStorageOptions` together with `WithStorageOptionsAccessor` (or the write
 and commit equivalents) returns `ErrInvalidArgument` regardless of option
-order. The static path is unchanged.
+order.
+
+### Static object-store options
+
+A static map is the simplest cloud configuration. Use `WithStorageOptions` for
+opens, `WithWriteStorageOptions` for writes, appends and overwrites, and
+`WithCommitStorageOptions` for transaction commits. The map is copied before
+the native call; the same keys work for dataset operations and, through the
+`file` package, for raw files.
+
+```go
+storageOptions := map[string]string{
+    "aws_access_key_id":     os.Getenv("AWS_ACCESS_KEY_ID"),
+    "aws_secret_access_key": os.Getenv("AWS_SECRET_ACCESS_KEY"),
+    "aws_session_token":     os.Getenv("AWS_SESSION_TOKEN"),
+    "aws_region":            os.Getenv("AWS_REGION"),
+}
+created, err := lance.Create(ctx, "s3://bucket/prefix/data.lance", reader,
+    lance.WithWriteStorageOptions(storageOptions))
+if err != nil {
+    return err
+}
+defer created.Close()
+
+ds, err := lance.Open(ctx, "s3://bucket/prefix/data.lance",
+    lance.WithStorageOptions(storageOptions))
+if err != nil {
+    return err
+}
+defer ds.Close()
+```
+
+Canonical keys for the common providers include:
+
+| Provider | URI examples | Common static keys |
+| --- | --- | --- |
+| S3 and S3-compatible | `s3://bucket/prefix` | `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`, `aws_endpoint`, `aws_allow_http` |
+| Google Cloud Storage | `gs://bucket/prefix` | `google_service_account`, `google_service_account_key`, `google_application_credentials`, `google_bearer_token`, `google_base_url` |
+| Azure Blob or Data Lake | `az://container/prefix`, `abfs://mycontainer@account.dfs.core.windows.net/prefix` | `azure_storage_account_name`, `azure_storage_account_key`, `azure_storage_sas_key`, `azure_storage_token`, `azure_storage_endpoint`, `azure_storage_client_id`, `azure_storage_client_secret`, `azure_storage_tenant_id` |
+
+Aliases such as `region` and `endpoint` are accepted by native code, but the
+canonical names above avoid ambiguity when several spellings are present. For
+S3-compatible services, set `aws_endpoint` and usually `aws_allow_http=true`;
+for Azure, `az://` selects Blob and `abfs://` selects Data Lake.
+
+When no static options are supplied, native uses its normal ambient credential
+chain, such as environment variables, profiles or workload identity. Prefer
+that path when the runtime already provides credentials, and prefer a dynamic
+accessor when credentials expire during a long-lived process. Never log the
+storage map or provider results, because they can contain secrets.
+
+### Dynamic providers
 
 A provider supplies credentials and endpoint options when native code asks for
 them. Native owns caching, expiration, refresh timing and fallback; Go must not
@@ -751,6 +895,79 @@ state before retrying; the binding does not claim rollback.
 `_rowid` values, including vector searches. Calling `WithRowIDAllowlist()` with
 no IDs selects no rows. The IDs are not positions within a batch or fragment.
 
+## Full-text search
+
+Full-text search uses an inverted scalar index. Build positions into the index
+when you need phrase queries or position-aware prewarming:
+
+```go
+indexed, err := ds.CreateScalarIndex(ctx, "body", index.ScalarInverted,
+    json.RawMessage(`{"with_position": true}`), index.ScalarOptions{},
+    lance.WithIndexName("body_fts"))
+if err != nil {
+    return err
+}
+defer indexed.Close()
+
+query, err := lance.NewFTSMatchQuery("lance search", "", lance.FTSMatchOptions{
+    Operator: lance.MatchOperatorAnd,
+})
+if err != nil {
+    return err
+}
+defer query.Close()
+
+scan, err := indexed.Scan(lance.WithColumns("id"), lance.WithFTSQuery(query))
+if err != nil {
+    return err
+}
+defer scan.Close()
+```
+
+An empty column lets native scan planning resolve an indexed column; pass a
+column name to restrict the query to that column. `NewFTSPhraseQuery`,
+`NewFTSMultiMatchQuery`, `NewFTSCombinedFieldsQuery`, `NewFTSBooleanQuery` and
+`NewFTSBoostQuery` build the other query types. Boolean clauses use
+`FTSOccurShould`, `FTSOccurMust` or `FTSOccurMustNot`. A scanner retains its own
+reference to the query, so closing the query after attaching it does not affect
+the scan.
+
+On `main`, the FTS query constructors return `*lance.Error` matching
+`ErrInvalidArgument` for invalid arguments, including embedded NUL bytes,
+invalid operators and nil or closed subqueries. This typed-error normalization
+is **main only**; some constructor checks in preview.2 return plain errors.
+
+FTS and vector scans project `_score` or `_distance` automatically, even when a
+column projection is explicit. Call `WithoutScoringAutoprojection()` to disable
+that behavior; project the score column explicitly if needed.
+
+`PrepareFTSMatchQuery` and `PrepareFTSPhraseQuery` plan a query against the
+current process-local dataset snapshot. A prepared query cannot be serialized
+or reused with another dataset or version. `FTSCoverageStrict` fails
+preparation when any current fragment is outside the FTS index;
+`FTSCoverageIndexOnly` allows those fragments but excludes them from scoring
+and results. `WithFTSIndexSegments` restricts a prepared query to physical
+index segments and requires `WithFTSQueryContext`.
+
+MinHash similarity uses a MinHash LSH scalar index and a limit:
+
+```go
+indexed, err := ds.CreateScalarIndex(ctx, "text", index.ScalarMinHashLSH,
+    json.RawMessage(`{}`), index.ScalarOptions{},
+    lance.WithIndexName("text_minhash"))
+if err != nil {
+    return err
+}
+scan, err := indexed.Scan(
+    lance.WithMinHashQuery("text", "hello world"),
+    lance.WithLimit(10),
+)
+```
+
+MinHash results expose `_distance`. A MinHash query requires `WithLimit`, and it
+cannot be combined with an FTS query or prepared query context. Count planning
+also rejects MinHash queries.
+
 ## Distributed index segments
 
 Index shards can be built independently and published together.
@@ -973,3 +1190,71 @@ Models preserve absent, explicit-null and concrete values using pointers to
 `namespace.Nullable[T]`. Native namespace errors retain their separate error
 code space, including code zero (`Unsupported`). The standalone `namespace`
 package activates the same platform bundle as the root package.
+
+## Errors
+
+Dataset, scanner, writer, session and transaction operations return
+`*lance.Error` for failures reported by native code and for argument
+validation. The value carries:
+
+- `Op`: the operation name, such as `open`, `delete` or `scan`;
+- `URI`: the dataset or namespace identifier when one is available;
+- `Code`: a `lance.Code` such as `CodeNotFound` or `CodeCommitConflict`;
+- `Message`: the native or validation message.
+
+`errors.Is` matches the sentinel for the code, and `errors.As` exposes the
+full value:
+
+```go
+ds, err := lance.Open(ctx, "missing.lance")
+if errors.Is(err, lance.ErrNotFound) {
+    // The dataset does not exist.
+}
+var lanceErr *lance.Error
+if errors.As(err, &lanceErr) {
+    fmt.Println(lanceErr.Op, lanceErr.URI, lanceErr.Code, lanceErr.Message)
+}
+```
+
+The sentinels are `ErrClosed`, `ErrInvalidArgument`, `ErrIO`, `ErrNotFound`,
+`ErrAlreadyExists`, `ErrIndex`, `ErrInternal`, `ErrNotSupported`,
+`ErrCommitConflict` and `ErrPanic`. Compare with `errors.Is` and `errors.As`,
+not with `==` or message strings. `ErrCommitConflict` also covers conflicting
+tag and branch operations.
+
+The `namespace` package has its own error code space. Namespace operations
+return `*namespace.NamespaceError` for native namespace failures,
+`*namespace.NativeError` for other native failures, `namespace.ErrClosed` for a
+closed handle, and `*namespace.ProtocolError` for malformed requests or
+responses. Use `namespace.IsNotFound` for the family of not-found codes. Code
+zero is `namespace.ErrorCodeUnsupported` and is still an error; never treat a
+zero code as success.
+
+Root dataset operations that use a namespace wrap those failures into
+`*lance.Error` and the matching root sentinel, retaining the namespace code and
+message in the text. Handle namespace failures with `errors.As` before falling
+back to the root sentinel.
+
+## Context cancellation
+
+Methods that accept a `context.Context` check it before acquiring a native
+handle or starting native work. Iterative APIs such as scanner records also
+check between batches. Cancellation is cooperative: once a synchronous native
+write, index build, compaction, optimization, cleanup or namespace request has
+started, it cannot be interrupted.
+
+A write, mutation, compaction or index build that commits after cancellation
+returns its committed dataset or result instead of a cancellation error that
+could encourage duplicate work. A returned `context.Canceled` or
+`context.DeadlineExceeded` therefore means the operation stopped before native
+work started or while it was waiting between batches. It does not mean files
+were rolled back.
+
+Scanner cancellation parks and wakes the waiting goroutine without holding an
+OS thread. Ending iteration, including an early break, closes the scanner.
+`Dataset.Close` and namespace `Close` wait for in-flight operations; they do not
+cancel them. Index and write progress callbacks are advisory and cannot cancel
+native work. Dynamic storage-provider callbacks receive a background-scoped
+context that is valid only for that call and cannot cancel native I/O. Use the
+request context to decide whether to start work, not as a rollback or
+interruption guarantee for work already in progress.
