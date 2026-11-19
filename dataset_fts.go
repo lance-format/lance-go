@@ -96,7 +96,7 @@ func NewFTSMatchQuery(terms, column string, options FTSMatchOptions) (*FTSQuery,
 		return nil, err
 	}
 	if options.Operator != MatchOperatorOr && options.Operator != MatchOperatorAnd {
-		return nil, fmt.Errorf("lance: FTS match operator %d is invalid", options.Operator)
+		return nil, invalidError("", "", "FTS match operator %d is invalid", options.Operator)
 	}
 	native, err := ffi.NewFTSMatchQuery(terms, optionalColumn(column), ffi.FTSMatchOptions{
 		Boost:               options.Boost,
@@ -135,11 +135,11 @@ func NewFTSMultiMatchQuery(terms string, columns []string, options FTSMultiMatch
 	}
 	for _, column := range columns {
 		if err := validateCString(column); err != nil {
-			return nil, fmt.Errorf("lance: FTS column: %w", err)
+			return nil, invalidError("", "", "FTS column: %v", err)
 		}
 	}
 	if options.Operator != MatchOperatorOr && options.Operator != MatchOperatorAnd {
-		return nil, fmt.Errorf("lance: FTS multi-match operator %d is invalid", options.Operator)
+		return nil, invalidError("", "", "FTS multi-match operator %d is invalid", options.Operator)
 	}
 	native, err := ffi.NewFTSMultiMatchQuery(terms, columns, ffi.FTSMultiMatchOptions{
 		Boosts:        options.Boosts,
@@ -159,11 +159,11 @@ func NewFTSCombinedFieldsQuery(terms string, columns []string, options FTSCombin
 	}
 	for _, column := range columns {
 		if err := validateCString(column); err != nil {
-			return nil, fmt.Errorf("lance: FTS column: %w", err)
+			return nil, invalidError("", "", "FTS column: %v", err)
 		}
 	}
 	if options.Operator != MatchOperatorOr && options.Operator != MatchOperatorAnd {
-		return nil, fmt.Errorf("lance: FTS combined-fields operator %d is invalid", options.Operator)
+		return nil, invalidError("", "", "FTS combined-fields operator %d is invalid", options.Operator)
 	}
 	native, err := ffi.NewFTSCombinedFieldsQuery(terms, columns, ffi.FTSCombinedFieldsOptions{
 		Boosts:        options.Boosts,
@@ -180,17 +180,17 @@ func NewFTSCombinedFieldsQuery(terms string, columns []string, options FTSCombin
 // and rejected at planning.
 func NewFTSBooleanQuery(occurs []FTSOccur, queries []*FTSQuery) (*FTSQuery, error) {
 	if len(occurs) != len(queries) {
-		return nil, fmt.Errorf("lance: FTS boolean query has %d occurs for %d queries", len(occurs), len(queries))
+		return nil, invalidError("", "", "FTS boolean query has %d occurs for %d queries", len(occurs), len(queries))
 	}
 	nativeOccurs := make([]int32, len(occurs))
 	nativeQueries := make([]*ffi.FTSQuery, len(queries))
 	for i, occur := range occurs {
 		if occur != FTSOccurShould && occur != FTSOccurMust && occur != FTSOccurMustNot {
-			return nil, fmt.Errorf("lance: FTS boolean occur %d is invalid", occur)
+			return nil, invalidError("", "", "FTS boolean occur %d is invalid", occur)
 		}
 		nativeOccurs[i] = int32(occur)
 		if queries[i] == nil {
-			return nil, fmt.Errorf("lance: FTS boolean query %d is nil", i)
+			return nil, invalidError("", "", "FTS boolean query %d is nil", i)
 		}
 		nativeQueries[i] = queries[i].native
 	}
@@ -205,7 +205,7 @@ func NewFTSBooleanQuery(occurs []FTSOccur, queries []*FTSQuery) (*FTSQuery, erro
 // and negative.
 func NewFTSBoostQuery(positive, negative *FTSQuery, options FTSBoostOptions) (*FTSQuery, error) {
 	if positive == nil || negative == nil {
-		return nil, fmt.Errorf("lance: FTS boost query requires both positive and negative queries")
+		return nil, invalidError("", "", "FTS boost query requires both positive and negative queries")
 	}
 	native, err := ffi.NewFTSBoostQuery(positive.native, negative.native, ffi.FTSBoostOptions{
 		NegativeBoost: options.NegativeBoost,
@@ -334,7 +334,7 @@ func optionalColumn(column string) *string {
 func validateFTSStrings(values ...string) error {
 	for _, value := range values {
 		if err := validateCString(value); err != nil {
-			return fmt.Errorf("lance: FTS text: %w", err)
+			return invalidError("", "", "FTS text: %v", err)
 		}
 	}
 	return nil

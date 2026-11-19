@@ -3,6 +3,7 @@ package lance_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -222,6 +223,133 @@ func TestFTSMultiMatchAndConstructionErrors(t *testing.T) {
 	}
 	defer emptyBoolean.Close()
 	assertFTSQueryError(t, withBody, "FTS query must contain at least one leaf query", lance.WithFTSQuery(emptyBoolean))
+}
+
+func TestFTSQueryValidationErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		call func() error
+		want string
+	}{
+		{
+			name: "match operator",
+			call: func() error {
+				_, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{Operator: lance.MatchOperator(9)})
+				return err
+			},
+			want: "FTS match operator 9 is invalid",
+		},
+		{
+			name: "match text NUL",
+			call: func() error {
+				_, err := lance.NewFTSMatchQuery("alpha\x00", "", lance.FTSMatchOptions{})
+				return err
+			},
+			want: "FTS text: string contains an embedded NUL byte",
+		},
+		{
+			name: "phrase text NUL",
+			call: func() error {
+				_, err := lance.NewFTSPhraseQuery("alpha\x00", "", lance.FTSPhraseOptions{})
+				return err
+			},
+			want: "FTS text: string contains an embedded NUL byte",
+		},
+		{
+			name: "multi-match column NUL",
+			call: func() error {
+				_, err := lance.NewFTSMultiMatchQuery("alpha", []string{"title\x00"}, lance.FTSMultiMatchOptions{})
+				return err
+			},
+			want: "FTS column: string contains an embedded NUL byte",
+		},
+		{
+			name: "multi-match operator",
+			call: func() error {
+				_, err := lance.NewFTSMultiMatchQuery("alpha", []string{"title"}, lance.FTSMultiMatchOptions{Operator: lance.MatchOperator(9)})
+				return err
+			},
+			want: "FTS multi-match operator 9 is invalid",
+		},
+		{
+			name: "combined-fields column NUL",
+			call: func() error {
+				_, err := lance.NewFTSCombinedFieldsQuery("alpha", []string{"title\x00"}, lance.FTSCombinedFieldsOptions{})
+				return err
+			},
+			want: "FTS column: string contains an embedded NUL byte",
+		},
+		{
+			name: "combined-fields operator",
+			call: func() error {
+				_, err := lance.NewFTSCombinedFieldsQuery("alpha", []string{"title"}, lance.FTSCombinedFieldsOptions{Operator: lance.MatchOperator(9)})
+				return err
+			},
+			want: "FTS combined-fields operator 9 is invalid",
+		},
+		{
+			name: "boolean length mismatch",
+			call: func() error {
+				_, err := lance.NewFTSBooleanQuery(nil, []*lance.FTSQuery{{}})
+				return err
+			},
+			want: "FTS boolean query has 0 occurs for 1 queries",
+		},
+		{
+			name: "boolean occur",
+			call: func() error {
+				_, err := lance.NewFTSBooleanQuery([]lance.FTSOccur{lance.FTSOccur(9)}, []*lance.FTSQuery{{}})
+				return err
+			},
+			want: "FTS boolean occur 9 is invalid",
+		},
+		{
+			name: "boolean nil query",
+			call: func() error {
+				_, err := lance.NewFTSBooleanQuery([]lance.FTSOccur{lance.FTSOccurShould}, []*lance.FTSQuery{nil})
+				return err
+			},
+			want: "FTS boolean query 0 is nil",
+		},
+		{
+			name: "boost missing positive",
+			call: func() error {
+				_, err := lance.NewFTSBoostQuery(nil, &lance.FTSQuery{}, lance.FTSBoostOptions{})
+				return err
+			},
+			want: "FTS boost query requires both positive and negative queries",
+		},
+		{
+			name: "boost missing negative",
+			call: func() error {
+				_, err := lance.NewFTSBoostQuery(&lance.FTSQuery{}, nil, lance.FTSBoostOptions{})
+				return err
+			},
+			want: "FTS boost query requires both positive and negative queries",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("validation succeeded")
+			}
+			if !errors.Is(err, lance.ErrInvalidArgument) {
+				t.Fatalf("error = %v, want ErrInvalidArgument", err)
+			}
+			var lanceErr *lance.Error
+			if !errors.As(err, &lanceErr) {
+				t.Fatalf("error = %T, want *lance.Error", err)
+			}
+			if lanceErr.Code != lance.CodeInvalidArgument {
+				t.Fatalf("error code = %v, want %v", lanceErr.Code, lance.CodeInvalidArgument)
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %q, want substring %q", err, tt.want)
+			}
+		})
+	}
 }
 
 func TestFTSPreparedQueriesPinSnapshot(t *testing.T) {
