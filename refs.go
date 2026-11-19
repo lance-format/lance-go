@@ -84,7 +84,11 @@ func (d *Dataset) CheckoutBranch(ctx context.Context, branch string) (*Dataset, 
 	if err != nil {
 		return nil, wrapError("checkout branch", d.uri, err)
 	}
-	return d.adopt(native), nil
+	adopted, err := d.adopt(native)
+	if err != nil {
+		return nil, wrapError("checkout branch", d.uri, err)
+	}
+	return adopted, nil
 }
 
 // CheckoutRef returns an independent dataset at ref.
@@ -108,7 +112,11 @@ func (d *Dataset) checkout(ctx context.Context, op string, ref Ref) (*Dataset, e
 	if err != nil {
 		return nil, wrapError(op, d.uri, err)
 	}
-	return d.adopt(native), nil
+	adopted, err := d.adopt(native)
+	if err != nil {
+		return nil, wrapError(op, d.uri, err)
+	}
+	return adopted, nil
 }
 
 func validateResourceName(op, uri, kind, name string) error {

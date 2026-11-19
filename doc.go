@@ -14,6 +14,12 @@
 // Fragment, a returned BlobFile or a dataset returned by a successful mutation,
 // remain usable after the source Dataset is closed.
 //
+// Dataset.URI reports the fully qualified URI native resolved when the snapshot
+// was produced. A namespace dataset reports its resolved describe_table location
+// rather than the table identifier used in error diagnostics. Each returned
+// snapshot reports its own native URI, and the value remains available after
+// Close.
+//
 // Scanners are single-use. Each batch yielded by Scanner.Records is borrowed
 // until the next iteration step. Retain the batch before keeping it past that
 // step and Release it when finished. Batches returned by Take and TakeRows are

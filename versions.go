@@ -102,7 +102,11 @@ func (d *Dataset) Restore(ctx context.Context, version uint64) (*Dataset, error)
 	if err != nil {
 		return nil, wrapError("restore", d.uri, err)
 	}
-	return d.adopt(restored), nil
+	adopted, err := d.adopt(restored)
+	if err != nil {
+		return nil, wrapError("restore", d.uri, err)
+	}
+	return adopted, nil
 }
 
 func datasetVersionFromFFI(info ffi.VersionInfo) DatasetVersion {

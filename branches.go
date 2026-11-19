@@ -163,7 +163,11 @@ func (d *Dataset) CreateBranch(ctx context.Context, name string, ref Ref, opts .
 	if err != nil {
 		return nil, wrapError("create branch", d.uri, err)
 	}
-	return d.adopt(created), nil
+	adopted, err := d.adopt(created)
+	if err != nil {
+		return nil, wrapError("create branch", d.uri, err)
+	}
+	return adopted, nil
 }
 
 // DeleteBranch removes a branch using native reference-protection rules.

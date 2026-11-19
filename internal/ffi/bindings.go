@@ -41,6 +41,7 @@ type bindings struct {
 	commitLockNew             func(callbacks *commitLockCallbacks) uintptr
 	commitLockClose           func(lock uintptr)
 	datasetClose              func(dataset uintptr)
+	datasetURI                func(dataset uintptr) *byte
 	datasetVersion            func(dataset uintptr) uint64
 	datasetCountRows          func(dataset uintptr) uint64
 	datasetCountRowsFiltered  func(dataset uintptr, filter string) uint64
@@ -698,6 +699,7 @@ func (b *bindings) symbols() []symbol {
 		{"lance_commit_lock_new", &b.commitLockNew},
 		{"lance_commit_lock_close", &b.commitLockClose},
 		{"lance_dataset_close", &b.datasetClose},
+		{"lance_dataset_uri", &b.datasetURI},
 		{"lance_dataset_version", &b.datasetVersion},
 		{"lance_dataset_count_rows", &b.datasetCountRows},
 		{"lance_dataset_count_rows_filtered", &b.datasetCountRowsFiltered},
