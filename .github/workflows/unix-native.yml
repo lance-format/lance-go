@@ -22,11 +22,11 @@ on:
       - scripts/lance-c-cache.sh
       - scripts/check-native-library.sh
       - scripts/strip-native-library.sh
-      - scripts/check-abi-symbols.go
+      - internal/tools/check-abi-symbols/**
       - scripts/sync-lance-c.sh
-      - scripts/sync-lance-c-gen/**
-      - scripts/verify-lance-c-artifact/**
-      - scripts/internal/artifactgen/**
+      - internal/tools/sync-lance-c-gen/**
+      - internal/tools/verify-lance-c-artifact/**
+      - internal/tools/artifactgen/**
       - .github/workflows/unix-native.yml
   pull_request:
     paths:
@@ -38,11 +38,11 @@ on:
       - scripts/lance-c-cache.sh
       - scripts/check-native-library.sh
       - scripts/strip-native-library.sh
-      - scripts/check-abi-symbols.go
+      - internal/tools/check-abi-symbols/**
       - scripts/sync-lance-c.sh
-      - scripts/sync-lance-c-gen/**
-      - scripts/verify-lance-c-artifact/**
-      - scripts/internal/artifactgen/**
+      - internal/tools/sync-lance-c-gen/**
+      - internal/tools/verify-lance-c-artifact/**
+      - internal/tools/artifactgen/**
       - .github/workflows/unix-native.yml
 
 permissions:
@@ -384,7 +384,7 @@ jobs:
           LANCE_C_HEADER: ${{ steps.native.outputs.header }}
         run: |
           set -euo pipefail
-          go run ./scripts/check-abi-symbols.go 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
+          go run ./internal/tools/check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
 
       - name: Test default build against installed library
         env:
@@ -532,7 +532,7 @@ jobs:
           test -f "$CANDIDATE_ROOT/module/artifact.go"
           grep -Fq "//go:build !lance_external_lib && $TARGET_GOOS && $TARGET_GOARCH" "$selector"
           grep -Fq "\"$MODULE_PATH\"" "$selector"
-          go run ./scripts/verify-lance-c-artifact \
+          go run ./internal/tools/verify-lance-c-artifact \
             -module "$CANDIDATE_ROOT/module" \
             -library "$LANCE_STRIPPED_LIBRARY" \
             -target "$TARGET" \

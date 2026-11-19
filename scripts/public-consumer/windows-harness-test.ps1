@@ -150,7 +150,7 @@ try {
             Fail "driver is missing required fragment: $required"
         }
     }
-    $fixture = Join-Path $scriptDir 'windows-consumer/main.go'
+    $fixture = Join-Path $scriptDir '..\..\internal\tools\public-consumer\windows-consumer\main.go'
     if (-not (Test-Path -LiteralPath $fixture)) {
         Fail "identity fixture is missing: $fixture"
     }

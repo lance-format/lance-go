@@ -1219,7 +1219,7 @@ function Add-IdentityHelperSource([string]$Label, $Mode) {
     # Resolve the helper's pinned dependency during setup. Building the helper
     # in the cold target phase must not run go get and contaminate its archive
     # observations.
-    $source = Join-Path $script:PublicConsumerDir 'windows-consumer/main.go'
+    $source = Join-Path $script:RepoDir 'internal/tools/public-consumer/windows-consumer/main.go'
     if (-not (Test-Path -LiteralPath $source)) {
         Fail "identity fixture is missing: $source"
     }
@@ -1293,7 +1293,6 @@ function Run-Consumer($Mode, [string]$Binary, [string]$Label, [string[]]$Argumen
 # Main flow. Evidence is created before argument validation so configuration
 # failures still leave a durable record for the workflow upload.
 $script:RepoDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$script:PublicConsumerDir = $PSScriptRoot
 $script:Verify = Join-Path $PSScriptRoot 'verify.py'
 $evidenceRoot = if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
     Join-Path ([IO.Path]::GetTempPath()) 'public-consumer-evidence'
@@ -1553,7 +1552,7 @@ try {
     $namespace = New-Mode 'namespace'
     $null = Invoke-Go $namespace.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
     Save-ModuleCacheSnapshot 'namespace/setup/go-get' $namespace.SetupModCache
-    $namespaceSource = Join-Path $script:PublicConsumerDir 'namespace-consumer/main.go'
+    $namespaceSource = Join-Path $script:RepoDir 'internal/tools/public-consumer/namespace-consumer/main.go'
     if (-not (Test-Path -LiteralPath $namespaceSource)) {
         Fail "namespace fixture is missing: $namespaceSource"
     }

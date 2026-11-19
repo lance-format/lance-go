@@ -79,8 +79,8 @@ Create an ordinary project-local virtual environment; do not install into the
 global interpreter:
 
 ```bash
-python3 -m venv compat/.venv
-compat/.venv/bin/pip install -r compat/requirements.txt
+python3 -m venv internal/compat/.venv
+internal/compat/.venv/bin/pip install -r internal/compat/requirements.txt
 ```
 
 ### Build the CLIs
@@ -88,9 +88,9 @@ compat/.venv/bin/pip install -r compat/requirements.txt
 From the repository root:
 
 ```bash
-go build -o /tmp/lance-compat-go ./compat/go
-(cd compat/java && mvn -q -DskipTests package)
-cargo build --locked --release --manifest-path compat/rust/Cargo.toml
+go build -o /tmp/lance-compat-go ./internal/compat/go
+(cd internal/compat/java && mvn -q -DskipTests package)
+cargo build --locked --release --manifest-path internal/compat/rust/Cargo.toml
 ```
 
 The Rust build must use the normal cargo target/cache selected by the local
@@ -104,13 +104,13 @@ and compares each cell's stdout with the committed reports in `expected/`.
 Use a directory outside the repository, for example:
 
 ```bash
-python3 compat/run.py \
+python3 internal/compat/run.py \
   --run-dir /tmp/lance-compat-run-2.1 \
   --storage-version 2.1 \
   --go-cmd "/tmp/lance-compat-go" \
-  --python-cmd "compat/.venv/bin/python compat/python/compat.py" \
-  --java-cmd "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar compat/java/target/lance-compat-java.jar" \
-  --rust-cmd "cargo run --locked --quiet --release --manifest-path compat/rust/Cargo.toml --"
+  --python-cmd "internal/compat/.venv/bin/python internal/compat/python/compat.py" \
+  --java-cmd "java --add-opens=java.base/java.nio=ALL-UNNAMED -jar internal/compat/java/target/lance-compat-java.jar" \
+  --rust-cmd "cargo run --locked --quiet --release --manifest-path internal/compat/rust/Cargo.toml --"
 ```
 
 The default commands use `go run`, the system `python3`, the shaded Java jar,
@@ -179,7 +179,7 @@ run in place; use a new run directory for a retry.
 Runner-only regression checks (no SDK compilation or native loading):
 
 ```sh
-python3 -B -m unittest discover -s compat -p test_run.py -v
+python3 -B -m unittest discover -s internal/compat -p test_run.py -v
 ```
 
 A timed-out command terminates its process group, including SDK subprocesses
