@@ -23,10 +23,12 @@ The [consumer installation](../README.md#supported-consumer-configuration) uses 
    directories and `PATH`.
 
 The bundle cache is
-`<os.UserCacheDir>/lance-go/<uncompressed-sha256>/<libraryName>`; setting
-`XDG_CACHE_HOME` moves it on Linux. The first bundled load must be able to
-create and write this directory. If the cache is read-only or unavailable,
-set `LANCE_LIB_PATH` to the exact library for that SDK release; the environment
+`<cache-root>/lance-go/<uncompressed-sha256>/<libraryName>`, where
+`<cache-root>` is `LANCE_CACHE_DIR` when non-empty and `os.UserCacheDir`
+otherwise. On Linux, `XDG_CACHE_HOME` moves the default user cache. The first
+bundled load must be able to create and write this directory. If the cache is
+read-only or unavailable, set `LANCE_CACHE_DIR` to a writable path, or set
+`LANCE_LIB_PATH` to the exact library for that SDK release; the environment
 path is checked first, so no cache write is attempted. Cached bytes are checked
 by exact size and
 SHA-256 before `dlopen`. Extraction writes a temporary file, verifies the
