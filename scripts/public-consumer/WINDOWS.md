@@ -5,11 +5,13 @@
 `run.sh`: Windows has a different cache contract, needs a PE check, and can
 report the module that the loader actually mapped.
 
-The Windows modules are published at `v0.1.0` from the official
-`lance-c v0.2.0` release at `facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`.
-The payloads decompress byte-for-byte to the official archive DLLs. Candidate
-public-consumer acceptance for v0.1.0 belongs to the release PR and the
-post-tag release record; the preview.1 six-target evidence remains historical.
+The Windows modules are published at `v0.1.0` (stable) and
+`v0.1.1-preview.1` (preview). The preview modules come from the official
+`lance-c v0.2.1-beta.1` release at
+`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`. Both payload sets decompress
+byte-for-byte to the matching official archive DLLs. Candidate public-consumer
+acceptance for each release belongs to its release PR and post-tag record; the
+preview.1 six-target evidence remains historical.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for

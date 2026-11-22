@@ -1,7 +1,7 @@
 # Examples
 
-These examples track `main`. The published `v0.1.0` tag contains the same
-examples.
+These examples track `main`. The published `v0.1.0` and `v0.1.1-preview.1`
+tags contain the same examples.
 
 Run the local examples from the repository root with the normal zero-config
 bundle on a supported target:

@@ -5,20 +5,20 @@
 # proxy, never builds Rust or lance-c, and never uses a preinstalled native
 # library or an existing dataset.
 #
-# LANCE_GO_QUICKSTART_VERSION defaults to the current stable root release. A
-# full 40-hex commit is resolved to that module's pseudo-version through the
-# public proxy and checksum database first, so release CI can verify the exact
-# candidate revision before the root tag exists; the companion module always
-# stays on the stable ARTIFACT_VERSION.
+# LANCE_GO_QUICKSTART_VERSION defaults to the root release being prepared
+# (currently v0.1.1-preview.1). A full 40-hex commit is resolved to that
+# module's pseudo-version through the public proxy and checksum database first,
+# so release CI can verify the exact candidate revision before the root tag
+# exists; the companion module follows the same artifact version.
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go
-VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.0}
+VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.1-preview.1}
 ARTIFACT_MODULE=$ROOT_MODULE/artifacts/linux-amd64
-ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.1.0}
-COMPANION_BYTES=87415140
-LIBRARY_BYTES=342712936
-LIBRARY_SHA256=4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac
+ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.1.1-preview.1}
+COMPANION_BYTES=88365133
+LIBRARY_BYTES=345903736
+LIBRARY_SHA256=bea1f774ce9ff07ad8565ff3afafe1b49249d2dbb901e58d5bcce529f484cfa5
 EXPECTED_OUTPUT='Created, reopened and scanned 3 rows: [10 20 30]'
 
 if [[ "$(go env GOOS)/$(go env GOARCH)" != linux/amd64 ]]; then

@@ -9,6 +9,42 @@ per-target library checksums. Versions follow Semantic Versioning; within
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.1.1-preview.1] - 2026-11-23
+
+Preview of the next 0.1 patch. It preserves the published `v0.1.0` Go API and
+moves the bundled native library to lance-c `v0.2.1-beta.1` on Lance
+`v15.0.0-beta.26`. `v0.1.0` remains the recommended stable release.
+
+### Added
+
+- `Dataset.URI()` returns the fully qualified URI native resolved for that
+  snapshot, including a branch or namespace-resolved location. The string is
+  captured once and stays available after `Close`.
+
+### Changed
+
+- Default builds now bundle the official prebuilt `lance-c v0.2.1-beta.1`
+  shared libraries, which are built against Lance `v15.0.0-beta.26`. The five
+  supported targets are unchanged, and each companion module is published at
+  `v0.1.1-preview.1`. The native commit, canonical header hash, payload sizes
+  and checksums are new; see [artifacts/README.md](artifacts/README.md).
+- `Fragment.Take` with an explicit empty column list now returns one
+  zero-column batch with the requested row count. The previous native library
+  rejected the same call with `LANCE_ERR_NOT_FOUND`. Passing no columns still
+  selects the full logical schema, and `Dataset.Take` is unchanged.
+- Scalar-index `params` keep their existing Go contract: `nil` and an empty Go
+  value select native defaults, and invalid JSON is rejected client-side with
+  `ErrInvalidArgument`. The bundled native library now rejects an empty JSON
+  string with the same code instead of treating it as defaults.
+- Index segment metadata carrying local fragment aliases is rejected instead
+  of being interpreted incompletely: `ParseIndexSegmentMetadata` returns
+  `ErrNotSupported`, while `CommitIndexSegments` and `MergeIndexSegments`
+  return `ErrInvalidArgument` without changing the dataset version.
+
+```sh
+go get github.com/lance-format/lance-go@v0.1.1-preview.1
+```
+
 ## [v0.1.0] - 2026-11-20
 
 ### Added

@@ -3,6 +3,8 @@
 Read, write, and search [Lance](https://lance.org/) datasets from Go using Apache Arrow record batches.
 The [current release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0), `v0.1.0`, bundles the official prebuilt shared library from **lance-c v0.2.0**, built against Lance **v15.0.0-beta.25**. Applications use Go 1.23+ with `CGO_ENABLED=0`.
 
+The opt-in `v0.1.1-preview.1` preview moves the bundle to **lance-c v0.2.1-beta.1**, built against Lance **v15.0.0-beta.26**. It keeps the same five targets and published Go APIs; `v0.1.0` remains the recommended stable release.
+
 ## What you can do
 
 - **Search** with exact or indexed vector similarity, full-text match, phrase, boolean and boost queries, or MinHash similarity.
@@ -22,6 +24,13 @@ $ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.
 Created, reopened and scanned 3 rows: [10 20 30]
 ```
 
+To try the preview instead, run the same example at the preview tag:
+
+```console
+$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.1-preview.1
+Created, reopened and scanned 3 rows: [10 20 30]
+```
+
 ## Use Lance in an application
 
 In your Go module, install the same version. Dependency setup can fetch native archives for multiple platforms. The standalone example only needs the host platform’s archive.
@@ -29,6 +38,8 @@ In your Go module, install the same version. Dependency setup can fetch native a
 ```sh
 go get github.com/lance-format/lance-go@v0.1.0
 ```
+
+For the preview, install `github.com/lance-format/lance-go@v0.1.1-preview.1` instead and keep the same program. Production applications should stay on the stable release unless they are testing the preview native pin.
 
 Save this program as `main.go` and run `CGO_ENABLED=0 go run .` in a directory where `data.lance` does not already exist.
 
@@ -105,7 +116,7 @@ Each record yielded by `Records` is borrowed until iteration advances. Call `Ret
 
 ## Stability and compatibility
 
-`v0.1.0` is the first stable release of the 0.1 line. The earlier `v0.1.0-preview.1` and `v0.1.0-preview.2` pre-releases remain available.
+`v0.1.0` is the first stable release of the 0.1 line. The earlier `v0.1.0-preview.1` and `v0.1.0-preview.2` pre-releases remain available. `v0.1.1-preview.1` is an opt-in preview of the next patch; it preserves the published `v0.1.0` Go API and adds `Dataset.URI()`.
 
 `lance-go` follows Semantic Versioning for `v0.x`: `0.1.x` patch releases preserve source compatibility for published Go APIs. Necessary breaking changes move to the next minor release, `0.2`, with migration notes.
 
@@ -117,13 +128,13 @@ Raw storage 2.2 Blob reads are verified for `v0.1.0`, including the released Lan
 
 ## Supported consumer configuration
 
-| Platform | Bundled targets in v0.1.0 |
+| Platform | Bundled targets in v0.1.0 and v0.1.1-preview.1 |
 | --- | --- |
 | Linux (glibc 2.28+) | amd64, arm64 |
 | macOS | arm64 (Apple silicon) |
 | Windows | amd64, arm64 |
 
-`v0.1.0` supports RTree indices and raw storage 2.2 Blob reads with the default bundle. The [preview.2](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2) and [preview.1](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1) releases remain available; preview.1 included Intel macOS and used an earlier lance-c commit, `ac2634c`. Use [examples from the installed tag](https://github.com/lance-format/lance-go/tree/v0.1.0/examples).
+`v0.1.0` supports RTree indices and raw storage 2.2 Blob reads with the default bundle. `v0.1.1-preview.1` keeps both and carries the newer lance-c pin. The [preview.2](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2) and [preview.1](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1) releases remain available; preview.1 included Intel macOS and used an earlier lance-c commit, `ac2634c`. Use [examples from the installed tag](https://github.com/lance-format/lance-go/tree/v0.1.0/examples).
 
 ### How loading works
 
@@ -133,7 +144,7 @@ The first native call verifies and extracts the bundled library to a writable ca
 
 When the runtime environment has a read-only filesystem or no writable user cache, pre-extract the exact official companion library for your SDK version during image build or staging and set `LANCE_LIB_PATH`. Build with `-tags lance_external_lib` so the binary does not embed the compressed payload. Because `LANCE_LIB_PATH` is checked before the embedded bundle, no extraction or cache write occurs at runtime.
 
-The active `v0.1.0` companion payloads are 77.0–99.8 MB compressed and 288–403 MB uncompressed. A default build embeds the compressed payload for its target and writes the uncompressed library to the cache on first use. A tagged build does not embed the payload, but the staged library still occupies its uncompressed size in the image. The tag does not remove the artifact module from `go.mod`, so module-graph commands may still download the companion archives.
+The `v0.1.0` companion payloads are 77.0–99.8 MB compressed and 288–403 MB uncompressed; the `v0.1.1-preview.1` payloads are 78.0–99.7 MB compressed and 291–405 MB uncompressed. A default build embeds the compressed payload for its target and writes the uncompressed library to the cache on first use. A tagged build does not embed the payload, but the staged library still occupies its uncompressed size in the image. The tag does not remove the artifact module from `go.mod`, so module-graph commands may still download the companion archives.
 
 For `v0.1.0` on `linux/amd64`, extract `github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.0`:
 
@@ -158,6 +169,8 @@ $ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so ./app
 
 The tag spelling is `lance_external_lib` (underscores).
 
+For the preview on `linux/amd64`, use `version=v0.1.1-preview.1` in the recipe above. The extracted library is 345903736 bytes with SHA-256 `bea1f774ce9ff07ad8565ff3afafe1b49249d2dbb901e58d5bcce529f484cfa5`. The staged file is the official `lance-c v0.2.1-beta.1` library; do not mix it with a `v0.1.0` SDK.
+
 Cache entries are content-addressed by `<uncompressed-sha256>`. After upgrading, remove stale `<cache-root>/lance-go/<sha256>` directories when no process is using them. `LANCE_CACHE_DIR` only relocates the cache; it does not skip the size and SHA-256 verification performed under the file lock on each process start. An explicit `LANCE_LIB_PATH` avoids that cache extraction and verification, so verify the staged file once during image build as shown above.
 
 ## Troubleshooting
@@ -168,8 +181,8 @@ Cache entries are content-addressed by `<uncompressed-sha256>`. After upgrading,
 
 ## Documentation
 
-- [Go API reference for v0.1.0](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0) and [usage guide](docs/api-guide.md) for scans, mutations, search, and dataset maintenance.
+- [Go API reference for v0.1.0](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.0) and [usage guide](docs/api-guide.md) for scans, mutations, search, and dataset maintenance. The [v0.1.1-preview.1 reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.1-preview.1) documents the preview.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
-- [Native package details](artifacts/README.md) for platform coverage, library identity, checksums, and the v0.1.0 exact-tag consumer record.
+- [Native package details](artifacts/README.md) for platform coverage, library identity, checksums, and the exact-tag consumer records.
 - [Changelog](CHANGELOG.md) for user-facing changes by release.
 - [Development and testing](docs/development.md#testing) and [release process](RELEASING.md) for contributors.

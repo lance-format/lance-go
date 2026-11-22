@@ -6,16 +6,17 @@ contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
 Three Unix and two Windows companion modules are published at
-`v0.1.0` from the official `lance-c v0.2.0` release. The
-annotated tag object `84a7d564a961a6de6d68e6fef206e91d9363ab0a` peels to
-`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`; the canonical header SHA-256 is
-`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`.
+`v0.1.1-preview.1` from the official `lance-c v0.2.1-beta.1` release. The
+annotated tag object `091fb7c282c30890901e45d1727d62b755b2f58b` peels to
+`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`; the canonical header SHA-256 is
+`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`.
 All five active selectors and root requirements use those companion tags. The
 five release archives and checksums were verified, each companion payload
 decompresses byte-for-byte to the official archive library, and every module
 resolves through the public proxy and checksum database. Pre-publication
-candidate evidence belongs to the v0.1.0 release PR; accepted exact-tag
-evidence belongs to the release record.
+candidate evidence belongs to the v0.1.1-preview.1 release PR; accepted
+exact-tag evidence belongs to the release record. The v0.1.0 stable modules and
+their evidence remain published and unchanged.
 
 Intel macOS is retired for new releases; its published module and tags remain
 at their original revisions, but no current release requires or selects them.
@@ -24,7 +25,7 @@ The preview.1 six-target evidence and historical runs remain in
 tag still requires its own post-tag runs. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against
-`facb369c`; it does not claim commercial namespace-service or
+`ef465b43`; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
 for the claimed target. They must not claim completion of issue #1; the
 broader RTree/raw v2.2 official-core work remains outside this release.
@@ -110,9 +111,9 @@ acceptance requirements below.
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
 header hash. `upstreamRelease` is informational; it does not prove that a
 release archive, tag, and commit contain the same header. The current pin is
-the annotated `v0.2.0` tag, peeled to
-`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`, with canonical header
-`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`.
+the annotated `v0.2.1-beta.1` tag, peeled to
+`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`, with canonical header
+`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`.
 Do not substitute another release archive for that pin. The selected
 `Cargo.toml` declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`,
 `ci.yml`, and `unix-native.yml` reject older Rust toolchains before building.
@@ -148,12 +149,12 @@ chosen release version:
 
 ```bash
 REPO_ROOT=$(pwd)
-ROOT_VERSION=v0.1.0-preview.1       # example
+ROOT_VERSION=v0.1.1-preview.1       # example
 TARGET=linux/amd64                  # example
 SLUG=${TARGET//\//-}
-ARTIFACT_VERSION=v0.1.0-preview.1   # example
-# root tag:            v0.1.0-preview.1
-# companion tag:       artifacts/linux-amd64/v0.1.0-preview.1
+ARTIFACT_VERSION=v0.1.1-preview.1   # example
+# root tag:            v0.1.1-preview.1
+# companion tag:       artifacts/linux-amd64/v0.1.1-preview.1
 ```
 
 A companion module tag is always `<module-path-suffix>/<version>`. For a
@@ -268,8 +269,8 @@ these states separate; one does not imply another:
 
 Fill each cell with its tested object, result, and evidence, or an explicit
 pending/unsupported state. This is an evidence template, not a support claim.
-The pinned `facb369c` native build exports 890 declared C symbols; the current
-Go bindings bind 607 of them. Record both counts separately. The ABI checker
+The pinned `ef465b43` native build exports 890 declared C symbols; the current
+Go bindings bind 608 of them. Record both counts separately. The ABI checker
 validates the bound subset; it does not establish runtime coverage of every
 native export.
 
@@ -281,7 +282,7 @@ accepted hosts and current payload facts are listed in
 compatibility have not been established beyond the recorded package floors.
 The real S3 acceptance above is scoped to Linux amd64 and the historical
 `native88` library at source `59a427e`; it is not evidence for the
-`facb369c` native payload. Source review is a separate state: it can justify
+`ef465b43` native payload. Source review is a separate state: it can justify
 understanding of the native change, but it is not ABI or runtime acceptance.
 
 A race run must use a supplied library; record whether it used the default
@@ -353,10 +354,10 @@ do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
 The artifact publication commit tracks the compressed archive. The current
-`linux/amd64` payload is 87,405,187 bytes compressed and 342,712,936 bytes
+`linux/amd64` payload is 88,353,661 bytes compressed and 345,903,736 bytes
 uncompressed; exact hashes and counts are recorded in
 [artifacts/README.md](artifacts/README.md). The published Go module archive is
-87,415,140 bytes, a different value because it also contains module metadata;
+88,365,133 bytes, a different value because it also contains module metadata;
 `scripts/verify-quickstart.sh` pins it separately. The raw library is never
 committed. GitHub rejects ordinary Git blobs over 100 MiB, and warns above
 50 MiB. Keep each tracked compressed payload below that hard limit. A future
@@ -569,19 +570,20 @@ gaps:             untested targets and storage paths
 ```
 
 The current `linux/amd64` bundle, native
-`facb369c9fa98b7a3e5ce2ed12e2d8be090627ce`, header
-`947a912a14cb53f97237dbc7c03e5c09ef4337d46b459edc600d4d3c2c888d5c`, payload
-`8a6af22b6604a2525a04416ddd76441bd020a8cba0a2c3e50ad7fce003ce1b7f`, and
+`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`, header
+`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`, payload
+`bf832cecfde20fdf9c534ebf58f0188298be860535542693102aa0bfd06b1f7d`, and
 uncompressed library
-`4617c425e7e7660ef6d0d77f2e14dba48359400d78261b0072cd46e48e87e2ac` are the
-v0.1.0 pin examples. The published module is
-`github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.0`.
+`bea1f774ce9ff07ad8565ff3afafe1b49249d2dbb901e58d5bcce529f484cfa5` are the
+v0.1.1-preview.1 pin examples. The published module is
+`github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.1-preview.1`.
 The published companion versions, payload sizes, hashes, and accepted
 exact-tag consumer runs are listed in
 [artifacts/README.md](artifacts/README.md). The
 [v0.1.0 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)
-records the post-tag evidence archive and both consumer runs. A new release
-tag still requires the tag-based gates above.
+records that stable tag's post-tag evidence archive and both consumer runs;
+the v0.1.1-preview.1 preview still requires the tag-based gates above after
+its root tag is authorized.
 
 The [historical preview preparation notes](docs/PREVIEW.md) record the first
 preview's evidence and release gates. Keep them as history; put a new release's

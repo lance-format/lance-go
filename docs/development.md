@@ -110,9 +110,9 @@ or when the pin has no matching release archive.
 - the exact commit (`upstreamCommit`),
 - the SHA-256 of `include/lance/lance.h` at that commit.
 
-`lance-c` has no version symbol in the pinned ABI, so a loaded library cannot
-be identified at runtime. Provenance is checked at build
-time instead:
+The Go package does not bind lance-c's `lance_c_version`, so the SDK does not
+report or check a loaded library's version at runtime. Provenance is checked
+at build time instead:
 
 ```console
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
@@ -194,6 +194,12 @@ env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
   CGO_ENABLED=0 go test -tags lance_rtree_legacy \
   -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
+
+`TestFragmentTakeExplicitEmptyProjection` covers the fragment projection
+compatibility contract from lance-c v0.2.1-beta.1: an explicit empty column
+list returns a zero-column batch with the requested row count, while a nil
+column list still selects the full schema. It runs in the default suite against
+the bundled library.
 
 `internal/benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
 long-running repeated use of the public API. CI compiles the package and runs
