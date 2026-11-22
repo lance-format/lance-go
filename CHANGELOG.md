@@ -32,10 +32,13 @@ moves the bundled native library to lance-c `v0.2.1-beta.1` on Lance
   zero-column batch with the requested row count. The previous native library
   rejected the same call with `LANCE_ERR_NOT_FOUND`. Passing no columns still
   selects the full logical schema, and `Dataset.Take` is unchanged.
-- Scalar-index `params` keep their existing Go contract: `nil` and an empty Go
-  value select native defaults, and invalid JSON is rejected client-side with
-  `ErrInvalidArgument`. The bundled native library now rejects an empty JSON
-  string with the same code instead of treating it as defaults.
+- Scalar-index `params` JSON keeps its Go contract. `CreateScalarIndex` treats
+  `nil` as native plugin defaults and rejects a non-nil empty or otherwise
+  invalid `json.RawMessage` with `ErrInvalidArgument` before any native call.
+  `NewScalarSegmentBuilder` maps both nil and empty params to `NULL`, so they
+  still select native defaults. The bundled native library now also rejects an
+  empty JSON string with `ErrInvalidArgument` instead of treating it as
+  defaults.
 - Index segment metadata carrying local fragment aliases is rejected instead
   of being interpreted incompletely: `ParseIndexSegmentMetadata` returns
   `ErrNotSupported`, while `CommitIndexSegments` and `MergeIndexSegments`
