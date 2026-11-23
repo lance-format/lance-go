@@ -18,8 +18,10 @@ type WriterOptions struct {
 	KeepOriginalArray *bool
 	// Version is the native format version selector. Empty uses native default.
 	Version string
-	// StorageOptions is nil for native defaults. Session.OpenWriter rejects a
-	// non-nil value because session writers use the session store.
+	// StorageOptions is nil for native defaults. A non-nil value may be a root
+	// accessor or one returned by NewStorageOptions or
+	// NewStorageOptionsWithProvider. Session.OpenWriter rejects a non-nil value
+	// because session writers use the session store.
 	StorageOptions *StorageOptions
 	// Session shares an existing Lance session's caches with a standalone
 	// writer. Nil uses no shared cache. Session.OpenWriter rejects a non-nil

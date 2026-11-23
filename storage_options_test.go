@@ -3,6 +3,7 @@ package lance_test
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -249,6 +250,26 @@ func TestStorageOptionsSnapshotAfterClose(t *testing.T) {
 	owned.Close()
 	if _, _, err := owned.Snapshot(); !errors.Is(err, lance.ErrClosed) {
 		t.Fatalf("Snapshot after Close = %v, want ErrClosed", err)
+	}
+}
+
+func TestStorageOptionsAccessorImplementsIOCloser(t *testing.T) {
+	var closer io.Closer = &lance.StorageOptionsAccessor{}
+	if err := closer.Close(); err != nil {
+		t.Fatalf("zero-value Close = %v, want nil", err)
+	}
+
+	requireNative(t)
+	accessor, err := lance.NewStorageOptionsAccessor(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closer = accessor
+	if err := closer.Close(); err != nil {
+		t.Fatalf("first Close = %v, want nil", err)
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatalf("second Close = %v, want nil", err)
 	}
 }
 
