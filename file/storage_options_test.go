@@ -3,12 +3,16 @@ package file_test
 import (
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/file"
 )
+
+var _ io.Closer = (*file.StorageOptions)(nil)
 
 type fileAccessorProvider struct {
 	id string
@@ -147,6 +151,28 @@ func TestRawFileSessionStorageOptionsAccessorAndOverrides(t *testing.T) {
 	}
 }
 
+func TestRawFileStorageOptionsStaticPresence(t *testing.T) {
+	requireNative(t)
+	for _, values := range []map[string]string{nil, {}} {
+		storage, err := file.NewStorageOptions(values)
+		if err != nil {
+			t.Fatalf("new storage options %v: %v", values, err)
+		}
+		snapshot, has, err := storage.Snapshot()
+		if err != nil {
+			storage.Close()
+			t.Fatalf("snapshot %v: %v", values, err)
+		}
+		if !has || snapshot == nil || len(snapshot) != 0 {
+			storage.Close()
+			t.Fatalf("NewStorageOptions(%v) snapshot = %v, has=%v; want explicit empty", values, snapshot, has)
+		}
+		if err := storage.Close(); err != nil {
+			t.Fatalf("close storage options %v: %v", values, err)
+		}
+	}
+}
+
 func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
@@ -163,6 +189,9 @@ func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 	if err != nil {
 		owned.Close()
 		t.Fatalf("adopt root accessor: %v", err)
+	}
+	if storage != owned {
+		t.Fatalf("adopted accessor = %p, want the root accessor %p", storage, owned)
 	}
 	writer, err := file.Create(ctx, path, schema, &file.WriterOptions{StorageOptions: storage})
 	if err != nil {
@@ -183,8 +212,138 @@ func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 		storage.Close()
 		t.Fatalf("close writer: %v", err)
 	}
+
+	reader, err := file.Open(ctx, path, &file.ReaderOptions{StorageOptions: owned})
+	if err != nil {
+		storage.Close()
+		t.Fatalf("open reader: %v", err)
+	}
+	// Closing the adopted accessor closes the root handle, because they are the
+	// same native accessor.
 	if err := storage.Close(); err != nil {
+		reader.Close()
 		t.Fatalf("close adopted storage options: %v", err)
+	}
+	if _, _, err := owned.Snapshot(); !errors.Is(err, lance.ErrClosed) {
+		reader.Close()
+		t.Fatalf("root accessor Snapshot after close = %v, want ErrClosed", err)
+	}
+	if _, err := file.Open(ctx, path, &file.ReaderOptions{StorageOptions: storage}); !errors.Is(err, lance.ErrClosed) {
+		reader.Close()
+		t.Fatalf("open with closed accessor = %v, want ErrClosed", err)
+	}
+	// The open reader retained its own native reference.
+	rows := mustReadAll(t, reader)
+	defer rows.Release()
+	if ids := collectIDs(t, rows); len(ids) != 4 {
+		reader.Close()
+		t.Fatalf("read ids after accessor close = %v, want 4 rows", ids)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close reader: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("second adopted close: %v", err)
+	}
+	if err := owned.Close(); err != nil {
+		t.Fatalf("root close: %v", err)
+	}
+}
+
+type callerOwnedFileProvider struct {
+	id string
+
+	mu      sync.Mutex
+	fetches int
+	closed  bool
+}
+
+func (p *callerOwnedFileProvider) StorageOptionsProviderID() string { return p.id }
+
+func (p *callerOwnedFileProvider) FetchStorageOptions(context.Context) (map[string]string, error) {
+	p.mu.Lock()
+	p.fetches++
+	p.mu.Unlock()
+	return map[string]string{"allow_http": "true"}, nil
+}
+
+// Close is not part of StorageOptionsProvider. It proves the SDK never calls a
+// provider Close method.
+func (p *callerOwnedFileProvider) Close() {
+	p.mu.Lock()
+	p.closed = true
+	p.mu.Unlock()
+}
+
+func (p *callerOwnedFileProvider) wasClosed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.closed
+}
+
+func (p *callerOwnedFileProvider) fetchCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.fetches
+}
+
+func TestRawFileStorageOptionsProviderCallerOwned(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	path := writeTestFile(t, ctx, "provider-owned.lance")
+
+	provider := &callerOwnedFileProvider{id: "test/file-owned-provider"}
+	storage, err := file.NewStorageOptionsWithProvider(nil, provider)
+	if err != nil {
+		t.Fatalf("new storage options: %v", err)
+	}
+	reader, err := file.Open(ctx, path, &file.ReaderOptions{StorageOptions: storage})
+	if err != nil {
+		storage.Close()
+		t.Fatalf("open reader: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		reader.Close()
+		t.Fatalf("close storage options: %v", err)
+	}
+	rows := mustReadAll(t, reader)
+	if ids := collectIDs(t, rows); len(ids) != 4 {
+		rows.Release()
+		reader.Close()
+		t.Fatalf("read ids after storage close = %v, want 4 rows", ids)
+	}
+	rows.Release()
+	if err := reader.Close(); err != nil {
+		t.Fatalf("close reader: %v", err)
+	}
+	if provider.wasClosed() {
+		t.Fatal("SDK closed the caller-owned provider")
+	}
+
+	// The provider value remains usable for another accessor after the first
+	// one is closed.
+	reused, err := lance.NewStorageOptionsAccessor(nil, provider)
+	if err != nil {
+		t.Fatalf("reuse provider: %v", err)
+	}
+	snapshot, has, err := reused.Snapshot()
+	if err != nil {
+		reused.Close()
+		t.Fatalf("reuse provider snapshot: %v", err)
+	}
+	if !has || snapshot["allow_http"] != "true" {
+		reused.Close()
+		t.Fatalf("reuse provider snapshot = %v, has=%v", snapshot, has)
+	}
+	if provider.fetchCount() == 0 {
+		reused.Close()
+		t.Fatal("reused provider was not fetched")
+	}
+	if err := reused.Close(); err != nil {
+		t.Fatalf("close reused accessor: %v", err)
+	}
+	if provider.wasClosed() {
+		t.Fatal("SDK closed the caller-owned provider after the final owner")
 	}
 }
 
