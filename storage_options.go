@@ -2,6 +2,7 @@ package lance
 
 import (
 	"context"
+	"io"
 
 	"github.com/lance-format/lance-go/internal/accessor"
 	"github.com/lance-format/lance-go/internal/ffi"
@@ -61,6 +62,8 @@ type ForceStorageOptionsProvider interface {
 	ForceFetchStorageOptions(ctx context.Context) (map[string]string, error)
 }
 
+type coreAccessor = accessor.Accessor
+
 // StorageOptionsAccessor is a reusable owned accessor for dynamic storage
 // options. It may be supplied to Open, Write, WriteUncommitted,
 // CommitTransaction and CommitTransactionBatch, and to raw-file readers,
@@ -76,22 +79,29 @@ type ForceStorageOptionsProvider interface {
 //
 //	func (a *StorageOptionsAccessor) ProviderID() string
 //	func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error)
-//	func (a *StorageOptionsAccessor) Close()
+//	func (a *StorageOptionsAccessor) Close() error
 //
 // ProviderID returns the native provider identity, or an empty string for a
 // purely static accessor. Snapshot returns the currently resolved options and
 // whether native has an option set: a nil map with false means native None,
 // while a non-nil empty map with true means Some(empty). The map is an
-// independent copy. Close is idempotent and waits for in-flight local snapshot
-// calls, but does not wait for native datasets or stores that retained their
-// own reference. Callers own the provider value passed to
-// NewStorageOptionsAccessor; the accessor does not call a Go provider Close
-// method.
-type coreAccessor = accessor.Accessor
-
+// independent copy. Close is idempotent, implements io.Closer, waits for
+// in-flight local snapshot calls, and does not wait for native datasets,
+// readers, writers, sessions or stores that retained their own reference;
+// those remain usable afterwards. Callers own the provider value passed to
+// NewStorageOptionsAccessor. The accessor does not call a Go provider Close
+// method and keeps the provider reachable through its native callback adapter
+// until native releases the final owner, including after Close.
+//
+// Close returns an error so the accessor implements io.Closer. The current
+// implementation has no close failure to report and returns nil. Version 0.2
+// had no error result, so callers migrating stored method values or custom
+// interfaces must update them as described in the migration guide.
 type StorageOptionsAccessor struct {
 	*coreAccessor
 }
+
+var _ io.Closer = (*StorageOptionsAccessor)(nil)
 
 // ProviderID returns the native identity of the provider, or an empty string
 // for a purely static accessor.
@@ -116,11 +126,11 @@ func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error) {
 // Close releases the caller's accessor handle and waits for in-flight local
 // acquisitions. Native datasets and stores retain their own references, so
 // they do not block Close and remain usable afterwards.
-func (a *StorageOptionsAccessor) Close() {
+func (a *StorageOptionsAccessor) Close() error {
 	if a == nil || a.coreAccessor == nil {
-		return
+		return nil
 	}
-	a.coreAccessor.Close()
+	return a.coreAccessor.Close()
 }
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map

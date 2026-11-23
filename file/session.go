@@ -14,7 +14,9 @@ import (
 
 // SessionOptions configures a raw file session.
 type SessionOptions struct {
-	// StorageOptions is nil for native defaults.
+	// StorageOptions is nil for native defaults. A non-nil value may be a root
+	// accessor or one returned by NewStorageOptions or
+	// NewStorageOptionsWithProvider.
 	StorageOptions *StorageOptions
 	// Scheduler is nil for native defaults.
 	Scheduler *SchedulerConfig
