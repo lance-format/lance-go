@@ -79,6 +79,7 @@ func TestNativeWriteOptionsPreservesExplicitEmptyLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildNativeWriteOptions: %v", err)
 	}
+	defer inputs.release()
 	if inputs.raw.InitialBases == nil || inputs.raw.InitialBases.Count != 0 {
 		t.Fatalf("initial bases = %+v, want present empty list", inputs.raw.InitialBases)
 	}
@@ -91,7 +92,7 @@ func TestNativeWriteOptionsPreservesExplicitEmptyLists(t *testing.T) {
 	if inputs.raw.BaseStoreParams == nil || inputs.raw.BaseStoreParams.Count != 0 {
 		t.Fatalf("base store params = %+v, want present empty list", inputs.raw.BaseStoreParams)
 	}
-	if inputs.raw.TransactionProperties == 0 {
+	if inputs.raw.TransactionProperties == nil {
 		t.Fatal("nil transaction properties with HasTransactionProperties were omitted")
 	}
 }
@@ -104,13 +105,14 @@ func TestNativeWriteOptionsListCountsExcludeSentinels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildNativeWriteOptions: %v", err)
 	}
+	defer inputs.release()
 	if inputs.raw.TargetBaseNamesOrPaths == nil || inputs.raw.TargetBaseNamesOrPaths.Count != 2 {
 		t.Fatalf("target names = %+v, want count 2", inputs.raw.TargetBaseNamesOrPaths)
 	}
 	if inputs.raw.TargetBases == nil || inputs.raw.TargetBases.Count != 3 {
 		t.Fatalf("target bases = %+v, want count 3", inputs.raw.TargetBases)
 	}
-	if inputs.targetNames.ptrs[inputs.raw.TargetBaseNamesOrPaths.Count] != 0 {
+	if inputs.targetNames.ptrs[inputs.raw.TargetBaseNamesOrPaths.Count] != nil {
 		t.Fatal("target name list lost its trailing NULL sentinel")
 	}
 }
@@ -125,6 +127,7 @@ func TestNativeWriteOptionsBaseListLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildNativeWriteOptions: %v", err)
 	}
+	defer inputs.release()
 	if inputs.raw.InitialBases == nil || inputs.raw.InitialBases.Count != 2 || inputs.raw.InitialBases.Items == nil {
 		t.Fatalf("initial bases header = %+v", inputs.raw.InitialBases)
 	}
@@ -156,6 +159,7 @@ func TestNativeWriteOptionsBaseStorePresence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildNativeWriteOptions: %v", err)
 	}
+	defer inputs.release()
 	if inputs.raw.BaseStoreParams == nil || inputs.raw.BaseStoreParams.Count != 1 {
 		t.Fatalf("base store params = %+v, want one entry", inputs.raw.BaseStoreParams)
 	}

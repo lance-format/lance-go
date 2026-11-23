@@ -230,7 +230,7 @@ func TestOpenDatasetTransfersHandleAndCloseIsIdempotent(t *testing.T) {
 	var closes []uintptr
 
 	b := &bindings{
-		datasetOpen: func(uri string, storageOpts []uintptr, version uint64) uintptr {
+		datasetOpen: func(uri string, storageOpts []*byte, version uint64) uintptr {
 			gotURI = uri
 			gotVersion = version
 			if len(storageOpts) != 0 {
@@ -267,7 +267,7 @@ func TestOpenDatasetTransfersHandleAndCloseIsIdempotent(t *testing.T) {
 func TestOpenDatasetNullHandleWithoutError(t *testing.T) {
 	b := &bindings{
 		lastErrorCode: func() int32 { return int32(CodeOK) },
-		datasetOpen:   func(string, []uintptr, uint64) uintptr { return 0 },
+		datasetOpen:   func(string, []*byte, uint64) uintptr { return 0 },
 	}
 
 	ds, err := openDataset(b, "file:///tmp/missing", 0)

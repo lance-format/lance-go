@@ -76,6 +76,7 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
 	var sessionHandle uintptr
 	if opts.Session != nil {
 		sessionHandle = opts.Session.nativeHandle()
@@ -130,7 +131,6 @@ func openDatasetWithOptions(b *bindings, uri string, opts OpenOptions) (*Dataset
 	} else {
 		handle = b.datasetOpen(uri, storageList.ptrs, opts.Version)
 	}
-	storageList.keepAlive()
 	if handle == 0 {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return nil, nativeErr
@@ -348,6 +348,7 @@ func (d *Dataset) Take(indices []uint64, columns []string) ([]arrow.RecordBatch,
 	if err != nil {
 		return nil, err
 	}
+	defer columnList.release()
 
 	// lance-c rejects a NULL indices pointer even when the length is zero.
 	indexPtr := indices
@@ -367,7 +368,6 @@ func (d *Dataset) Take(indices []uint64, columns []string) ([]arrow.RecordBatch,
 		return nil, fmt.Errorf("ffi: lance_dataset_take failed without setting an error")
 	}
 	runtime.UnlockOSThread()
-	columnList.keepAlive()
 
 	return importArrowStream(&stream)
 }
@@ -384,6 +384,7 @@ func (d *Dataset) TakeRows(rowIDs []uint64, columns []string) ([]arrow.RecordBat
 	if err != nil {
 		return nil, err
 	}
+	defer columnList.release()
 
 	var stream cdata.ArrowArrayStream
 	runtime.LockOSThread()
@@ -397,7 +398,6 @@ func (d *Dataset) TakeRows(rowIDs []uint64, columns []string) ([]arrow.RecordBat
 		return nil, fmt.Errorf("ffi: lance_dataset_take_rows failed without setting an error")
 	}
 	runtime.UnlockOSThread()
-	columnList.keepAlive()
 
 	return importArrowStream(&stream)
 }

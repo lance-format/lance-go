@@ -112,19 +112,20 @@ func (d *Dataset) Update(predicate string, updates []ColumnUpdate) (uint64, erro
 	if err != nil {
 		return 0, err
 	}
+	defer columnList.release()
 	valueList, err := newCStringList(values)
 	if err != nil {
 		return 0, err
 	}
+	defer valueList.release()
 
 	var predicateList *cStringList
-	var predicatePtr uintptr
 	if predicate != "" {
 		predicateList, err = newCStringList([]string{predicate})
 		if err != nil {
 			return 0, err
 		}
-		predicatePtr = predicateList.ptrs[0]
+		defer predicateList.release()
 	}
 
 	b := d.b
@@ -132,12 +133,7 @@ func (d *Dataset) Update(predicate string, updates []ColumnUpdate) (uint64, erro
 	defer runtime.UnlockOSThread()
 
 	var updated uint64
-	rc := b.datasetUpdate(handle, predicatePtr, columnList.ptrs, valueList.ptrs, uint64(len(updates)), &updated)
-	columnList.keepAlive()
-	valueList.keepAlive()
-	if predicateList != nil {
-		predicateList.keepAlive()
-	}
+	rc := b.datasetUpdate(handle, predicateList.first(), columnList.ptrs, valueList.ptrs, uint64(len(updates)), &updated)
 	if rc != 0 {
 		if nativeErr := b.takeError(); nativeErr != nil {
 			return 0, nativeErr
@@ -173,6 +169,7 @@ func (d *Dataset) MergeInsert(onColumns []string, source array.RecordReader, par
 	if err != nil {
 		return MergeInsertResult{}, err
 	}
+	defer columnList.release()
 
 	rawParams := mergeInsertParams{
 		WhenMatched:            params.WhenMatched,
@@ -188,6 +185,7 @@ func (d *Dataset) MergeInsert(onColumns []string, source array.RecordReader, par
 		if err != nil {
 			return MergeInsertResult{}, err
 		}
+		defer matchedExprList.release()
 		rawParams.WhenMatchedExpr = &matchedExprList.bufs[0][0]
 	}
 	if params.WhenNotMatchedBySourceExpression != "" {
@@ -198,6 +196,7 @@ func (d *Dataset) MergeInsert(onColumns []string, source array.RecordReader, par
 		if err != nil {
 			return MergeInsertResult{}, err
 		}
+		defer sourceExprList.release()
 		rawParams.WhenNotMatchedBySourceExpr = &sourceExprList.bufs[0][0]
 	}
 
@@ -219,13 +218,6 @@ func (d *Dataset) MergeInsert(onColumns []string, source array.RecordReader, par
 	var result mergeInsertResult
 	rc := b.datasetMergeInsert(handle, columnList.ptrs, uint64(len(onColumns)), &rawStream, &rawParams, &result)
 	streamConsumed = true
-	columnList.keepAlive()
-	if matchedExprList != nil {
-		matchedExprList.keepAlive()
-	}
-	if sourceExprList != nil {
-		sourceExprList.keepAlive()
-	}
 	runtime.KeepAlive(&rawParams)
 	if rc != 0 {
 		if nativeErr := b.takeError(); nativeErr != nil {

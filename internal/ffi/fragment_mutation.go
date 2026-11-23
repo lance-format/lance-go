@@ -286,10 +286,12 @@ func (f *Fragment) AddColumnsSQL(columns []SQLColumn, batchSize *uint32) (*Fragm
 	if err != nil {
 		return nil, nil, err
 	}
+	defer nameList.release()
 	expressionList, err := newCStringList(expressions)
 	if err != nil {
 		return nil, nil, err
 	}
+	defer expressionList.release()
 	native := make([]sqlColumn, len(columns))
 	for i := range columns {
 		native[i] = sqlColumn{
@@ -305,8 +307,6 @@ func (f *Fragment) AddColumnsSQL(columns []SQLColumn, batchSize *uint32) (*Fragm
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	rc := f.b.fragmentAddColumnsSQL(handleValue, columnsPtr, uint64(len(native)), batchSize, &outFragment, &outSchema)
-	runtime.KeepAlive(nameList)
-	runtime.KeepAlive(expressionList)
 	runtime.KeepAlive(native)
 	if rc != 0 {
 		err := mutationError(f.b, "fragment add columns sql")
@@ -388,30 +388,25 @@ func (f *Fragment) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCo
 	adapter := &batchUDFAdapter{mapper: udf.Mapper, store: udf.Store}
 	ctx := handle.New(adapter)
 	defer handle.Remove(ctx)
-	readPtrs, readList, err := batchUDFReadColumns(readColumns, readColumnsSet)
+	readList, err := batchUDFReadColumns(readColumns, readColumnsSet)
 	if err != nil {
 		return nil, nil, err
 	}
-	var readPtr *uintptr
-	if len(readPtrs) > 0 {
-		readPtr = &readPtrs[0]
-	}
+	defer readList.release()
 	var outFragment, outSchema uintptr
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	var rc int32
 	if f.b.batchUDFV2.fragmentAddColumnsBatchUDFV2 != nil {
 		native := newBatchUDFV2(uintptr(ctx), udf.OutputSchema, udf.Store)
-		rc = f.b.batchUDFV2.fragmentAddColumnsBatchUDFV2(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
+		rc = f.b.batchUDFV2.fragmentAddColumnsBatchUDFV2(handleValue, native, readList.data(), batchSize, &outFragment, &outSchema)
 		runtime.KeepAlive(native)
 	} else {
 		native := newBatchUDF(uintptr(ctx), udf.OutputSchema, udf.Store)
-		rc = f.b.fragmentAddColumnsBatchUDF(handleValue, native, readPtr, batchSize, &outFragment, &outSchema)
+		rc = f.b.fragmentAddColumnsBatchUDF(handleValue, native, readList.data(), batchSize, &outFragment, &outSchema)
 		runtime.KeepAlive(native)
 	}
 	runtime.KeepAlive(adapter)
-	runtime.KeepAlive(readPtrs)
-	runtime.KeepAlive(readList)
 	if rc != 0 {
 		err := mutationError(f.b, "fragment add columns batch udf")
 		closeMutationOutputs(f.b, outFragment, outSchema)

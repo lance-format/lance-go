@@ -3,16 +3,40 @@ package ffi
 import (
 	"fmt"
 	"runtime"
-	"unsafe"
+	"sync/atomic"
 )
 
 // cStringList owns NUL-terminated copies of Go strings and the pointer array
-// used for C array parameters. The buffers stay alive as long as the list is
-// reachable. A nil list pointer array is passed as NULL to C.
+// used for C array parameters. The backing buffers and the array itself are
+// pinned so native code may keep their addresses for the duration of a call:
+// release must run after the native call returns. The list takes ownership of
+// its pins before the first Pin, so a failed partial construction can release
+// them.
+//
+// A nil list pointer array is passed as NULL to C.
+//
+// A cStringList must not be copied after construction.
 type cStringList struct {
-	ptrs  []uintptr
-	bufs  [][]byte
-	owned bool
+	ptrs     []*byte
+	bufs     [][]byte
+	pin      runtime.Pinner
+	acquired bool
+}
+
+// acquiredLists counts string lists whose pins are still held. It changes once
+// per list, never per pinned string, and exists so tests can prove that every
+// exit path released its list; a missing unpin otherwise only surfaces as a
+// fatal runtime.Pinner panic from a finalizer.
+var acquiredLists atomic.Int64
+
+// acquire records list ownership before the first Pin. release is the single
+// place that clears it, so a partially built list can be released on error.
+func (l *cStringList) acquire() {
+	if l.acquired {
+		return
+	}
+	l.acquired = true
+	acquiredLists.Add(1)
 }
 
 func newCStringList(values []string) (*cStringList, error) {
@@ -21,19 +45,21 @@ func newCStringList(values []string) (*cStringList, error) {
 	}
 
 	list := &cStringList{
-		ptrs:  make([]uintptr, len(values)+1),
-		bufs:  make([][]byte, len(values)),
-		owned: true,
+		ptrs: make([]*byte, len(values)+1),
+		bufs: make([][]byte, len(values)),
 	}
+	list.acquire()
 	for i, value := range values {
-		if err := validateCString(value); err != nil {
+		buf, err := cStringBuffer(value)
+		if err != nil {
+			list.release()
 			return nil, err
 		}
-		buf := make([]byte, len(value)+1)
-		copy(buf, value)
 		list.bufs[i] = buf
-		list.ptrs[i] = uintptr(unsafe.Pointer(&buf[0]))
+		list.pin.Pin(&list.bufs[i][0])
+		list.ptrs[i] = &list.bufs[i][0]
 	}
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
 }
 
@@ -46,31 +72,32 @@ func newNullableCStringList(values []*string) (*cStringList, error) {
 	}
 
 	list := &cStringList{
-		ptrs:  make([]uintptr, len(values)+1),
-		bufs:  make([][]byte, len(values)),
-		owned: true,
+		ptrs: make([]*byte, len(values)+1),
+		bufs: make([][]byte, len(values)),
 	}
+	list.acquire()
 	for i, value := range values {
 		if value == nil {
 			continue
 		}
-		if err := validateCString(*value); err != nil {
+		buf, err := cStringBuffer(*value)
+		if err != nil {
+			list.release()
 			return nil, err
 		}
-		buf := make([]byte, len(*value)+1)
-		copy(buf, *value)
 		list.bufs[i] = buf
-		list.ptrs[i] = uintptr(unsafe.Pointer(&buf[0]))
+		list.pin.Pin(&list.bufs[i][0])
+		list.ptrs[i] = &list.bufs[i][0]
 	}
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
 }
 
 func newCStringPtr(value string) ([]byte, *byte, error) {
-	if err := validateCString(value); err != nil {
+	buf, err := cStringBuffer(value)
+	if err != nil {
 		return nil, nil, err
 	}
-	buf := make([]byte, len(value)+1)
-	copy(buf, value)
 	return buf, &buf[0], nil
 }
 
@@ -84,28 +111,50 @@ func newPresentCStringList(values []string) (*cStringList, error) {
 		return nil, err
 	}
 	if list.ptrs == nil {
-		list.ptrs = []uintptr{0}
+		list.ptrs = []*byte{nil}
+		list.acquire()
+		list.pin.Pin(&list.ptrs[0])
 	}
 	return list, nil
 }
 
-// ptr returns the address of the first pointer entry for use in a C struct.
+// first returns the first string pointer, or nil when the list is absent or
+// empty.
+func (l *cStringList) first() *byte {
+	if l == nil || len(l.ptrs) == 0 {
+		return nil
+	}
+	return l.ptrs[0]
+}
+
+// data returns the address of the first pointer entry for use in a C struct.
 // A nil pointer array is passed as NULL to C.
-func (l *cStringList) ptr() *uintptr {
+func (l *cStringList) data() **byte {
 	if l == nil || len(l.ptrs) == 0 {
 		return nil
 	}
 	return &l.ptrs[0]
 }
 
-// keepAlive must run after the native call, directly or through defer: ptrs
-// contains integer addresses that do not keep the backing string buffers live.
-func (l *cStringList) keepAlive() {
-	if l == nil {
+// release unpins the backing buffers and the pointer array. It must run after
+// the native call that consumed them returns. It is safe to call repeatedly,
+// including on a nil list.
+func (l *cStringList) release() {
+	if l == nil || !l.acquired {
 		return
 	}
-	runtime.KeepAlive(l.ptrs)
-	runtime.KeepAlive(l.bufs)
+	l.pin.Unpin()
+	l.acquired = false
+	acquiredLists.Add(-1)
+}
+
+func cStringBuffer(value string) ([]byte, error) {
+	if err := validateCString(value); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, len(value)+1)
+	copy(buf, value)
+	return buf, nil
 }
 
 func validateCString(value string) error {

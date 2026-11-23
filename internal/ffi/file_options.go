@@ -2,7 +2,6 @@ package ffi
 
 import (
 	"fmt"
-	"unsafe"
 )
 
 // FileCacheMode mirrors LanceFileCacheMode.
@@ -44,16 +43,18 @@ type fileReaderOptions struct {
 	InlineScheduling        int32
 }
 
-type fileReaderOptionsKeepAlive struct {
+// fileReaderOptionsRelease hands back the pins acquired for file reader
+// options. release must run after the native call that consumed them.
+type fileReaderOptionsRelease struct {
 	columns *cStringList
 }
 
-func (k fileReaderOptionsKeepAlive) keepAlive() {
-	k.columns.keepAlive()
+func (r fileReaderOptionsRelease) release() {
+	r.columns.release()
 }
 
-func buildFileReaderOptions(options *FileReaderOptions) (*fileReaderOptions, fileReaderOptionsKeepAlive, error) {
-	var keep fileReaderOptionsKeepAlive
+func buildFileReaderOptions(options *FileReaderOptions) (*fileReaderOptions, fileReaderOptionsRelease, error) {
+	var keep fileReaderOptionsRelease
 	if options == nil {
 		return nil, keep, nil
 	}
@@ -70,9 +71,7 @@ func buildFileReaderOptions(options *FileReaderOptions) (*fileReaderOptions, fil
 		keep.columns = columns
 		raw.HasColumns = 1
 		raw.ColumnCount = uint64(len(options.Columns))
-		if len(columns.ptrs) > 0 {
-			raw.Columns = (**byte)(unsafe.Pointer(&columns.ptrs[0]))
-		}
+		raw.Columns = columns.data()
 	}
 	if options.ReadChunkSize != nil {
 		raw.HasReadChunkSize = 1
@@ -113,19 +112,21 @@ type fileWriterOptions struct {
 	MaxPageBytes         uint64
 	HasKeepOriginalArray int32
 	KeepOriginalArray    int32
-	Version              uintptr
+	Version              *byte
 }
 
-type fileWriterOptionsKeepAlive struct {
+// fileWriterOptionsRelease hands back the pins acquired for file writer
+// options. release must run after the native call that consumed them.
+type fileWriterOptionsRelease struct {
 	version *cStringList
 }
 
-func (k fileWriterOptionsKeepAlive) keepAlive() {
-	k.version.keepAlive()
+func (r fileWriterOptionsRelease) release() {
+	r.version.release()
 }
 
-func buildFileWriterOptions(options *FileWriterOptions) (*fileWriterOptions, fileWriterOptionsKeepAlive, error) {
-	var keep fileWriterOptionsKeepAlive
+func buildFileWriterOptions(options *FileWriterOptions) (*fileWriterOptions, fileWriterOptionsRelease, error) {
+	var keep fileWriterOptionsRelease
 	if options == nil {
 		return nil, keep, nil
 	}
@@ -148,7 +149,7 @@ func buildFileWriterOptions(options *FileWriterOptions) (*fileWriterOptions, fil
 			return nil, keep, err
 		}
 		keep.version = version
-		raw.Version = version.ptrs[0]
+		raw.Version = version.first()
 	}
 	return raw, keep, nil
 }

@@ -39,7 +39,7 @@ type fragmentCreateOptions struct {
 	Schema      uintptr
 	Mode        int32
 	Write       *writeOptions
-	StorageOpts *uintptr
+	StorageOpts **byte
 	Session     uintptr
 }
 
@@ -60,6 +60,8 @@ func createFragment(b *bindings, uri string, fragmentID uint64, reader array.Rec
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
+	defer versionList.release()
 
 	var rawStream cdata.ArrowArrayStream
 	if err := cdata.ExportRecordReader(reader, &rawStream); err != nil {
@@ -76,8 +78,6 @@ func createFragment(b *bindings, uri string, fragmentID uint64, reader array.Rec
 	var handle uintptr
 	rc := b.fragmentCreate(uri, fragmentID, &rawOptions, &rawStream, &handle)
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
 	runtime.KeepAlive(&rawOptions)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -111,6 +111,8 @@ func writeFragments(b *bindings, uri string, reader array.RecordReader, options 
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
+	defer versionList.release()
 
 	var rawStream cdata.ArrowArrayStream
 	if err := cdata.ExportRecordReader(reader, &rawStream); err != nil {
@@ -128,8 +130,6 @@ func writeFragments(b *bindings, uri string, reader array.RecordReader, options 
 	var count uint64
 	rc := b.fragmentCreateMany(uri, &rawOptions, &rawStream, &outFragments, &count)
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
 	runtime.KeepAlive(&rawOptions)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -209,9 +209,9 @@ func CreateFragmentFromFile(dataset *Dataset, filename string, fragmentID uint64
 }
 
 // prepareFragmentCreateOptions validates Go-side representations and builds the
-// native C options. The returned string lists must be kept alive until after
-// the native call. uri and reader validation deliberately leave empty values
-// and empty input to native code.
+// native C options. Ownership of the returned string lists transfers to the
+// caller, which must release them after the native call. uri and reader
+// validation deliberately leave empty values and empty input to native code.
 func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options FragmentCreateOptions) (fragmentCreateOptions, *cStringList, *cStringList, error) {
 	if reader == nil {
 		return fragmentCreateOptions{}, nil, nil, fmt.Errorf("ffi: record reader must not be nil")
@@ -243,6 +243,10 @@ func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options
 	}
 
 	versionList := &cStringList{}
+	fail := func(err error) (fragmentCreateOptions, *cStringList, *cStringList, error) {
+		versionList.release()
+		return fragmentCreateOptions{}, nil, nil, err
+	}
 	if options.Write != nil {
 		nativeWrite, versions, err := buildWriteParameters(WriteOptions{
 			Mode:            options.Mode,
@@ -251,7 +255,7 @@ func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options
 			SkipAutoCleanup: options.Write.SkipAutoCleanup,
 		})
 		if err != nil {
-			return fragmentCreateOptions{}, nil, nil, err
+			return fail(err)
 		}
 		rawOptions.Write = &nativeWrite
 		versionList = versions
@@ -259,9 +263,9 @@ func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options
 
 	storageList, err := storageOptionList(options.StorageOptions)
 	if err != nil {
-		return fragmentCreateOptions{}, nil, nil, err
+		return fail(err)
 	}
-	rawOptions.StorageOpts = storageList.ptr()
+	rawOptions.StorageOpts = storageList.data()
 	return rawOptions, storageList, versionList, nil
 }
 

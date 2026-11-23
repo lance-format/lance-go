@@ -30,6 +30,7 @@ func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions
 	if err != nil {
 		return nil, err
 	}
+	defer keep.release()
 	rawSchema, releaseSchema, err := exportOptionalSchema(schema)
 	if err != nil {
 		return nil, err
@@ -38,7 +39,6 @@ func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions
 
 	runtime.LockOSThread()
 	handle := b.fileWriterOpen(uri, rawSchema, rawOptions, storage.Handle(), SessionHandle(session))
-	keep.keepAlive()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

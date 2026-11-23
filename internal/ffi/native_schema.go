@@ -124,7 +124,7 @@ func (s *Schema) Project(columns []string) (*Schema, error) {
 	var out uintptr
 	runtime.LockOSThread()
 	rc := s.b.schemaProject(handleValue, list.ptrs, uint64(len(columns)), &out)
-	list.keepAlive()
+	list.release()
 	if rc != 0 {
 		nativeErr := s.b.takeError()
 		runtime.UnlockOSThread()

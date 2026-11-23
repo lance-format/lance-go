@@ -149,19 +149,15 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 		return err
 	}
 
-	readPtrs, readList, err := batchUDFReadColumns(readColumns, readColumnsSet)
+	readList, err := batchUDFReadColumns(readColumns, readColumnsSet)
 	if err != nil {
 		return err
 	}
+	defer readList.release()
 
 	adapter := &batchUDFAdapter{mapper: udf.Mapper, store: udf.Store}
 	ctx := handle.New(adapter)
 	defer handle.Remove(ctx)
-
-	var readPtr *uintptr
-	if readPtrs != nil {
-		readPtr = &readPtrs[0]
-	}
 
 	handleID := d.handle.Load()
 	if handleID == 0 {
@@ -174,11 +170,11 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 	var rc int32
 	if b.batchUDFV2.datasetAddColumnsBatchUDFV2 != nil {
 		native := newBatchUDFV2(uintptr(ctx), udf.OutputSchema, udf.Store)
-		rc = b.batchUDFV2.datasetAddColumnsBatchUDFV2(handleID, native, readPtr, batchSize)
+		rc = b.batchUDFV2.datasetAddColumnsBatchUDFV2(handleID, native, readList.data(), batchSize)
 		runtime.KeepAlive(native)
 	} else {
 		native := newBatchUDF(uintptr(ctx), udf.OutputSchema, udf.Store)
-		rc = b.datasetAddColumnsBatchUDF(handleID, native, readPtr, batchSize)
+		rc = b.datasetAddColumnsBatchUDF(handleID, native, readList.data(), batchSize)
 		runtime.KeepAlive(native)
 	}
 	if rc != 0 {
@@ -188,8 +184,6 @@ func (d *Dataset) AddColumnsBatchUDF(udf BatchUDF, readColumns []string, readCol
 		return fmt.Errorf("ffi: lance_dataset_add_columns_batch_udf failed without setting an error")
 	}
 	runtime.KeepAlive(adapter)
-	runtime.KeepAlive(readPtrs)
-	runtime.KeepAlive(readList)
 	return nil
 }
 
@@ -229,19 +223,18 @@ func newBatchUDFV2(ctx uintptr, outputSchema *cdata.ArrowSchema, store BatchUDFS
 	return native
 }
 
-func batchUDFReadColumns(columns []string, present bool) ([]uintptr, *cStringList, error) {
+// batchUDFReadColumns builds the optional read-column list. A nil list means
+// native None; a present list with no entries is a non-NULL pointer whose
+// first entry is NULL and means Some(empty). release must run after the native
+// call.
+func batchUDFReadColumns(columns []string, present bool) (*cStringList, error) {
 	if !present {
-		return nil, nil, nil
+		return nil, nil
 	}
 	if len(columns) == 0 {
-		// A non-NULL pointer to a NULL entry represents Some(empty).
-		return []uintptr{0}, &cStringList{}, nil
+		return newPresentCStringList(nil)
 	}
-	list, err := newCStringList(columns)
-	if err != nil {
-		return nil, nil, err
-	}
-	return list.ptrs, list, nil
+	return newCStringList(columns)
 }
 
 func batchUDFMapperCallback(ctx uintptr, input *cdata.ArrowArray, inputSchema *cdata.ArrowSchema, output *cdata.ArrowArray, cbErr *callbackError) (ret uintptr) {

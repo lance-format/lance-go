@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"unsafe"
 
 	"github.com/lance-format/lance-go/compaction"
 )
@@ -55,6 +54,7 @@ func buildOptimizeIndicesOptions(b *bindings, options *compaction.OptimizeOption
 			if err != nil {
 				return nil, err
 			}
+			defer indexNames.release()
 		}
 	}
 
@@ -75,10 +75,12 @@ func buildOptimizeIndicesOptions(b *bindings, options *compaction.OptimizeOption
 		if err != nil {
 			return nil, err
 		}
+		defer propertyKeysList.release()
 		propertyValuesList, err = newCStringList(propertyValues)
 		if err != nil {
 			return nil, err
 		}
+		defer propertyValuesList.release()
 	}
 
 	runtime.LockOSThread()
@@ -137,12 +139,10 @@ func buildOptimizeIndicesOptions(b *bindings, options *compaction.OptimizeOption
 	if options.TransactionProperties != nil {
 		properties := transactionProperties{Count: uint64(len(propertyKeys))}
 		if len(propertyKeys) > 0 {
-			properties.Keys = (**byte)(unsafe.Pointer(&propertyKeysList.ptrs[0]))
-			properties.Values = (**byte)(unsafe.Pointer(&propertyValuesList.ptrs[0]))
+			properties.Keys = propertyKeysList.data()
+			properties.Values = propertyValuesList.data()
 		}
 		rc := b.optimizeIndicesOptionsSetTransactionProperties(handle, &properties)
-		propertyKeysList.keepAlive()
-		propertyValuesList.keepAlive()
 		runtime.KeepAlive(&properties)
 		if rc != 0 {
 			return fail("lance_optimize_indices_options_set_transaction_properties")

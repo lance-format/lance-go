@@ -57,15 +57,15 @@ type fieldReference struct {
 
 type fieldMetadataUpdate struct {
 	Field  fieldReference
-	Keys   *uintptr
-	Values *uintptr
+	Keys   **byte
+	Values **byte
 	Count  uint64
 	Mode   int32
 }
 
 type sqlColumn struct {
-	Name       uintptr
-	Expression uintptr
+	Name       *byte
+	Expression *byte
 }
 
 type columnAlteration struct {
@@ -96,7 +96,7 @@ func (d *Dataset) UpdateFieldMetadata(updates []FieldMetadataUpdate) error {
 	paths := make([][]byte, 0, len(updates))
 	defer func() {
 		for _, list := range lists {
-			list.keepAlive()
+			list.release()
 		}
 	}()
 	for i, update := range updates {
@@ -218,6 +218,7 @@ func (d *Dataset) DropColumns(columns []string) error {
 	if err != nil {
 		return err
 	}
+	defer list.release()
 	handleID := d.handle.Load()
 	if handleID == 0 {
 		return ErrClosed
@@ -231,7 +232,6 @@ func (d *Dataset) DropColumns(columns []string) error {
 		}
 		return fmt.Errorf("ffi: lance_dataset_drop_columns failed without setting an error")
 	}
-	list.keepAlive()
 	return nil
 }
 
@@ -310,10 +310,12 @@ func (d *Dataset) AddColumnsSQL(columns []SQLColumn, batchSize uint64) error {
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	exprList, err := newCStringList(expressions)
 	if err != nil {
 		return err
 	}
+	defer exprList.release()
 	native := make([]sqlColumn, len(columns))
 	for i := range native {
 		native[i] = sqlColumn{
@@ -334,8 +336,6 @@ func (d *Dataset) AddColumnsSQL(columns []SQLColumn, batchSize uint64) error {
 		}
 		return fmt.Errorf("ffi: lance_dataset_add_columns_sql failed without setting an error")
 	}
-	nameList.keepAlive()
-	exprList.keepAlive()
 	runtime.KeepAlive(native)
 	return nil
 }
@@ -420,7 +420,7 @@ func (d *Dataset) readMetadataJSON(call func(uintptr) *byte) (string, error) {
 	return goString(out), nil
 }
 
-func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uint64, int32) *byte, keys []string, values []*string, mode int32) (string, error) {
+func (d *Dataset) updateMetadataJSON(call func(uintptr, **byte, **byte, uint64, int32) *byte, keys []string, values []*string, mode int32) (string, error) {
 	if len(keys) != len(values) {
 		return "", invalidf("metadata update keys and values have different lengths")
 	}
@@ -431,10 +431,12 @@ func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uint
 	if err != nil {
 		return "", err
 	}
+	defer keyList.release()
 	valueList, err := newNullableCStringList(values)
 	if err != nil {
 		return "", err
 	}
+	defer valueList.release()
 	handleID := d.handle.Load()
 	if handleID == 0 {
 		return "", ErrClosed
@@ -443,8 +445,6 @@ func (d *Dataset) updateMetadataJSON(call func(uintptr, *uintptr, *uintptr, uint
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	out := call(handleID, listPtr(keyList), listPtr(valueList), uint64(len(keys)), mode)
-	keyList.keepAlive()
-	valueList.keepAlive()
 	if out == nil {
 		if err := b.takeError(); err != nil {
 			return "", err
@@ -476,9 +476,6 @@ func nativeFieldReference(ref FieldReference) (fieldReference, []byte, error) {
 	}
 }
 
-func listPtr(list *cStringList) *uintptr {
-	if list == nil || len(list.ptrs) == 0 {
-		return nil
-	}
-	return &list.ptrs[0]
+func listPtr(list *cStringList) **byte {
+	return list.data()
 }

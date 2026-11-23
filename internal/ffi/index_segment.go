@@ -140,13 +140,13 @@ func (d *Dataset) NewScalarSegmentBuilder(column, name string, indexType int32, 
 		if err != nil {
 			return nil, err
 		}
-		defer paramsList.keepAlive()
+		defer paramsList.release()
 	}
 	nameList, err := newOptionalCString(name)
 	if err != nil {
 		return nil, err
 	}
-	defer nameList.keepAlive()
+	defer nameList.release()
 
 	var scalarOptions *scalarIndexOptions
 	if options != nil && options.Train != nil {
@@ -156,9 +156,9 @@ func (d *Dataset) NewScalarSegmentBuilder(column, name string, indexType int32, 
 	runtime.LockOSThread()
 	var created uintptr
 	if scalarOptions == nil {
-		created = d.b.segmentBuilderNewScalar(dataset, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), buildOptions)
+		created = d.b.segmentBuilderNewScalar(dataset, column, nameList.first(), indexType, paramsList.first(), buildOptions)
 	} else {
-		created = d.b.segmentBuilderNewScalarWithOptions(dataset, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), scalarOptions, buildOptions)
+		created = d.b.segmentBuilderNewScalarWithOptions(dataset, column, nameList.first(), indexType, paramsList.first(), scalarOptions, buildOptions)
 	}
 	var nativeErr *Error
 	if created == 0 {
@@ -189,10 +189,10 @@ func (d *Dataset) NewVectorSegmentBuilder(column, name string, options *VectorIn
 	if err != nil {
 		return nil, err
 	}
-	defer nameList.keepAlive()
+	defer nameList.release()
 
 	runtime.LockOSThread()
-	created := d.b.segmentBuilderNewVectorWithOptions(dataset, column, cStringPointer(nameList), raw, scope)
+	created := d.b.segmentBuilderNewVectorWithOptions(dataset, column, nameList.first(), raw, scope)
 	var nativeErr *Error
 	if created == 0 {
 		nativeErr = d.b.takeError()

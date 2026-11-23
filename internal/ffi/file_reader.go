@@ -34,6 +34,7 @@ func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, op
 	if err != nil {
 		return nil, err
 	}
+	defer keep.release()
 	rawScheduler, err := buildFileSchedulerConfig(scheduler)
 	if err != nil {
 		return nil, err
@@ -41,7 +42,6 @@ func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, op
 
 	runtime.LockOSThread()
 	handle := b.fileReaderOpen(uri, storage.Handle(), rawOptions, SessionHandle(session), rawScheduler)
-	keep.keepAlive()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

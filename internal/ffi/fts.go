@@ -203,13 +203,6 @@ func newFTSQuery(op string, create func(*bindings) uintptr) (*FTSQuery, error) {
 	return &FTSQuery{b: b, handle: handle}, nil
 }
 
-func cStringListPointer(list *cStringList) uintptr {
-	if list == nil || len(list.ptrs) == 0 {
-		return 0
-	}
-	return list.ptrs[0]
-}
-
 // NewFTSMatchQuery creates an immutable Match query. A nil column lets scan
 // planning resolve the indexed columns.
 func NewFTSMatchQuery(terms string, column *string, opts FTSMatchOptions) (*FTSQuery, error) {
@@ -220,6 +213,7 @@ func NewFTSMatchQuery(terms string, column *string, opts FTSMatchOptions) (*FTSQ
 			return nil, err
 		}
 		columnList = list
+		defer columnList.release()
 	}
 	b, err := load()
 	if err != nil {
@@ -238,13 +232,12 @@ func NewFTSMatchQuery(terms string, column *string, opts FTSMatchOptions) (*FTSQ
 	raw.matchOperator = opts.MatchOperator
 	raw.prefixLength = opts.PrefixLength
 	raw.documentGranularity = opts.DocumentGranularity
-	handle := b.ftsQueryMatchNew(terms, cStringListPointer(columnList), &raw)
+	handle := b.ftsQueryMatchNew(terms, columnList.first(), &raw)
 	var nativeErr *Error
 	if handle == 0 {
 		nativeErr = b.takeError()
 	}
 	runtime.UnlockOSThread()
-	columnList.keepAlive()
 	if handle == 0 {
 		if nativeErr != nil {
 			return nil, nativeErr
@@ -263,6 +256,7 @@ func NewFTSPhraseQuery(terms string, column *string, opts FTSPhraseOptions) (*FT
 			return nil, err
 		}
 		columnList = list
+		defer columnList.release()
 	}
 	b, err := load()
 	if err != nil {
@@ -273,13 +267,12 @@ func NewFTSPhraseQuery(terms string, column *string, opts FTSPhraseOptions) (*FT
 	b.ftsPhraseOptionsInit(&raw)
 	raw.slop = opts.Slop
 	raw.documentGranularity = opts.DocumentGranularity
-	handle := b.ftsQueryPhraseNew(terms, cStringListPointer(columnList), &raw)
+	handle := b.ftsQueryPhraseNew(terms, columnList.first(), &raw)
 	var nativeErr *Error
 	if handle == 0 {
 		nativeErr = b.takeError()
 	}
 	runtime.UnlockOSThread()
-	columnList.keepAlive()
 	if handle == 0 {
 		if nativeErr != nil {
 			return nil, nativeErr
@@ -294,6 +287,7 @@ func newFTSMultiMatchQuery(terms string, columns []string, opts FTSMultiMatchOpt
 	if err != nil {
 		return nil, err
 	}
+	defer list.release()
 	b, err := load()
 	if err != nil {
 		return nil, err
@@ -312,7 +306,6 @@ func newFTSMultiMatchQuery(terms string, columns []string, opts FTSMultiMatchOpt
 		nativeErr = b.takeError()
 	}
 	runtime.UnlockOSThread()
-	list.keepAlive()
 	runtime.KeepAlive(opts.Boosts)
 	if handle == 0 {
 		if nativeErr != nil {
@@ -334,6 +327,7 @@ func NewFTSCombinedFieldsQuery(terms string, columns []string, opts FTSCombinedF
 	if err != nil {
 		return nil, err
 	}
+	defer list.release()
 	b, err := load()
 	if err != nil {
 		return nil, err
@@ -352,7 +346,6 @@ func NewFTSCombinedFieldsQuery(terms string, columns []string, opts FTSCombinedF
 		nativeErr = b.takeError()
 	}
 	runtime.UnlockOSThread()
-	list.keepAlive()
 	runtime.KeepAlive(opts.Boosts)
 	if handle == 0 {
 		if nativeErr != nil {
