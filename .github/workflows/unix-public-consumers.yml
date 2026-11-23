@@ -129,7 +129,7 @@ jobs:
           python3 -B scripts/public-consumer/binary_metadata_test.py
           python3 -B scripts/public-consumer/verify_test.py -v
 
-      - name: Test default-bundle RTree and raw Blob v2 on the public companion
+      - name: Test default-bundle RTree and raw Blob v2 on the public module
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence
           XDG_CACHE_HOME: ${{ runner.temp }}/rtree-xdg-cache

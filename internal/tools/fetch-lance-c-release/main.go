@@ -29,18 +29,20 @@
 // same header with CRLF line endings. The command writes the canonical LF form
 // recorded by upstreamHeaderSHA256 and records both hashes.
 //
-// When the checked-in companion metadata at artifacts/<target>/artifact.go
-// records the same upstream repository, commit, and header as the pin, the
-// acquired library must also equal that module's UncompressedSHA256. That
-// check keeps CI on the bytes a published companion ships even if a release
-// archive and its published checksum were replaced together. A pin bump whose
-// companions have not been republished yet records the independent check as
-// inactive; candidate packaging still uses the acquired bytes.
+// When the published artifact module that this target's generated selector
+// imports records the same upstream repository, commit, and header as the pin,
+// the acquired library must also equal that module's UncompressedSHA256. That
+// check keeps CI on the bytes the published module ships even if a release
+// archive and its published checksum were replaced together: the module is an
+// immutable version resolved through the Go proxy and checksum database, not
+// bytes published with the archive. A pin bump whose modules have not been
+// republished yet records the independent check as inactive; candidate
+// packaging still uses the acquired bytes.
 //
 // lance-c exposes no runtime version symbol, so the library bytes cannot prove
-// the commit that built them. The published per-asset checksum, the pinned
-// companion identity, the pinned header hash, and the target machine check are
-// the available identity chain.
+// the commit that built them. The published per-asset checksum, the adopted
+// module identity, the pinned header hash, and the target machine check are the
+// available identity chain.
 package main
 
 import (
@@ -49,6 +51,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -60,6 +63,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -78,7 +82,7 @@ func main() {
 	targetFlag := flag.String("target", "", "target to acquire as GOOS/GOARCH: linux/amd64, linux/arm64, darwin/arm64, windows/amd64, or windows/arm64")
 	outFlag := flag.String("out", "", "new output directory; must not exist")
 	pinFlag := flag.String("pin", pinPath, "pin file with the upstream provenance constants")
-	artifactsFlag := flag.String("artifacts", "artifacts", "root of the checked-in companion metadata")
+	rootFlag := flag.String("root", ".", "repository root that provides go.mod and internal/bundled")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
@@ -89,7 +93,7 @@ func main() {
 		fail(errors.New("-target and -out are required"))
 	}
 
-	if err := run(*targetFlag, *outFlag, *pinFlag, *artifactsFlag); err != nil {
+	if err := run(*targetFlag, *outFlag, *pinFlag, *rootFlag); err != nil {
 		fail(err)
 	}
 }
@@ -112,7 +116,7 @@ type pinCheck struct {
 	want string
 }
 
-func run(targetName, outDir, pinFile, artifactsRoot string) error {
+func run(targetName, outDir, pinFile, root string) error {
 	pinned, err := readPin(pinFile)
 	if err != nil {
 		return err
@@ -129,7 +133,7 @@ func run(targetName, outDir, pinFile, artifactsRoot string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory %s: %w", outDir, err)
 	}
-	if err := acquire(pinned, spec, outDir, artifactsRoot); err != nil {
+	if err := acquire(pinned, spec, outDir, root); err != nil {
 		return err
 	}
 
@@ -144,7 +148,7 @@ func run(targetName, outDir, pinFile, artifactsRoot string) error {
 const recordName = "acquisition.txt"
 
 // acquire downloads, verifies, extracts, and records one release archive.
-func acquire(pinned pin, spec targetSpec, outDir, artifactsRoot string) error {
+func acquire(pinned pin, spec targetSpec, outDir, root string) error {
 	assetName := fmt.Sprintf("lance-c-%s-%s.tar.xz", pinned.release, spec.triple)
 	baseURL := strings.TrimSuffix(pinned.repo, "/") + "/releases/download/" + url.PathEscape(pinned.release)
 	assetURL := baseURL + "/" + assetName
@@ -212,12 +216,12 @@ func acquire(pinned pin, spec targetSpec, outDir, artifactsRoot string) error {
 		}
 	}
 
-	independent, err := verifyIndependentIdentity(artifactsRoot, spec, pinned, librarySHA, librarySize)
+	independent, err := verifyIndependentIdentity(root, spec, pinned, librarySHA, librarySize)
 	if err != nil {
 		return err
 	}
 	if independent.status == "verified" {
-		fmt.Printf("independent identity: %s matches the companion module %s\n", librarySHA, independent.path)
+		fmt.Printf("independent identity: %s matches %s\n", librarySHA, independent.module)
 	} else {
 		fmt.Printf("independent identity: inactive for %s (%s)\n", spec.name, independent.reason)
 	}
@@ -246,7 +250,8 @@ func acquire(pinned pin, spec targetSpec, outDir, artifactsRoot string) error {
 		"library_sha256=" + librarySHA,
 		"library_format=" + format,
 		"library_machine=" + machine,
-		"independent_identity=" + independent.path,
+		"independent_identity_source=" + independent.source,
+		"independent_identity_module=" + independent.module,
 		"independent_identity_status=" + independent.status,
 	}
 	if independent.status == "verified" {
@@ -705,8 +710,8 @@ func classifyPE(head []byte) (string, string, error) {
 
 // verifyArchiveChecksum binds the downloaded archive to the checksum published
 // next to it. It cannot detect a release whose archive and checksum were
-// replaced together; verifyIndependentIdentity adds the checked-in companion
-// identity for that case.
+// replaced together; verifyIndependentIdentity adds the adopted module identity
+// for that case.
 func verifyArchiveChecksum(observed, published, checksumName string) error {
 	if observed != published {
 		return fmt.Errorf("archive sha256 is %s, published %s says %s; the download is corrupt or the published asset changed",
@@ -716,50 +721,206 @@ func verifyArchiveChecksum(observed, published, checksumName string) error {
 }
 
 type independentIdentity struct {
-	path         string
+	source       string
+	module       string
 	status       string
 	expectedSHA  string
 	expectedSize int64
 	reason       string
 }
 
-// verifyIndependentIdentity ties the acquired library to the companion module
-// metadata recorded in the SDK tree for this target. The check is inactive
-// when that metadata describes a different upstream revision, which is the
-// normal state between a pin bump and companion republication. Candidate
-// packaging therefore depends only on the acquired bytes and the pin.
-func verifyIndependentIdentity(artifactsRoot string, spec targetSpec, pinned pin, librarySHA string, librarySize int64) (independentIdentity, error) {
-	slug := strings.ReplaceAll(spec.name, "/", "-")
-	path := filepath.Join(artifactsRoot, slug, "artifact.go")
-	result := independentIdentity{path: path}
+// adoptedArtifact identifies the artifact module that a default build for one
+// target embeds. An empty reason means the module was found.
+type adoptedArtifact struct {
+	selector string
+	module   string
+	version  string
+	reason   string
+}
 
-	md, err := artifactmeta.Read(path)
-	if errors.Is(err, fs.ErrNotExist) {
+// verifyIndependentIdentity ties the acquired library to the immutable artifact
+// module that the target's generated selector registers. The module is
+// resolved through Go module resolution, so its bytes are pinned by go.sum and
+// the checksum database, independently of the release archive and its published
+// checksum. The check is inactive when the adopted module describes a different
+// upstream revision, which is the normal state between a pin bump and module
+// republication, or when the target has no adopted module yet. Candidate
+// packaging therefore depends only on the acquired bytes and the pin.
+func verifyIndependentIdentity(root string, spec targetSpec, pinned pin, librarySHA string, librarySize int64) (independentIdentity, error) {
+	adopted, err := readAdoptedModule(root, spec)
+	if err != nil {
+		return independentIdentity{}, err
+	}
+	result := independentIdentity{source: adopted.selector, module: adopted.module}
+	if adopted.reason != "" {
 		result.status = "inactive"
-		result.reason = fmt.Sprintf("no companion metadata at %s", path)
+		result.reason = adopted.reason
+		return result, nil
+	}
+	result.module = adopted.module + "@" + adopted.version
+
+	moduleDir, err := resolveAdoptedModuleDir(adopted.module, adopted.version)
+	if err != nil {
+		return result, err
+	}
+	metadataPath := filepath.Join(moduleDir, "artifact.go")
+	md, err := artifactmeta.Read(metadataPath)
+	if err != nil {
+		return result, fmt.Errorf("read adopted artifact metadata %s: %w", metadataPath, err)
+	}
+	if md.Target != spec.name || md.LibraryName != filepath.Base(spec.libraryMember) {
+		return result, fmt.Errorf("adopted artifact metadata %s records %s/%s, want %s/%s",
+			metadataPath, md.Target, md.LibraryName, spec.name, filepath.Base(spec.libraryMember))
+	}
+	if md.UpstreamRepo != pinned.repo || md.UpstreamCommit != pinned.commit || md.HeaderSHA256 != pinned.headerSHA {
+		result.status = "inactive"
+		result.reason = fmt.Sprintf("%s records %s@%s with header sha256 %s; the pin records %s@%s with header sha256 %s",
+			result.module, md.UpstreamRepo, md.UpstreamCommit, md.HeaderSHA256, pinned.repo, pinned.commit, pinned.headerSHA)
+		return result, nil
+	}
+	result.status = "verified"
+	result.expectedSHA = md.UncompressedSHA256
+	result.expectedSize = md.UncompressedSize
+	if md.UncompressedSHA256 != librarySHA || md.UncompressedSize != librarySize {
+		return result, fmt.Errorf("library sha256 is %s (%d bytes), but %s records %s (%d bytes) for %s@%s; the release archive does not carry the bytes this module publishes",
+			librarySHA, librarySize, result.module, md.UncompressedSHA256, md.UncompressedSize, pinned.repo, pinned.commit)
+	}
+	return result, nil
+}
+
+// readAdoptedModule finds the artifact module that internal/bundled selects for
+// this target. The generated selector is the canonical statement of which
+// module a default build embeds, and go.mod records the immutable version it
+// requires. A missing selector or requirement is reported as an inactive check
+// rather than an error so a target can be acquired before its module is
+// published.
+func readAdoptedModule(root string, spec targetSpec) (adoptedArtifact, error) {
+	goos, goarch, ok := strings.Cut(spec.name, "/")
+	if !ok {
+		return adoptedArtifact{}, fmt.Errorf("target %q is not GOOS/GOARCH", spec.name)
+	}
+	identity, err := readGoModIdentity(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return adoptedArtifact{}, err
+	}
+	result := adoptedArtifact{selector: filepath.Join(root, "internal", "bundled", "lance_bundle_"+goos+"_"+goarch+".go")}
+	module, err := selectorArtifactModule(result.selector, identity.module)
+	if errors.Is(err, fs.ErrNotExist) {
+		result.reason = fmt.Sprintf("no generated selector at %s", result.selector)
 		return result, nil
 	}
 	if err != nil {
-		return result, fmt.Errorf("read independently pinned companion %s: %w", path, err)
+		return adoptedArtifact{}, err
 	}
-	if md.UpstreamRepo == pinned.repo && md.UpstreamCommit == pinned.commit && md.HeaderSHA256 == pinned.headerSHA {
-		if md.Target != spec.name || md.LibraryName != filepath.Base(spec.libraryMember) {
-			return result, fmt.Errorf("independently pinned companion %s records %s/%s, want %s/%s",
-				path, md.Target, md.LibraryName, spec.name, filepath.Base(spec.libraryMember))
-		}
-		result.status = "verified"
-		result.expectedSHA = md.UncompressedSHA256
-		result.expectedSize = md.UncompressedSize
-		if md.UncompressedSHA256 != librarySHA || md.UncompressedSize != librarySize {
-			return result, fmt.Errorf("library sha256 is %s (%d bytes), but the independently pinned companion %s records %s (%d bytes) for %s@%s; the release archive does not carry the bytes this pin publishes",
-				librarySHA, librarySize, path, md.UncompressedSHA256, md.UncompressedSize, pinned.repo, pinned.commit)
-		}
+	if module == "" {
+		result.reason = fmt.Sprintf("selector %s does not import an artifact module", result.selector)
 		return result, nil
 	}
-	result.status = "inactive"
-	result.reason = fmt.Sprintf("companion metadata records %s@%s with header sha256 %s; the pin records %s@%s with header sha256 %s",
-		md.UpstreamRepo, md.UpstreamCommit, md.HeaderSHA256, pinned.repo, pinned.commit, pinned.headerSHA)
+	version, ok := identity.requirements[module]
+	if !ok {
+		result.reason = fmt.Sprintf("%s requires no version of %s", identity.path, module)
+		return result, nil
+	}
+	result.module = module
+	result.version = version
 	return result, nil
+}
+
+// goModIdentity is the part of go.mod that identifies the modules a default
+// build embeds.
+type goModIdentity struct {
+	path         string
+	module       string
+	requirements map[string]string
+}
+
+// readGoModIdentity reads the module path and every required version from a
+// go.mod file. It deliberately accepts only the single-line requirement form
+// that go.mod uses for released module versions.
+func readGoModIdentity(path string) (goModIdentity, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return goModIdentity{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	identity := goModIdentity{requirements: map[string]string{}}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		switch {
+		case fields[0] == "module":
+			identity.module = fields[1]
+		case strings.HasPrefix(fields[1], "v"):
+			if _, exists := identity.requirements[fields[0]]; !exists {
+				identity.requirements[fields[0]] = fields[1]
+			}
+		}
+	}
+	if identity.module == "" {
+		return goModIdentity{}, fmt.Errorf("%s declares no module path", path)
+	}
+	identity.path = path
+	return identity, nil
+}
+
+// selectorArtifactModule returns the module that a generated selector imports
+// besides packages of the repository itself.
+func selectorArtifactModule(path, rootModule string) (string, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+	if err != nil {
+		return "", fmt.Errorf("parse selector %s: %w", path, err)
+	}
+	var modules []string
+	for _, specification := range file.Imports {
+		importPath, err := strconv.Unquote(specification.Path.Value)
+		if err != nil {
+			return "", fmt.Errorf("selector %s has an unreadable import: %w", path, err)
+		}
+		if importPath == rootModule || strings.HasPrefix(importPath, rootModule+"/") {
+			continue
+		}
+		modules = append(modules, importPath)
+	}
+	switch len(modules) {
+	case 0:
+		return "", nil
+	case 1:
+		return modules[0], nil
+	default:
+		return "", fmt.Errorf("selector %s imports more than one artifact module: %s", path, strings.Join(modules, ", "))
+	}
+}
+
+// resolveAdoptedModuleDir resolves the adopted module version to a directory.
+// It is a variable so tests can substitute a module tree without a toolchain.
+var resolveAdoptedModuleDir = resolveModuleDir
+
+// resolveModuleDir asks the Go toolchain for the directory of one released
+// module version. go.sum and the checksum database therefore verify the
+// metadata this check reads.
+func resolveModuleDir(modulePath, version string) (string, error) {
+	command := exec.Command("go", "mod", "download", "-json", modulePath+"@"+version)
+	var stdout, stderr bytes.Buffer
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return "", fmt.Errorf("resolve %s@%s: %w: %s", modulePath, version, err, strings.TrimSpace(stderr.String()))
+	}
+	var result struct {
+		Dir   string
+		Error string
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return "", fmt.Errorf("parse go mod download output for %s@%s: %w", modulePath, version, err)
+	}
+	if result.Error != "" {
+		return "", fmt.Errorf("resolve %s@%s: %s", modulePath, version, result.Error)
+	}
+	if result.Dir == "" {
+		return "", fmt.Errorf("resolve %s@%s: go mod download reported no directory", modulePath, version)
+	}
+	return result.Dir, nil
 }
 
 // extractMembers streams the compressed tar archive once and writes only the

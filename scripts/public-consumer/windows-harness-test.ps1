@@ -164,8 +164,8 @@ try {
             Fail "identity fixture is missing required fragment: $required"
         }
     }
-    if ($fixtureText -match 'lance-go/artifacts/' -or $fixtureText -match 'go.lance.org/liblance/') {
-        Fail 'identity fixture must not link an artifact package'
+    if ($fixtureText -match 'go.lance.org/liblance/') {
+        Fail 'identity fixture must not link an artifact module'
     }
     foreach ($forbidden in @(
         "@('mod', 'tidy')",
@@ -410,7 +410,7 @@ try {
     # and loaded-module gates after runtime extraction.
     $script:Verify = $verify
     $script:LibraryName = 'lance_c.dll'
-    $path = 'example.com/root/artifacts/windows-amd64'
+    $path = 'example.com/probe/windows-amd64'
     $version = 'v1.2.3'
     $payloadPath = Join-Path $work 'lance_c.dll.zst'
     $payloadBytes = [Text.Encoding]::UTF8.GetBytes('synthetic compressed payload')

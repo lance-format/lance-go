@@ -25,11 +25,17 @@
 // step and Release it when finished. Batches returned by Take and TakeRows are
 // owned by the caller and must each be released.
 //
-// A Session shares index and metadata caches across datasets and raw files.
+// A [Session] shares index and metadata caches across datasets and raw files.
 // Close the caller's Session after opening those objects; opened objects keep
-// the cache state they retained. A StorageOptionsAccessor similarly owns
+// the cache state they retained. A [StorageOptionsAccessor] similarly owns
 // reusable storage options. Closing it does not invalidate native datasets or
 // stores that retained their own reference.
+//
+// [Session], [CacheStats], [StorageOptionsAccessor], [StorageOptionsProvider]
+// and [ForceStorageOptionsProvider] are aliases of internal implementation
+// types, so their declarations are the reference for their methods, fields and
+// interface signatures. Follow the declaration link from each entry in the
+// package index.
 //
 // # Errors
 //

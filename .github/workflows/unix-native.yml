@@ -4,11 +4,11 @@
 # Each job acquires the exact library and header from the official lance-c
 # release archive pinned in internal/ffi/upstream.go, verifies the published
 # per-asset checksum and the pinned header hash, tests the Go bindings against
-# those published bytes, and stages a candidate companion module from the same
+# those published bytes, and stages a candidate artifact module from the same
 # unmodified library. It does not build lance-c from source and does not fall
 # back to a source build; a missing or mismatched asset fails the job. The job
 # does not publish or accept the candidate, activate a selector, or create a
-# release. See artifacts/README.md for the publication gates that remain
+# release. See docs/native-packages.md for the publication gates that remain
 # outside CI.
 name: Unix native
 
@@ -21,7 +21,6 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
-      - artifacts/**
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -35,7 +34,6 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
-      - artifacts/**
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -301,7 +299,7 @@ jobs:
           go run -tags lance_external_lib ./examples/roundtrip 2>&1 | tee "$log"
           grep -Fqx 'Created, reopened and scanned 3 rows: [10 20 30]' "$log"
 
-      - name: Stage production-path candidate companion module
+      - name: Stage production-path candidate artifact module
         env:
           LANCE_LIBRARY: ${{ steps.native.outputs.library }}
           LANCE_HEADER: ${{ steps.native.outputs.header }}
@@ -366,7 +364,7 @@ jobs:
             echo "selector_activated: false"
           } | tee "$RUNNER_TEMP/evidence/candidate-staging.txt"
 
-      - name: Upload production candidate companion module
+      - name: Upload production candidate artifact module
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unix-native-candidate-${{ matrix.slug }}

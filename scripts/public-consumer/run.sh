@@ -343,20 +343,12 @@ verify_artifact_module() {
   [[ $(basename "$META_PAYLOAD") == "$LIBRARY_NAME.zst" ]] || fail "$label payload name is $(basename "$META_PAYLOAD")"
   assert_file_identity "$META_PAYLOAD" "$META_COMPRESSED_SIZE" "$META_COMPRESSED_SHA" "$label payload"
 
-  if [[ $path == "$ROOT_MODULE/artifacts/"* ]]; then
-    local tracked="$REPO_DIR/artifacts/${path##*/}" tracked_file
-    # Historical Git artifact modules retain metadata snapshots in the SDK tree.
-    for tracked_file in artifact.go go.mod LICENSE; do
-      require_file "$tracked/$tracked_file"
-      cmp "$tracked/$tracked_file" "$dir/$tracked_file" ||
-        fail "$label published $tracked_file differs from tracked artifacts/${path##*/}/$tracked_file"
-    done
-    record "${label}_tracked_artifact_metadata_match" yes
-  else
-    # Static-origin modules are validated from their own artifact.go, payload,
-    # checksum and the root requirement; there is no Git metadata snapshot.
-    record "${label}_tracked_artifact_metadata_match" static-origin
-  fi
+  # The module is validated from its own artifact.go, payload and checksum,
+  # against the source pin and the root requirement; the SDK tree carries no
+  # copy of the published metadata.
+  [[ $path == "$ARTIFACT_MODULE_PREFIX/"* ]] ||
+    fail "$label module $path is outside the static origin prefix $ARTIFACT_MODULE_PREFIX"
+  record "${label}_artifact_module_source" static-origin
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" "$path" "$META_TARGET" "$META_LIBRARY" "$META_COMPRESSED_SIZE" \
@@ -769,12 +761,6 @@ resolve_root() {
       --module "$ROOT_MODULE" \
       --version "$ROOT_VERSION" \
       --source-commit "$SOURCE_COMMIT" \
-      --nested-module artifacts/linux-amd64 \
-      --nested-module artifacts/linux-arm64 \
-      --nested-module artifacts/darwin-amd64 \
-      --nested-module artifacts/darwin-arm64 \
-      --nested-module artifacts/windows-amd64 \
-      --nested-module artifacts/windows-arm64 \
       --nested-module scripts/go-module-origin/generator \
       --out "$EVIDENCE_DIR/root-archive.json"; then
     fail "root archive does not match the checked-out source tree"

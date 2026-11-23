@@ -69,9 +69,11 @@ static-inspection host.
   available to Cargo. The committed lockfile requires at least Rust 1.95;
   the core crate's lower MSRV alone does not satisfy this dependency graph.
 - The native library paired with the tested SDK revision. The current pin is
-  `ac2634c553b450c7787577ffe964fc2b283b8334`; verify the selected library hash
-  against the corresponding artifact metadata. Historical native07/native88
-  compatibility results do not establish execution against a different library.
+  `lance-c v0.2.1-beta.3`, commit `a800fd5f28636bfff34778e3ad6663f3cf099a38`,
+  header `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`;
+  verify the selected library hash against [the native package
+  record](../docs/native-packages.md). Historical compatibility results do not
+  establish execution against a different library.
 
 ### Python
 

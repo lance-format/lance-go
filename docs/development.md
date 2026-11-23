@@ -1,6 +1,8 @@
 # Development and testing
 
-The [consumer installation](../README.md#supported-consumer-configuration) uses official prebuilt libraries. The source-build and ABI checks below are for binding development.
+The [consumer installation](../README.md#supported-targets) uses official
+prebuilt libraries. The source-build and ABI checks below are for binding
+development.
 
 ## How loading works
 
@@ -36,8 +38,8 @@ decompressed size and hash, syncs it, and publishes it with an atomic rename
 under a cross-process lock. A corrupt regular entry is replaced; failed
 extraction publishes nothing.
 
-All companion downloads happen through Go module resolution and the build;
-the loader itself does not use the network. A default build embeds the selected
+All artifact module downloads happen through Go module resolution and the
+build; the loader itself does not use the network. A default build embeds the selected
 payload, while an external build expects the operator to supply the library.
 
 The library is never unloaded. `lance-c` owns a Tokio runtime, thread-local
@@ -92,15 +94,14 @@ Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer
 and CMake's Corrosion dependency. The first build compiles all of Lance and
 takes a long time.
 
-CI and release packaging do not use this path. They acquire the official
-release archive for `upstreamRelease` through
-`internal/tools/fetch-lance-c-release`, which verifies the published per-asset
-checksum, the pinned header hash, and the target machine. When
-`artifacts/<target>/artifact.go` describes the same upstream commit and header,
-the acquired library must also equal that companion metadata's
-`UncompressedSHA256`; after a pin bump the check stays inactive until the new
-companions are published. Build from source when you are changing `lance-c`,
-or when the pin has no matching release archive.
+CI and release packaging do not use this path. They acquire the official release
+archive for `upstreamRelease` through `internal/tools/fetch-lance-c-release`,
+which verifies the published per-asset checksum, the pinned header hash, and the
+target machine. It also compares the acquired library with the
+`UncompressedSHA256` that the adopted artifact module declares; after a pin bump
+that check stays inactive until the new modules are published. Build from source
+when you are changing `lance-c`, or when the pin has no matching release
+archive.
 
 ## Pinned ABI and verification
 
@@ -121,13 +122,13 @@ git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
 LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
 ```
 
-Packaging verifies the header against this pin; a library built from a
-different commit is not detectable at runtime. When the pin changes, all five
-public companion modules (`linux/amd64`, `linux/arm64`, `darwin/arm64`,
-`windows/amd64`, `windows/arm64`) must be regenerated, published as new
-immutable module versions, and adopted in the selectors, root requirements and
-artifact metadata together. Follow [RELEASING.md](../RELEASING.md) for the exact
-source, package, publication and verification sequence.
+Packaging verifies the header against this pin; a library built from a different
+commit is not detectable at runtime. When the pin changes, all five artifact
+modules (`linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`,
+`windows/arm64`) must be regenerated, published as new immutable module
+versions, and adopted in the selectors and root requirements together. Follow
+[RELEASING.md](../RELEASING.md) for the exact source, package, publication and
+verification sequence.
 
 The checker refuses a header whose SHA-256 differs from the pin, then verifies
 that every bound symbol is declared, that C and Go agree on arity, and that
@@ -177,22 +178,12 @@ CGO_ENABLED=1 go test -count=1 -race ./...
 ```
 
 The RTree regression test is build-tagged so it can be selected explicitly.
-The current default companions are RTree-capable; run it through the bundle
+The bundled library is RTree-capable; run the test through the default bundle
 with no external library:
 
 ```console
 env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
   CGO_ENABLED=0 go test -tags lance_rtree_native -run '^TestRTree' -count=1 -v .
-```
-
-To verify the historical pre-RTree behavior, check out the published
-`v0.1.0-preview.1` tag and run the legacy selector against that tag's default
-bundle:
-
-```console
-env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
-  CGO_ENABLED=0 go test -tags lance_rtree_legacy \
-  -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
 
 `TestFragmentTakeExplicitEmptyProjection` covers the fragment projection
@@ -217,9 +208,9 @@ delay-load imports and runs a `/MT` native consumer that rejects redistributable
 CRT modules before and after native operations. On windows/amd64 it also runs
 the full external-tag suite with `-race`; the Go race detector has no
 windows/arm64 support, so that lane is recorded as unsupported rather than
-skipped. The CI workflow does not publish modules; published Windows
-companions and their cold public consumers are recorded in
-[artifacts/README.md](../artifacts/README.md).
+skipped. The CI workflow does not publish modules; published Windows modules and
+their cold public consumers are recorded in [native
+packages](../docs/native-packages.md).
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -235,11 +226,11 @@ The CI workflow runs on pull requests and pushes to `main`. It also runs
 [`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh) in local-source
 mode with `LANCE_GO_QUICKSTART_SOURCE_DIR`, which builds a consumer module that
 replaces the root module with the checkout, checks the roundtrip output and
-selected companion, then reruns the example with the exact companion library
-extracted and a read-only runtime cache. The same job runs the bundled RTree and
+the selected artifact module, then reruns the example with the exact native
+library extracted and a read-only runtime cache. The same job runs the bundled RTree and
 raw Blob v2 regressions from the checkout. Neither step resolves the root
-revision through the public proxy; the companion tag still comes from the public
-proxy and checksum database. The default Go lane
+revision through the public proxy; the artifact module version still comes from
+the public proxy and checksum database. The default Go lane
 runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered
@@ -263,7 +254,6 @@ and user-facing `examples/...`.
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
 namespace/        typed native namespace API and managed dataset operations
 internal/bundled/ shared zero-config selector registration for root and namespace
-artifacts/linux-amd64/       published data-only module and compressed payload
 internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton

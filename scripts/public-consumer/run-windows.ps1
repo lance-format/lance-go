@@ -735,44 +735,11 @@ function Read-Pins {
     Write-Summary "source_pin.header_sha256=$($script:Pins.Header)"
 }
 
-function Assert-GitTracked([string]$RelativePath) {
-    Write-CommandLog $script:RepoDir @('git', 'ls-files', '--error-unmatch', '--', $RelativePath)
-    $tracked = & git -C $script:RepoDir ls-files --error-unmatch -- $RelativePath 2>> $script:CommandsLog
-    if ($LASTEXITCODE -ne 0 -or -not $tracked) {
-        Fail "artifact file is not tracked at HEAD: $RelativePath"
+function Assert-ArtifactModuleSource($Meta) {
+    if (-not $Meta.Path.StartsWith($script:ArtifactModulePrefix + '/')) {
+        Fail ("artifact module {0} is outside the static origin prefix {1}" -f $Meta.Path, $script:ArtifactModulePrefix)
     }
-    Write-CommandLog $script:RepoDir @('git', 'diff', '--quiet', 'HEAD', '--', $RelativePath)
-    & git -C $script:RepoDir diff --quiet HEAD -- $RelativePath 2>> $script:CommandsLog
-    if ($LASTEXITCODE -ne 0) {
-        Fail "artifact file differs from the checked-out revision: $RelativePath"
-    }
-}
-
-function Assert-TrackedArtifact($Meta) {
-    if ($Meta.Path.StartsWith($script:ArtifactModulePrefix + '/')) {
-        Write-Summary "artifact.$($Meta.Label).tracked_dir=static-origin"
-        return
-    }
-    $leaf = Split-Path -Leaf $Meta.Path
-    $trackedDir = Join-Path (Join-Path $script:RepoDir 'artifacts') $leaf
-    if (-not (Test-Path -LiteralPath $trackedDir)) {
-        Fail ("tracked Windows artifact is missing: {0}; publish and adopt the static-CRT Windows artifact module before this lane can pass" -f $trackedDir)
-    }
-    # Payload bytes live at the pinned publication commit. Matching artifact.go
-    # binds Read-ArtifactModule's payload size/hash checks to this SDK revision.
-    foreach ($name in @('artifact.go', 'go.mod', 'LICENSE')) {
-        $tracked = Join-Path $trackedDir $name
-        $published = Join-Path $Meta.Dir $name
-        if (-not (Test-Path -LiteralPath $tracked)) {
-            Fail "tracked artifact file is missing: $tracked"
-        }
-        if (-not (Test-Path -LiteralPath $published)) {
-            Fail "published artifact module is missing: $published"
-        }
-        Assert-GitTracked ("artifacts/{0}/{1}" -f $leaf, $name)
-        Assert-Equal "$name sha256" (Get-FileSha256 $published) (Get-FileSha256 $tracked)
-    }
-    Write-Summary "artifact.$($Meta.Label).tracked_dir=$trackedDir"
+    Write-Summary "artifact.$($Meta.Label).source=static-origin"
 }
 
 function Read-ArtifactModule($Json, [string]$Label) {
@@ -847,7 +814,7 @@ function Read-ArtifactModule($Json, [string]$Label) {
     $payload = $payloads[0]
     Assert-Equal "$Label payload filename" $payload.Name ($script:LibraryName + '.zst')
     $meta | Add-Member -NotePropertyName Payload -NotePropertyValue $payload.FullName
-    Assert-TrackedArtifact $meta
+    Assert-ArtifactModuleSource $meta
 
     $payloadOut = Join-Path $script:EvidenceDir ("verify-$($Label -replace '/', '-')-payload.json")
     $arguments = @(
@@ -1508,14 +1475,6 @@ try {
     Write-Summary "required_windows_artifact=$windowsArtifactPath@$($script:RequiredWindows.Version)"
 
     $nested = New-Object System.Collections.Generic.List[string]
-    $artifactsRoot = Join-Path $script:RepoDir 'artifacts'
-    if (Test-Path -LiteralPath $artifactsRoot) {
-        foreach ($dir in @(Get-ChildItem -LiteralPath $artifactsRoot -Directory | Sort-Object Name)) {
-            if (Test-Path -LiteralPath (Join-Path $dir.FullName 'go.mod')) {
-                $nested.Add('artifacts/' + $dir.Name)
-            }
-        }
-    }
     if (Test-Path -LiteralPath (Join-Path $script:RepoDir 'scripts/go-module-origin/generator/go.mod')) {
         $nested.Add('scripts/go-module-origin/generator')
     }

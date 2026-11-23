@@ -7,13 +7,11 @@ pseudo-version. It is deliberately separate from `run.sh`: Windows has a
 different cache contract, needs a PE check, and can report the module that the
 loader actually mapped.
 
-The current preview modules are `go.lance.org/liblance/windows-<arch>` at
+The Windows modules are `go.lance.org/liblance/windows-<arch>` at
 `v0.2.0-preview.1`, built from the official `lance-c v0.2.1-beta.3` release at
-`a800fd5f28636bfff34778e3ad6663f3cf099a38`. The historical Git artifact
-modules `artifacts/windows-<arch>` at `v0.1.0` and `v0.1.1-preview.1` remain
-published and are exercised by their own tag revisions. Each payload set
-decompresses byte-for-byte to the matching official archive DLL; public
-acceptance is recorded against its release tag.
+`a800fd5f28636bfff34778e3ad6663f3cf099a38`. Each payload decompresses
+byte-for-byte to the matching official archive DLL; public acceptance is
+recorded against its release tag.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for
@@ -51,12 +49,11 @@ closure, not a new product security contract.
 It runs when a root `v*` release tag is pushed, or when manual dispatch names
 that tag. The revision is the tag, passed through environment variables rather
 than interpolated into a shell command; commit SHAs and pseudo-versions are
-rejected. Go is configured with `CGO_ENABLED=0`,
-`GOTOOLCHAIN=local`, `GOWORK=off`, and the public `proxy.golang.org` /
-`sum.golang.org` endpoints. The workflow never runs `go mod tidy`, `go mod
-verify`, a native build, Rust, or protoc. It disables Git line-ending
-conversion before checkout so the tracked artifact metadata can be compared with
-the published module bytes.
+rejected. Go is configured with `CGO_ENABLED=0`, `GOTOOLCHAIN=local`,
+`GOWORK=off`, and the public `proxy.golang.org` / `sum.golang.org` endpoints.
+The workflow never runs `go mod tidy`, `go mod verify`, a native build, Rust, or
+protoc. It disables Git line-ending conversion before checkout so the root
+archive comparison is not disturbed by checkout rewrites.
 
 ## Consumers
 
@@ -151,9 +148,7 @@ cache paths with synthetic files. Actual Windows runtime acceptance only
 happens on the hosted Windows runners; local static checks cannot substitute
 for it.
 
-Artifact snapshots in the SDK tree contain only `artifact.go`, `go.mod`, and
-`LICENSE`. The complete payload remains at the pinned publication commit. The
-lane compares these metadata files byte-for-byte, then verifies downloaded
-payload and decompressed DLL sizes and hashes against the matched metadata.
-It also verifies the public module checksum, embedded bytes and loaded identity;
-a second payload copy in the SDK checkout is unnecessary.
+The SDK tree carries no copy of the published module. The lane reads the
+selected module's own `artifact.go`, verifies the downloaded payload and
+decompressed DLL sizes and hashes against it, and checks the public module
+checksum, embedded bytes and loaded identity.
