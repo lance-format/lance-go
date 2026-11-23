@@ -1,6 +1,7 @@
 package ffi
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -114,9 +115,12 @@ func TestDatasetVersionReportsNativeError(t *testing.T) {
 	dataset.handle.Store(1)
 	defer dataset.handle.Store(0)
 
-	if _, err := dataset.Version(); err == nil {
+	_, err := dataset.Version()
+	if err == nil {
 		t.Fatal("Version returned nil error for a zero version with a native error")
-	} else if nativeErr, ok := err.(*Error); !ok || nativeErr.Code != CodeNotFound {
+	}
+	var nativeErr *Error
+	if !errors.As(err, &nativeErr) || nativeErr.Code != CodeNotFound {
 		t.Fatalf("Version error = %v, want native CodeNotFound", err)
 	}
 }

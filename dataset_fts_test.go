@@ -346,7 +346,7 @@ func TestFTSQueryValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requireInvalidArgumentError(t, tt.call(), tt.want)
+			_ = requireInvalidArgumentError(t, tt.call(), tt.want)
 		})
 	}
 }
@@ -398,11 +398,11 @@ func TestFTSScanValidationErrors(t *testing.T) {
 
 	t.Run("zero query", func(t *testing.T) {
 		_, err := dataset.Scan(lance.WithFTSQuery(&lance.FTSQuery{}))
-		requireInvalidArgumentError(t, err, "FTS query is not initialized")
+		_ = requireInvalidArgumentError(t, err, "FTS query is not initialized")
 	})
 	t.Run("zero prepared context", func(t *testing.T) {
 		_, err := dataset.Scan(lance.WithFTSQueryContext(&lance.FTSPreparedQuery{}))
-		requireInvalidArgumentError(t, err, "FTS prepared query is not initialized")
+		_ = requireInvalidArgumentError(t, err, "FTS prepared query is not initialized")
 	})
 	t.Run("mutually exclusive", func(t *testing.T) {
 		query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})
@@ -414,11 +414,11 @@ func TestFTSScanValidationErrors(t *testing.T) {
 			lance.WithFTSQuery(query),
 			lance.WithMinHashQuery("name", "alpha"),
 		)
-		requireInvalidArgumentError(t, err, "mutually exclusive")
+		_ = requireInvalidArgumentError(t, err, "mutually exclusive")
 	})
 	t.Run("segments without context", func(t *testing.T) {
 		_, err := dataset.Scan(lance.WithFTSIndexSegments(index.UUID{1}))
-		requireInvalidArgumentError(t, err, "FTS index segments require a prepared query context")
+		_ = requireInvalidArgumentError(t, err, "FTS index segments require a prepared query context")
 	})
 	t.Run("closed query", func(t *testing.T) {
 		query, err := lance.NewFTSMatchQuery("alpha", "", lance.FTSMatchOptions{})

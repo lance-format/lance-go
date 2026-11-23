@@ -118,8 +118,9 @@ func (f *BlobFile) ReadUpTo(dst []byte) (uint64, error) {
 	rc := f.b.blobFileReadUpTo(f.handle, ptr, uint64(len(dst)), &n)
 	var err error
 	if rc != 0 {
-		err = f.b.takeError()
-		if err == nil {
+		if nativeErr := f.b.takeError(); nativeErr != nil {
+			err = nativeErr
+		} else {
 			err = fmt.Errorf("ffi: lance_blob_file_read_up_to failed without setting an error")
 		}
 	}

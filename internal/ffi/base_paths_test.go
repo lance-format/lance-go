@@ -1,6 +1,7 @@
 package ffi
 
 import (
+	"errors"
 	"reflect"
 	"runtime"
 	"strings"
@@ -114,10 +115,10 @@ func TestAddBasesMarshalsBasePaths(t *testing.T) {
 
 func TestAddBasesAndBasePathsClosed(t *testing.T) {
 	dataset := &Dataset{b: &bindings{}}
-	if _, err := dataset.BasePaths(); err != ErrClosed {
+	if _, err := dataset.BasePaths(); !errors.Is(err, ErrClosed) {
 		t.Fatalf("BasePaths closed error = %v, want ErrClosed", err)
 	}
-	if err := dataset.AddBases(nil, nil); err != ErrClosed {
+	if err := dataset.AddBases(nil, nil); !errors.Is(err, ErrClosed) {
 		t.Fatalf("AddBases closed error = %v, want ErrClosed", err)
 	}
 }

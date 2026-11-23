@@ -52,7 +52,8 @@ func TestReaderDrainsBatchesAndClosesSource(t *testing.T) {
 	second := &countingBatch{}
 	source := &fakeSource{batches: []arrow.RecordBatch{first, second}}
 	schema := arrow.NewSchema(nil, nil)
-	reader := NewReader(nil, source, schema, nil)
+	// NewReader documents nil as context.Background; this test covers that path.
+	reader := NewReader(nil, source, schema, nil) //nolint:staticcheck // documented nil-context input
 
 	if !reader.Next() || reader.RecordBatch() != first {
 		t.Fatalf("first Next did not return the first batch")

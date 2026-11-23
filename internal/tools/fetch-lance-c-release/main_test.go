@@ -339,7 +339,7 @@ func TestDownloadOnce(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Write(content)
+		_, _ = w.Write(content)
 	}))
 	defer server.Close()
 

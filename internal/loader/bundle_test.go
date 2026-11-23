@@ -98,7 +98,11 @@ func TestBundleWarmCacheHitVerifiesUnderSharedLock(t *testing.T) {
 	if err := lockShared(holder); err != nil {
 		t.Fatalf("take shared lock: %v", err)
 	}
-	defer unlock(holder)
+	defer func() {
+		if err := unlock(holder); err != nil {
+			t.Errorf("unlock cache lock: %v", err)
+		}
+	}()
 
 	done := make(chan error, 1)
 	go func() {

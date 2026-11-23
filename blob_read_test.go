@@ -383,5 +383,5 @@ func TestReadBlobsReportsPayloadFailureAfterPlanning(t *testing.T) {
 	}
 	for reader.Next() {
 	}
-	requireClassifiedError(t, reader.Err(), lance.CodeIO, lance.ErrIO, "Arrow stream get_next")
+	_ = requireClassifiedError(t, reader.Err(), lance.CodeIO, lance.ErrIO, "Arrow stream get_next")
 }

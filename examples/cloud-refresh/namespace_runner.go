@@ -190,7 +190,6 @@ func executeNamespace(cfg config, prefix targetPrefix) *report {
 	)
 	reader.Release()
 	clearStorageOptions(fixtureOptions)
-	fixtureOptions = nil
 	if err != nil {
 		return fail("create", "create_fixture", err)
 	}
