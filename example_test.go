@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -21,123 +20,38 @@ import (
 	"github.com/lance-format/lance-go/namespace"
 )
 
-func exampleTempURI(prefix string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", "lance-go-example-"+prefix+"-")
-	if err != nil {
-		return "", nil, err
-	}
-	return filepath.Join(dir, "data.lance"), func() { _ = os.RemoveAll(dir) }, nil
-}
-
-func exampleReader(schema *arrow.Schema, fill func(*array.RecordBuilder)) (array.RecordReader, error) {
-	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
-	defer builder.Release()
-	fill(builder)
-	batch := builder.NewRecordBatch()
-	defer batch.Release()
-	return array.NewRecordReader(schema, []arrow.RecordBatch{batch})
-}
-
-func exampleColumn(batch arrow.RecordBatch, name string) (arrow.Array, bool) {
-	for i := 0; i < int(batch.NumCols()); i++ {
-		if batch.Schema().Field(i).Name == name {
-			return batch.Column(i), true
-		}
-	}
-	return nil, false
-}
-
-func exampleScanInt64(ctx context.Context, dataset *lance.Dataset, column string, opts ...lance.ScanOption) ([]int64, error) {
-	scanner, err := dataset.Scan(append([]lance.ScanOption{lance.WithColumns(column)}, opts...)...)
-	if err != nil {
-		return nil, err
-	}
-	defer scanner.Close()
-
-	var result []int64
-	for batch, err := range scanner.Records(ctx) {
-		if err != nil {
-			return nil, err
-		}
-		values, ok := exampleColumn(batch, column)
-		if !ok {
-			return nil, fmt.Errorf("batch has no column %q", column)
-		}
-		int64Values, ok := values.(*array.Int64)
-		if !ok {
-			return nil, fmt.Errorf("column %q has type %T", column, values)
-		}
-		for i := 0; i < int64Values.Len(); i++ {
-			result = append(result, int64Values.Value(i))
-		}
-	}
-	return result, nil
-}
-
-func exampleScanInt64String(ctx context.Context, dataset *lance.Dataset, idColumn, textColumn string, opts ...lance.ScanOption) ([]int64, []string, error) {
-	scanner, err := dataset.Scan(append([]lance.ScanOption{lance.WithColumns(idColumn, textColumn)}, opts...)...)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer scanner.Close()
-
-	var ids []int64
-	var texts []string
-	for batch, err := range scanner.Records(ctx) {
-		if err != nil {
-			return nil, nil, err
-		}
-		idValues, ok := exampleColumn(batch, idColumn)
-		if !ok {
-			return nil, nil, fmt.Errorf("batch has no column %q", idColumn)
-		}
-		idArray, ok := idValues.(*array.Int64)
-		if !ok {
-			return nil, nil, fmt.Errorf("column %q has type %T", idColumn, idValues)
-		}
-		textValues, ok := exampleColumn(batch, textColumn)
-		if !ok {
-			return nil, nil, fmt.Errorf("batch has no column %q", textColumn)
-		}
-		textArray, ok := textValues.(*array.String)
-		if !ok {
-			return nil, nil, fmt.Errorf("column %q has type %T", textColumn, textValues)
-		}
-		for i := 0; i < idArray.Len(); i++ {
-			ids = append(ids, idArray.Value(i))
-			texts = append(texts, strings.Clone(textArray.Value(i)))
-		}
-	}
-	return ids, texts, nil
-}
-
 // This example runs an exact nearest-neighbor search. The result contains
 // `_distance` in addition to the projected dataset columns.
 func ExampleDataset_Scan_vectorSearch() {
 	ctx := context.Background()
-	uri, cleanup, err := exampleTempURI("vector")
+	dir, err := os.MkdirTemp("", "lance-go-vector-")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
+	defer os.RemoveAll(dir)
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "embedding", Type: arrow.FixedSizeListOfNonNullable(2, arrow.PrimitiveTypes.Float32)},
 	}, nil)
-	reader, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
-		list := builder.Field(1).(*array.FixedSizeListBuilder)
-		values := list.ValueBuilder().(*array.Float32Builder)
-		for _, embedding := range [][]float32{{0, 0}, {1, 0}, {0, 2}} {
-			list.Append(true)
-			values.AppendValues(embedding, nil)
-		}
-	})
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
+	embeddings := builder.Field(1).(*array.FixedSizeListBuilder)
+	embeddingValues := embeddings.ValueBuilder().(*array.Float32Builder)
+	for _, embedding := range [][]float32{{0, 0}, {1, 0}, {0, 2}} {
+		embeddings.Append(true)
+		embeddingValues.AppendValues(embedding, nil)
+	}
+	batch := builder.NewRecordBatch()
+	builder.Release()
+
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataset, err := lance.Create(ctx, uri, reader)
+	batch.Release()
+
+	dataset, err := lance.Create(ctx, filepath.Join(dir, "data.lance"), reader)
 	reader.Release()
 	if err != nil {
 		log.Fatal(err)
@@ -158,18 +72,10 @@ func ExampleDataset_Scan_vectorSearch() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		ids, ok := exampleColumn(batch, "id")
-		if !ok {
-			log.Fatal("batch has no id column")
-		}
-		distances, ok := exampleColumn(batch, "_distance")
-		if !ok {
-			log.Fatal("batch has no _distance column")
-		}
-		idArray := ids.(*array.Int64)
-		distanceArray := distances.(*array.Float32)
-		for i := 0; i < idArray.Len(); i++ {
-			fmt.Printf("id=%d distance=%g\n", idArray.Value(i), distanceArray.Value(i))
+		ids := batch.Column(batch.Schema().FieldIndices("id")[0]).(*array.Int64)
+		distances := batch.Column(batch.Schema().FieldIndices("_distance")[0]).(*array.Float32)
+		for i := 0; i < ids.Len(); i++ {
+			fmt.Printf("id=%d distance=%g\n", ids.Value(i), distances.Value(i))
 		}
 	}
 	// Output:
@@ -180,29 +86,34 @@ func ExampleDataset_Scan_vectorSearch() {
 // This example creates an inverted index and runs a full-text match query.
 func ExampleNewFTSMatchQuery() {
 	ctx := context.Background()
-	uri, cleanup, err := exampleTempURI("fts")
+	dir, err := os.MkdirTemp("", "lance-go-fts-")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
+	defer os.RemoveAll(dir)
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "body", Type: arrow.BinaryTypes.String},
 	}, nil)
-	reader, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4}, nil)
-		builder.Field(1).(*array.StringBuilder).AppendValues([]string{
-			"lance vector search",
-			"vector database",
-			"full text search",
-			"search the vector index",
-		}, nil)
-	})
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4}, nil)
+	builder.Field(1).(*array.StringBuilder).AppendValues([]string{
+		"lance vector search",
+		"vector database",
+		"full text search",
+		"search the vector index",
+	}, nil)
+	batch := builder.NewRecordBatch()
+	builder.Release()
+
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataset, err := lance.Create(ctx, uri, reader)
+	batch.Release()
+
+	dataset, err := lance.Create(ctx, filepath.Join(dir, "data.lance"), reader)
 	reader.Release()
 	if err != nil {
 		log.Fatal(err)
@@ -230,9 +141,24 @@ func ExampleNewFTSMatchQuery() {
 	}
 	defer query.Close()
 
-	ids, err := exampleScanInt64(ctx, indexed, "id", lance.WithFTSQuery(query))
+	scan, err := indexed.Scan(
+		lance.WithColumns("id"),
+		lance.WithFTSQuery(query),
+	)
 	if err != nil {
 		log.Fatal(err)
+	}
+	defer scan.Close()
+
+	var ids []int64
+	for batch, err := range scan.Records(ctx) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		idColumn := batch.Column(batch.Schema().FieldIndices("id")[0]).(*array.Int64)
+		for i := 0; i < idColumn.Len(); i++ {
+			ids = append(ids, idColumn.Value(i))
+		}
 	}
 	slices.Sort(ids)
 	fmt.Println(ids)
@@ -240,28 +166,33 @@ func ExampleNewFTSMatchQuery() {
 	// [1 4]
 }
 
-// This example updates matching rows and shows that the receiver keeps its
-// original snapshot.
+// This example updates matching rows and scans the returned snapshot. The
+// receiver keeps its original version.
 func ExampleDataset_Update() {
 	ctx := context.Background()
-	uri, cleanup, err := exampleTempURI("update")
+	dir, err := os.MkdirTemp("", "lance-go-update-")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
+	defer os.RemoveAll(dir)
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "name", Type: arrow.BinaryTypes.String},
 	}, nil)
-	reader, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
-		builder.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b", "c"}, nil)
-	})
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
+	builder.Field(1).(*array.StringBuilder).AppendValues([]string{"a", "b", "c"}, nil)
+	batch := builder.NewRecordBatch()
+	builder.Release()
+
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
 	if err != nil {
 		log.Fatal(err)
 	}
-	dataset, err := lance.Create(ctx, uri, reader)
+	batch.Release()
+
+	dataset, err := lance.Create(ctx, filepath.Join(dir, "data.lance"), reader)
 	reader.Release()
 	if err != nil {
 		log.Fatal(err)
@@ -276,13 +207,24 @@ func ExampleDataset_Update() {
 	}
 	defer updated.Close()
 
-	ids, names, err := exampleScanInt64String(ctx, updated, "id", "name",
-		lance.WithOrderBy(lance.Ordering{Column: "id", Direction: lance.Ascending}))
+	scan, err := updated.Scan(
+		lance.WithColumns("id", "name"),
+		lance.WithOrderBy(lance.Ordering{Column: "id", Direction: lance.Ascending}),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	for i := range ids {
-		fmt.Printf("%d:%s\n", ids[i], names[i])
+	defer scan.Close()
+
+	for batch, err := range scan.Records(ctx) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		idColumn := batch.Column(batch.Schema().FieldIndices("id")[0]).(*array.Int64)
+		nameColumn := batch.Column(batch.Schema().FieldIndices("name")[0]).(*array.String)
+		for i := 0; i < idColumn.Len(); i++ {
+			fmt.Printf("%d:%s\n", idColumn.Value(i), nameColumn.Value(i))
+		}
 	}
 	fmt.Println("updated", updatedRows)
 	// Output:
@@ -295,23 +237,49 @@ func ExampleDataset_Update() {
 // This example reads dataset history and checks out an older version.
 func ExampleDataset_Versions() {
 	ctx := context.Background()
-	uri, cleanup, err := exampleTempURI("versions")
+	dir, err := os.MkdirTemp("", "lance-go-versions-")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cleanup()
+	defer os.RemoveAll(dir)
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
-	first, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2}, nil)
-	})
-	if err != nil {
-		log.Fatal(err)
+	newReader := func(ids []int64) array.RecordReader {
+		builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+		defer builder.Release()
+		builder.Field(0).(*array.Int64Builder).AppendValues(ids, nil)
+		batch := builder.NewRecordBatch()
+		defer batch.Release()
+		reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
+		if err != nil {
+			log.Fatal(err)
+		}
+		return reader
 	}
-	created, err := lance.Create(ctx, uri, first)
-	first.Release()
+	scanIDs := func(dataset *lance.Dataset) []int64 {
+		scan, err := dataset.Scan(lance.WithColumns("id"))
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer scan.Close()
+
+		var ids []int64
+		for batch, err := range scan.Records(ctx) {
+			if err != nil {
+				log.Fatal(err)
+			}
+			idColumn := batch.Column(batch.Schema().FieldIndices("id")[0]).(*array.Int64)
+			for i := 0; i < idColumn.Len(); i++ {
+				ids = append(ids, idColumn.Value(i))
+			}
+		}
+		return ids
+	}
+
+	uri := filepath.Join(dir, "data.lance")
+	created, err := lance.Create(ctx, uri, newReader([]int64{1, 2}))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -319,14 +287,7 @@ func ExampleDataset_Versions() {
 		log.Fatal(err)
 	}
 
-	second, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{3, 4}, nil)
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	dataset, err := lance.Append(ctx, uri, second)
-	second.Release()
+	dataset, err := lance.Append(ctx, uri, newReader([]int64{3, 4}))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -345,14 +306,9 @@ func ExampleDataset_Versions() {
 		log.Fatal(err)
 	}
 	defer old.Close()
-	oldIDs, err := exampleScanInt64(ctx, old, "id")
-	if err != nil {
-		log.Fatal(err)
-	}
-	latestIDs, err := exampleScanInt64(ctx, dataset, "id")
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	oldIDs := scanIDs(old)
+	latestIDs := scanIDs(dataset)
 	slices.Sort(oldIDs)
 	slices.Sort(latestIDs)
 	fmt.Println("versions", versionIDs)
@@ -367,7 +323,7 @@ func ExampleDataset_Versions() {
 // This example writes and reopens a table through a local directory namespace.
 func ExampleWriteToNamespace() {
 	ctx := context.Background()
-	root, err := os.MkdirTemp("", "lance-go-example-namespace-")
+	root, err := os.MkdirTemp("", "lance-go-namespace-")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -382,12 +338,17 @@ func ExampleWriteToNamespace() {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
-	reader, err := exampleReader(schema, func(builder *array.RecordBuilder) {
-		builder.Field(0).(*array.Int64Builder).AppendValues([]int64{10, 20, 30}, nil)
-	})
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{10, 20, 30}, nil)
+	batch := builder.NewRecordBatch()
+	builder.Release()
+
+	reader, err := array.NewRecordReader(schema, []arrow.RecordBatch{batch})
 	if err != nil {
 		log.Fatal(err)
 	}
+	batch.Release()
+
 	tableID := []string{"events"}
 	created, err := lance.WriteToNamespace(ctx, ns, tableID, reader)
 	reader.Release()
@@ -403,9 +364,22 @@ func ExampleWriteToNamespace() {
 		log.Fatal(err)
 	}
 	defer dataset.Close()
-	ids, err := exampleScanInt64(ctx, dataset, "id")
+
+	scan, err := dataset.Scan(lance.WithColumns("id"))
 	if err != nil {
 		log.Fatal(err)
+	}
+	defer scan.Close()
+
+	var ids []int64
+	for batch, err := range scan.Records(ctx) {
+		if err != nil {
+			log.Fatal(err)
+		}
+		idColumn := batch.Column(batch.Schema().FieldIndices("id")[0]).(*array.Int64)
+		for i := 0; i < idColumn.Len(); i++ {
+			ids = append(ids, idColumn.Value(i))
+		}
 	}
 	slices.Sort(ids)
 	fmt.Println(ids)
@@ -422,10 +396,11 @@ func ExampleWithStorageOptions() {
 		"aws_secret_access_key": os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		"aws_region":            os.Getenv("AWS_REGION"),
 	}
-	_, err := lance.Open(context.Background(),
+	dataset, err := lance.Open(context.Background(),
 		"s3://bucket/prefix/data.lance",
 		lance.WithStorageOptions(storageOptions))
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer dataset.Close()
 }
