@@ -1,0 +1,46 @@
+{
+  "version": "v0.2.0-preview.1",
+  "time": "2026-11-23T06:10:00Z",
+  "source_commit": "f0f1e987f298e4b41c4cf60e6a455c2249e0a5eb",
+  "source_release": "v0.2.1-beta.3",
+  "manifest_sha256": "189ba7f27d482d4e1c8c6205dadabb03d434a2684caf3e441aa8ee9295803953",
+  "unix_run_id": 45123576018,
+  "windows_run_id": 45123578876,
+  "targets": {
+    "linux-amd64": {
+      "candidate_artifact_go_sha256": "0ccbbfdc307d564f14b4d2b13a8fe5999115f88ee015dc359aa554cbbf2b7766",
+      "candidate_go_mod_sha256": "2dfb1b925cc53941aef65418a9cf8046832647c662f915fe1e9788d95906a9f0",
+      "candidate_payload_sha256": "48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231",
+      "module_zip_h1": "h1:sgIOynaAxkn3GW2PTJyXY67hwt7OzJDowK4vg5LLapI=",
+      "module_gomod_h1": "h1:jtNj1ZEPfQKDoKkoCeHpOxDRE0LBFqS0pT9hGf5YSRs="
+    },
+    "linux-arm64": {
+      "candidate_artifact_go_sha256": "729320b1e87daf118b9aad4079d2ff54c879b6c3c7108b235dca22d67e15859e",
+      "candidate_go_mod_sha256": "709f5829875841a6f539850cd9605608e0efdbf248827d2544c10af46d886860",
+      "candidate_payload_sha256": "5315893c2987c2998ddd87e84999e0770fc079b844d484613c05f4c5e1e7b3d8",
+      "module_zip_h1": "h1:pZngAjf+Le1hK2LPW2DssLPSkERU8FlSD/KkwcldG6w=",
+      "module_gomod_h1": "h1:p3jrCFr9wTRuv/5RqB7n1ygyJbztANVi/NdXNQgvO/s="
+    },
+    "darwin-arm64": {
+      "candidate_artifact_go_sha256": "2c7a95be5a36f3d6c3f9763a76cb36480594b8b44a713be86b189b5a48720dec",
+      "candidate_go_mod_sha256": "f29f8ee02157530ab7f821a13cd622af86f4f6f165aa4f6c07538a010e09d4ea",
+      "candidate_payload_sha256": "6e4971c0f150a5db0e2fd6f0b7f4c432ecf663f73e3cb87135516fd08c2ee0a8",
+      "module_zip_h1": "h1:7eMLJHDQR3EAUUNMAQBdZNs/9mUXzKLZcKViE6m7LTE=",
+      "module_gomod_h1": "h1:7sxG1blaRANrh6ZchGTc+2NFksIhYCfpqYBdqUnX8Gw="
+    },
+    "windows-amd64": {
+      "candidate_artifact_go_sha256": "c7be6fa73e9cc2ae487dfe7538ae73d4c2805c5f0458c7bbb8855fdd982c051d",
+      "candidate_go_mod_sha256": "85709300c30853edddafe57a15b31d7455c470309a9c49b29bd18aa49746bb6d",
+      "candidate_payload_sha256": "d4c51d7f6bd7fba506b64d7569bcd99dd7a30351c9320b59b771ccba450c75cd",
+      "module_zip_h1": "h1:F3+h/gwYMKa5hM26VgbNCskh485vtfuQ/s5EvQwFyPk=",
+      "module_gomod_h1": "h1:ctRY0srfTo07C2wtJayfNGNOKB1Dy02zVaO5v3APpgY="
+    },
+    "windows-arm64": {
+      "candidate_artifact_go_sha256": "2c75ca4474d533561cd276d14a6f44b81d69e42a6d17c6700b30b44ecd40f3ac",
+      "candidate_go_mod_sha256": "2c4bd49d402f52f910182e7cd54228a00507f4b3d068b6c67f7113ee4a8ff8d5",
+      "candidate_payload_sha256": "4b3f3e87f02c90bfdb47d89536416d8ed9c3ecbded8243d2f35e359ce16c62b1",
+      "module_zip_h1": "h1:PSEHJU471gSZh92dkH83WrOmU+34vQb2xinIJIrDPFM=",
+      "module_gomod_h1": "h1:FGCx1NdjDHOxzHUGVKhlPMTKOa8ZT83bbfmi8kQGmSQ="
+    }
+  }
+}

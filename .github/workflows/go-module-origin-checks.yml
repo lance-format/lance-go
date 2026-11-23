@@ -1,0 +1,53 @@
+name: Go module origin checks
+
+on:
+  pull_request:
+    paths:
+      - "scripts/go-module-origin/**"
+      - "scripts/build-go-module-origin.sh"
+      - "scripts/publish-go-module-origin.sh"
+      - "scripts/test-go-module-origin.sh"
+      - "scripts/test-publish-go-module-origin.sh"
+      - ".github/workflows/publish-go-module-origin.yml"
+      - ".github/workflows/go-module-origin-checks.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Generator and publisher checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.23.x"
+          cache: false
+
+      - name: Test generator
+        run: |
+          set -euo pipefail
+          cd scripts/go-module-origin/generator
+          go test ./...
+          go vet ./...
+
+      - name: Check scripts and fixtures
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/go-module-origin/mock-s3.py \
+            scripts/go-module-origin/test-server.py
+          bash -n scripts/build-go-module-origin.sh
+          bash -n scripts/publish-go-module-origin.sh
+          bash -n scripts/test-go-module-origin.sh
+          bash -n scripts/test-publish-go-module-origin.sh
+          bash -n scripts/go-module-origin/publisher-fixture-test.sh
+          scripts/go-module-origin/publisher-fixture-test.sh
+          scripts/go-module-origin/fixture-protocol-test.sh

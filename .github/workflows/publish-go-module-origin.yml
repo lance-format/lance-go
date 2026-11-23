@@ -1,0 +1,264 @@
+name: Publish Go module origin
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the validated immutable candidate"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-go-module-origin
+  cancel-in-progress: false
+
+env:
+  ORIGIN_VERSION: v0.2.0-preview.1
+  ORIGIN_TIME: 2026-11-23T06:10:00Z
+  ORIGIN_SOURCE_COMMIT: f0f1e987f298e4b41c4cf60e6a455c2249e0a5eb
+  ORIGIN_SOURCE_RELEASE: v0.2.1-beta.3
+  ORIGIN_MANIFEST_SHA256: 189ba7f27d482d4e1c8c6205dadabb03d434a2684caf3e441aa8ee9295803953
+  UNIX_RUN_ID: "45123576018"
+  WINDOWS_RUN_ID: "45123578876"
+  GOTOOLCHAIN: local
+  GOWORK: "off"
+
+jobs:
+  stage:
+    name: Stage and verify origin
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go 1.23
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.23.x"
+          cache: false
+
+      - name: Verify candidate runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for run in "$UNIX_RUN_ID" "$WINDOWS_RUN_ID"; do
+            gh api "repos/${{ github.repository }}/actions/runs/$run" > "$RUNNER_TEMP/run-$run.json"
+            jq -e --arg sha "$ORIGIN_SOURCE_COMMIT" \
+              '.head_sha == $sha and .status == "completed" and .conclusion == "success"' \
+              "$RUNNER_TEMP/run-$run.json" >/dev/null || {
+                echo "candidate run $run is not a successful run of $ORIGIN_SOURCE_COMMIT" >&2
+                exit 1
+              }
+          done
+
+      - name: Download Unix candidate artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unix-native-candidate-linux-amd64
+          path: ${{ runner.temp }}/downloads/unix-linux-amd64
+          run-id: ${{ env.UNIX_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Download Unix arm64 candidate artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unix-native-candidate-linux-arm64
+          path: ${{ runner.temp }}/downloads/unix-linux-arm64
+          run-id: ${{ env.UNIX_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Download Unix darwin candidate artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unix-native-candidate-darwin-arm64
+          path: ${{ runner.temp }}/downloads/unix-darwin-arm64
+          run-id: ${{ env.UNIX_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Download Windows amd64 candidate artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-native-candidate-amd64-45123578876-1
+          path: ${{ runner.temp }}/downloads/windows-amd64
+          run-id: ${{ env.WINDOWS_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Download Windows arm64 candidate artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-native-candidate-arm64-45123578876-1
+          path: ${{ runner.temp }}/downloads/windows-arm64
+          run-id: ${{ env.WINDOWS_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Normalize candidate directory
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/candidates"
+          for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
+            mkdir -p "$RUNNER_TEMP/candidates/$target"
+          done
+          cp -a "$RUNNER_TEMP/downloads/unix-linux-amd64/module" "$RUNNER_TEMP/candidates/linux-amd64/module"
+          cp -a "$RUNNER_TEMP/downloads/unix-linux-arm64/module" "$RUNNER_TEMP/candidates/linux-arm64/module"
+          cp -a "$RUNNER_TEMP/downloads/unix-darwin-arm64/module" "$RUNNER_TEMP/candidates/darwin-arm64/module"
+          cp -a "$RUNNER_TEMP/downloads/windows-amd64/windows-amd64/module" "$RUNNER_TEMP/candidates/windows-amd64/module"
+          cp -a "$RUNNER_TEMP/downloads/windows-arm64/windows-arm64/module" "$RUNNER_TEMP/candidates/windows-arm64/module"
+          for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
+            test -f "$RUNNER_TEMP/candidates/$target/artifact.go"
+            test -f "$RUNNER_TEMP/candidates/$target/go.mod"
+            test "$(find "$RUNNER_TEMP/candidates/$target" -maxdepth 1 -name '*.zst' | wc -l)" -eq 1
+          done
+
+      - name: Verify candidate identity
+        env:
+          IDENTITY: scripts/go-module-origin/v0.2.0-preview.1.identity.json
+          CANDIDATES: ${{ runner.temp }}/candidates
+        run: |
+          set -euo pipefail
+          python3 - "$IDENTITY" "$CANDIDATES" <<'PY'
+          import hashlib, json, pathlib, sys
+          identity = json.load(open(sys.argv[1], encoding="utf-8"))
+          root = pathlib.Path(sys.argv[2])
+          assert identity["version"] == "v0.2.0-preview.1"
+          assert identity["time"] == "2026-11-23T06:10:00Z"
+          assert identity["source_commit"] == "f0f1e987f298e4b41c4cf60e6a455c2249e0a5eb"
+          for target, expected in identity["targets"].items():
+              module = root / target
+              payload = next(module.glob("*.zst"))
+              for name, key in [
+                  ("artifact.go", "candidate_artifact_go_sha256"),
+                  ("go.mod", "candidate_go_mod_sha256"),
+              ]:
+                  got = hashlib.sha256((module / name).read_bytes()).hexdigest()
+                  assert got == expected[key], (target, name, got, expected[key])
+              got = hashlib.sha256(payload.read_bytes()).hexdigest()
+              assert got == expected["candidate_payload_sha256"], (target, "payload", got)
+          print("candidate identity: ok")
+          PY
+
+      - name: Generate origin
+        env:
+          CANDIDATES_DIR: ${{ runner.temp }}/candidates
+          OUT_DIR: ${{ runner.temp }}/origin
+        run: |
+          set -euo pipefail
+          VERSION="$ORIGIN_VERSION" RELEASE_TIME="$ORIGIN_TIME" \
+          SOURCE_COMMIT="$ORIGIN_SOURCE_COMMIT" SOURCE_RELEASE="$ORIGIN_SOURCE_RELEASE" \
+          CANDIDATES_DIR="$CANDIDATES_DIR" OUT_DIR="$OUT_DIR" \
+          scripts/build-go-module-origin.sh
+
+      - name: Verify exact manifest and identity
+        env:
+          IDENTITY: scripts/go-module-origin/v0.2.0-preview.1.identity.json
+          ORIGIN: ${{ runner.temp }}/origin
+        run: |
+          set -euo pipefail
+          echo "$ORIGIN_MANIFEST_SHA256  $ORIGIN/manifest.json" | sha256sum -c -
+          python3 - "$IDENTITY" "$ORIGIN/manifest.json" <<'PY'
+          import json, pathlib, sys
+          identity = json.load(open(sys.argv[1], encoding="utf-8"))
+          manifest = json.load(open(sys.argv[2], encoding="utf-8"))
+          assert manifest["version"] == identity["version"]
+          assert manifest["time"] == identity["time"]
+          assert manifest["source_commit"] == identity["source_commit"]
+          assert len(manifest["objects"]) == 25
+          zips = {o["target"]: o for o in manifest["objects"] if o["key"].endswith(".zip")}
+          mods = {o["module"]: o for o in manifest["objects"] if o["key"].endswith(".mod")}
+          for target, expected in identity["targets"].items():
+              zip_obj = zips[target]
+              assert zip_obj["zip_h1"] == expected["module_zip_h1"], target
+              assert mods[zip_obj["module"]]["gomod_h1"] == expected["module_gomod_h1"], target
+          print("manifest identity: ok")
+          PY
+
+      - name: Preflight publisher without credentials
+        env:
+          ORIGIN: ${{ runner.temp }}/origin
+        run: |
+          set -euo pipefail
+          scripts/publish-go-module-origin.sh \
+            --manifest "$ORIGIN/manifest.json" \
+            --bucket dry-run \
+            --endpoint https://example.invalid \
+            --dry-run
+
+      - name: Upload staging tree
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-module-origin-staging
+          path: ${{ runner.temp }}/origin
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish immutable origin
+    needs: stage
+    if: github.ref == 'refs/heads/main' && inputs.publish == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: go-module-origin
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download staging tree
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: go-module-origin-staging
+          path: ${{ runner.temp }}/origin
+          run-id: ${{ github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify staged manifest before credentials
+        env:
+          ORIGIN: ${{ runner.temp }}/origin
+        run: |
+          set -euo pipefail
+          echo "$ORIGIN_MANIFEST_SHA256  $ORIGIN/manifest.json" | sha256sum -c -
+          scripts/publish-go-module-origin.sh \
+            --manifest "$ORIGIN/manifest.json" \
+            --bucket dry-run \
+            --endpoint https://example.invalid \
+            --dry-run
+
+      - name: Publish to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_PAGER: ""
+          AWS_EC2_METADATA_DISABLED: "true"
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_S3_ENDPOINT: ${{ vars.R2_S3_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          scripts/publish-go-module-origin.sh \
+            --manifest "${{ runner.temp }}/origin/manifest.json" \
+            --bucket "$R2_BUCKET" \
+            --endpoint "$R2_S3_ENDPOINT" | tee "$RUNNER_TEMP/publication.log"
+
+      - name: Upload publication log
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: go-module-origin-publication
+          path: ${{ runner.temp }}/publication.log
+          retention-days: 7
+          if-no-files-found: ignore
