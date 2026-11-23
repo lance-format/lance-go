@@ -219,18 +219,20 @@ evidence.
 
 ### Microbenchmarks
 
-Standard Go benchmarks cover the Arrow C Data import and export paths, handle
-registration, the warm in-process loader fast path and `Scanner.Records`
-streaming. They use the Go 1.26 minimum and normal public inputs:
+Standard Go benchmarks cover the Arrow C Data export, import and borrowed-batch
+copy paths, handle registration, `Scanner.Records` streaming and both loader
+phases. They use the Go 1.26 minimum with `b.Loop()` and normal public inputs:
 
 ```console
 CGO_ENABLED=0 go test -run '^$' -bench . -benchmem ./...
 ```
 
 Benchmarks that need the native library skip unless it is available through the
-bundled library or `LANCE_LIB_PATH`. The loader benchmark measures repeated
-in-process `Load` calls after the first open; cache extraction and digest
-verification are a separate phase and are not included.
+bundled library or `LANCE_LIB_PATH`. The root `BenchmarkLoaderWarmLoad` measures
+repeated in-process `Load` calls after the first open, while
+`BenchmarkBundleWarmCacheVerify` in `internal/loader` measures a warm cache hit:
+the shared lock plus size and SHA-256 verification. The cache benchmark uses a
+temporary cache root, so it does not read or write the user's cache.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows

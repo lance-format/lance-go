@@ -650,7 +650,7 @@ func failCacheHelper(format string, args ...any) {
 	os.Exit(1)
 }
 
-func testBundle(t *testing.T, raw []byte) Bundle {
+func testBundle(t testing.TB, raw []byte) Bundle {
 	t.Helper()
 
 	var compressed bytes.Buffer
@@ -680,7 +680,7 @@ func testBundle(t *testing.T, raw []byte) Bundle {
 	}
 }
 
-func testCacheBase(t *testing.T) string {
+func testCacheBase(t testing.TB) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)

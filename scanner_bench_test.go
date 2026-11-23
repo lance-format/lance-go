@@ -21,7 +21,7 @@ const (
 
 // BenchmarkScannerRecords measures the Go streaming path over a warm local
 // dataset at fixed target batch sizes. The dataset is written once before the
-// timer starts; each iteration scans every row and closes the scanner.
+// first iteration; each iteration scans every row and closes the scanner.
 func BenchmarkScannerRecords(b *testing.B) {
 	dataset := newBenchmarkDataset(b)
 	ctx := context.Background()
@@ -31,8 +31,7 @@ func BenchmarkScannerRecords(b *testing.B) {
 			b.ReportAllocs()
 
 			var rows int64
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				rows = scanBenchmarkDataset(b, ctx, dataset, targetBatchSize)
 			}
 			b.ReportMetric(float64(rows), "rows/op")
