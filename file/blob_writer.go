@@ -2,18 +2,17 @@ package file
 
 import (
 	"context"
-	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 )
 
 // PackedBlobWriter writes one packed blob sidecar. It is safe for concurrent
 // use. Close waits for in-flight calls and is idempotent.
 type PackedBlobWriter struct {
-	mu     sync.Mutex
-	closed bool
+	res    *lifetime.Resource
 	native *ffi.PackedBlobWriter
 	path   string
 }
@@ -36,35 +35,40 @@ func (s *Session) OpenPackedBlobWriter(ctx context.Context, dataFilePath string,
 	if err != nil {
 		return nil, wrapError("session open packed blob writer", dataFilePath, err)
 	}
-	return &PackedBlobWriter{native: writer, path: dataFilePath}, nil
+	packed := newPackedBlobWriter(writer, dataFilePath)
+	return packed, nil
 }
 
-func (w *PackedBlobWriter) lock(op string) (*ffi.PackedBlobWriter, error) {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil, closedError(op, w.path)
+func newPackedBlobWriter(native *ffi.PackedBlobWriter, path string) *PackedBlobWriter {
+	packed := &PackedBlobWriter{native: native, path: path}
+	packed.res = lifetime.New(native.Close)
+	return packed
+}
+
+func (w *PackedBlobWriter) acquire(op string) (*ffi.PackedBlobWriter, func(), error) {
+	if w.res == nil || !w.res.Acquire() {
+		return nil, nil, closedError(op, w.path)
 	}
-	return w.native, nil
+	return w.native, w.res.Release, nil
 }
 
 // BlobID returns the native blob id.
 func (w *PackedBlobWriter) BlobID() uint32 {
-	native, err := w.lock("packed blob writer blob id")
+	native, unlock, err := w.acquire("packed blob writer blob id")
 	if err != nil {
 		return 0
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	return native.BlobID()
 }
 
 // Path returns the native sidecar path.
 func (w *PackedBlobWriter) Path() (string, error) {
-	native, err := w.lock("packed blob writer path")
+	native, unlock, err := w.acquire("packed blob writer path")
 	if err != nil {
 		return "", err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 
 	path, err := native.Path()
 	if err != nil {
@@ -78,11 +82,11 @@ func (w *PackedBlobWriter) Write(ctx context.Context, data []byte) error {
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("packed blob writer write")
+	native, unlock, err := w.acquire("packed blob writer write")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -101,11 +105,11 @@ func (w *PackedBlobWriter) WriteBlobs(ctx context.Context, payloads arrow.Array)
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("packed blob writer write blobs")
+	native, unlock, err := w.acquire("packed blob writer write blobs")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -122,11 +126,11 @@ func (w *PackedBlobWriter) FinishArray(ctx context.Context, fieldName string) (a
 	if err := checkContext(ctx); err != nil {
 		return arrow.Field{}, nil, err
 	}
-	native, err := w.lock("packed blob writer finish")
+	native, unlock, err := w.acquire("packed blob writer finish")
 	if err != nil {
 		return arrow.Field{}, nil, err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return arrow.Field{}, nil, err
 	}
@@ -140,27 +144,17 @@ func (w *PackedBlobWriter) FinishArray(ctx context.Context, fieldName string) (a
 
 // Close frees the native allocation and waits for in-flight calls.
 func (w *PackedBlobWriter) Close() error {
-	if w == nil {
+	if w == nil || w.res == nil {
 		return nil
 	}
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil
-	}
-	w.closed = true
-	native := w.native
-	w.native = nil
-	w.mu.Unlock()
-	native.Close()
+	w.res.Close()
 	return nil
 }
 
 // DedicatedBlobWriter writes one dedicated blob sidecar. It is safe for
 // concurrent use. Close waits for in-flight calls and is idempotent.
 type DedicatedBlobWriter struct {
-	mu     sync.Mutex
-	closed bool
+	res    *lifetime.Resource
 	native *ffi.DedicatedBlobWriter
 	path   string
 }
@@ -184,35 +178,40 @@ func (s *Session) OpenDedicatedBlobWriter(ctx context.Context, dataFilePath stri
 	if err != nil {
 		return nil, wrapError("session open dedicated blob writer", dataFilePath, err)
 	}
-	return &DedicatedBlobWriter{native: writer, path: dataFilePath}, nil
+	dedicated := newDedicatedBlobWriter(writer, dataFilePath)
+	return dedicated, nil
 }
 
-func (w *DedicatedBlobWriter) lock(op string) (*ffi.DedicatedBlobWriter, error) {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil, closedError(op, w.path)
+func newDedicatedBlobWriter(native *ffi.DedicatedBlobWriter, path string) *DedicatedBlobWriter {
+	dedicated := &DedicatedBlobWriter{native: native, path: path}
+	dedicated.res = lifetime.New(native.Close)
+	return dedicated
+}
+
+func (w *DedicatedBlobWriter) acquire(op string) (*ffi.DedicatedBlobWriter, func(), error) {
+	if w.res == nil || !w.res.Acquire() {
+		return nil, nil, closedError(op, w.path)
 	}
-	return w.native, nil
+	return w.native, w.res.Release, nil
 }
 
 // BlobID returns the native blob id.
 func (w *DedicatedBlobWriter) BlobID() uint32 {
-	native, err := w.lock("dedicated blob writer blob id")
+	native, unlock, err := w.acquire("dedicated blob writer blob id")
 	if err != nil {
 		return 0
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	return native.BlobID()
 }
 
 // Path returns the native sidecar path.
 func (w *DedicatedBlobWriter) Path() (string, error) {
-	native, err := w.lock("dedicated blob writer path")
+	native, unlock, err := w.acquire("dedicated blob writer path")
 	if err != nil {
 		return "", err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 
 	path, err := native.Path()
 	if err != nil {
@@ -226,11 +225,11 @@ func (w *DedicatedBlobWriter) Write(ctx context.Context, data []byte) error {
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("dedicated blob writer write")
+	native, unlock, err := w.acquire("dedicated blob writer write")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -247,11 +246,11 @@ func (w *DedicatedBlobWriter) FinishArray(ctx context.Context, fieldName string)
 	if err := checkContext(ctx); err != nil {
 		return arrow.Field{}, nil, err
 	}
-	native, err := w.lock("dedicated blob writer finish")
+	native, unlock, err := w.acquire("dedicated blob writer finish")
 	if err != nil {
 		return arrow.Field{}, nil, err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return arrow.Field{}, nil, err
 	}
@@ -265,18 +264,9 @@ func (w *DedicatedBlobWriter) FinishArray(ctx context.Context, fieldName string)
 
 // Close frees the native allocation and waits for in-flight calls.
 func (w *DedicatedBlobWriter) Close() error {
-	if w == nil {
+	if w == nil || w.res == nil {
 		return nil
 	}
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil
-	}
-	w.closed = true
-	native := w.native
-	w.native = nil
-	w.mu.Unlock()
-	native.Close()
+	w.res.Close()
 	return nil
 }

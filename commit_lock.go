@@ -2,7 +2,6 @@ package lance
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/lance-format/lance-go/internal/ffi"
 )
@@ -39,8 +38,7 @@ type CommitLockCallbacks struct {
 // CommitLock owns an external commit lock. Close only drops this handle's
 // owner; datasets that already retained the lock remain usable.
 type CommitLock struct {
-	mu     sync.RWMutex
-	closed bool
+	res    *resource
 	native *ffi.CommitLock
 }
 
@@ -70,7 +68,9 @@ func NewCommitLock(callbacks CommitLockCallbacks) (*CommitLock, error) {
 	if err != nil {
 		return nil, wrapError("commit lock", "", err)
 	}
-	return &CommitLock{native: native}, nil
+	lock := &CommitLock{native: native}
+	lock.res = newResource(native.Close)
+	return lock, nil
 }
 
 // Close releases the caller's native commit-lock owner. It is idempotent and
@@ -78,20 +78,10 @@ func NewCommitLock(callbacks CommitLockCallbacks) (*CommitLock, error) {
 // outlive native datasets that retain the lock. Close returns an error only for
 // API symmetry; native close has no failure status.
 func (l *CommitLock) Close() error {
-	if l == nil {
+	if l == nil || l.res == nil {
 		return nil
 	}
-	l.mu.Lock()
-	if l.closed {
-		l.mu.Unlock()
-		return nil
-	}
-	l.closed = true
-	native := l.native
-	l.mu.Unlock()
-	if native != nil {
-		native.Close()
-	}
+	l.res.close()
 	return nil
 }
 
@@ -99,12 +89,10 @@ func (l *CommitLock) pin(op, uri string) (func(), error) {
 	if l == nil {
 		return func() {}, nil
 	}
-	l.mu.RLock()
-	if l.closed || l.native == nil || l.native.Handle() == 0 {
-		l.mu.RUnlock()
+	if l.res == nil || !l.res.acquire() {
 		return nil, closedError(op, uri)
 	}
-	return l.mu.RUnlock, nil
+	return l.res.release, nil
 }
 
 // WithOpenCommitLock routes Open through an external commit lock.

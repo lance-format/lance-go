@@ -2,12 +2,12 @@ package file
 
 import (
 	"context"
-	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 )
 
 // WriterOptions configures a raw file writer. Pointer fields distinguish an
@@ -63,8 +63,7 @@ type WriteSummary struct {
 // for in-flight calls and is idempotent. Close does not imply a successful
 // Finish.
 type Writer struct {
-	mu     sync.Mutex
-	closed bool
+	res    *lifetime.Resource
 	native *ffi.FileWriter
 	uri    string
 }
@@ -101,16 +100,20 @@ func Create(ctx context.Context, uri string, schema *arrow.Schema, opts *WriterO
 	if err != nil {
 		return nil, wrapError("create file", uri, err)
 	}
-	return &Writer{native: native, uri: uri}, nil
+	return newWriter(native, uri), nil
 }
 
-func (w *Writer) lock(op string) (*ffi.FileWriter, error) {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil, closedError(op, w.uri)
+func newWriter(native *ffi.FileWriter, uri string) *Writer {
+	writer := &Writer{native: native, uri: uri}
+	writer.res = lifetime.New(native.Close)
+	return writer
+}
+
+func (w *Writer) acquire(op string) (*ffi.FileWriter, func(), error) {
+	if w.res == nil || !w.res.Acquire() {
+		return nil, nil, closedError(op, w.uri)
 	}
-	return w.native, nil
+	return w.native, w.res.Release, nil
 }
 
 // Write writes one borrowed batch. The writer does not retain the batch after
@@ -119,11 +122,11 @@ func (w *Writer) Write(ctx context.Context, batch arrow.RecordBatch) error {
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("writer write")
+	native, unlock, err := w.acquire("writer write")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -139,11 +142,11 @@ func (w *Writer) AddSchemaMetadata(ctx context.Context, key, value string) error
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("writer schema metadata")
+	native, unlock, err := w.acquire("writer schema metadata")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -159,11 +162,11 @@ func (w *Writer) AddGlobalBuffer(ctx context.Context, data []byte) (uint32, erro
 	if err := checkContext(ctx); err != nil {
 		return 0, err
 	}
-	native, err := w.lock("writer global buffer")
+	native, unlock, err := w.acquire("writer global buffer")
 	if err != nil {
 		return 0, err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return 0, err
 	}
@@ -180,11 +183,11 @@ func (w *Writer) Finish(ctx context.Context) (WriteSummary, error) {
 	if err := checkContext(ctx); err != nil {
 		return WriteSummary{}, err
 	}
-	native, err := w.lock("writer finish")
+	native, unlock, err := w.acquire("writer finish")
 	if err != nil {
 		return WriteSummary{}, err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return WriteSummary{}, err
 	}
@@ -202,11 +205,11 @@ func (w *Writer) Abort(ctx context.Context) error {
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
-	native, err := w.lock("writer abort")
+	native, unlock, err := w.acquire("writer abort")
 	if err != nil {
 		return err
 	}
-	defer w.mu.Unlock()
+	defer unlock()
 	if err := checkContext(ctx); err != nil {
 		return err
 	}
@@ -220,18 +223,9 @@ func (w *Writer) Abort(ctx context.Context) error {
 // Close drops the writer allocation and waits for in-flight calls. It does not
 // imply a successful finish.
 func (w *Writer) Close() error {
-	if w == nil {
+	if w == nil || w.res == nil {
 		return nil
 	}
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
-		return nil
-	}
-	w.closed = true
-	native := w.native
-	w.native = nil
-	w.mu.Unlock()
-	native.Close()
+	w.res.Close()
 	return nil
 }
