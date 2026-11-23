@@ -90,11 +90,11 @@ func (b *SegmentBuilder) Execute(ctx context.Context) ([]byte, error) {
 }
 
 // Close releases the builder. It waits for an in-flight Execute or SetProgress
-// to finish and is safe to call more than once.
+// to finish, is idempotent, and is a no-op for a nil or zero-value builder. It
+// returns nil when there is nothing to release.
 func (b *SegmentBuilder) Close() error {
-	const op = "SegmentBuilder.Close"
 	if b == nil || b.res == nil {
-		return invalidError(op, "", "segment builder is nil")
+		return nil
 	}
 	b.res.close()
 	return nil

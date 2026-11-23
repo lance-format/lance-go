@@ -26,9 +26,10 @@ func newNativeSchema(native *ffi.Schema) *NativeSchema {
 	return schema
 }
 
-// Close releases the schema. It is idempotent.
+// Close releases the schema. It is idempotent, waits for in-flight operations,
+// and is a no-op for a nil or zero-value schema.
 func (s *NativeSchema) Close() error {
-	if s == nil {
+	if s == nil || s.res == nil {
 		return nil
 	}
 	s.res.close()
@@ -104,9 +105,10 @@ func newFragment(native *ffi.Fragment, uri string) *Fragment {
 	return fragment
 }
 
-// Close releases the fragment. It is idempotent.
+// Close releases the fragment. It is idempotent, waits for in-flight
+// operations, and is a no-op for a nil or zero-value fragment.
 func (f *Fragment) Close() error {
-	if f == nil {
+	if f == nil || f.res == nil {
 		return nil
 	}
 	f.res.close()
@@ -389,9 +391,10 @@ func newDataFile(native *ffi.DataFile) *DataFile {
 	return file
 }
 
-// Close releases the data file. It is idempotent.
+// Close releases the data file. It is idempotent, waits for in-flight
+// operations, and is a no-op for a nil or zero-value data file.
 func (f *DataFile) Close() error {
-	if f == nil {
+	if f == nil || f.res == nil {
 		return nil
 	}
 	f.res.close()

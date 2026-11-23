@@ -296,7 +296,7 @@ func (f *BlobFile) SetReadAhead(size int) error {
 }
 
 // Close releases the native blob handle. It is idempotent, waits for in-flight
-// operations, and is a no-op for a nil *BlobFile.
+// operations, and is a no-op for a nil or zero-value blob file.
 func (f *BlobFile) Close() error {
 	if f == nil || f.res == nil {
 		return nil

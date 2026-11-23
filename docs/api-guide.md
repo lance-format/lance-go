@@ -1321,6 +1321,20 @@ zero. Scalar zero values documented as defaults keep that meaning.
   pointer for native defaults. Pointer fields inside a non-nil options value
   keep the absent-versus-explicit distinction.
 
+## Resource lifetime
+
+Every owned handle follows one `Close` contract. Closing a nil or zero-value
+receiver is a no-op; when `Close` returns an error, an absent receiver returns
+nil. Repeated and concurrent `Close` calls are safe; each caller returns only
+after the single native teardown has completed. Operations that require the
+released handle report `ErrClosed`. This covers root handles such as `Dataset`,
+`Fragment`, `Transaction`, `SegmentBuilder`, `Scanner` and `Session`, the
+snapshots they return, and package `file` handles.
+
+In v0.3.0, `SegmentBuilder.Close` returns nil for a nil or zero-value builder
+instead of `ErrInvalidArgument`, matching every other handle. The other
+`SegmentBuilder` methods still reject an absent builder.
+
 ## Errors
 
 Dataset, scanner, writer, session and transaction operations return

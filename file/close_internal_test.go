@@ -111,6 +111,16 @@ func TestHandleCloseWaitsForConcurrentCallers(t *testing.T) {
 			handle.res = res
 			return handle.Close
 		}},
+		{"Metadata", func(res *lifetime.Resource) func() error {
+			handle := &Metadata{uri: "file:///example"}
+			handle.res = res
+			return handle.Close
+		}},
+		{"Statistics", func(res *lifetime.Resource) func() error {
+			handle := &Statistics{uri: "file:///example"}
+			handle.res = res
+			return handle.Close
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -136,6 +146,10 @@ func TestHandleCloseNilAndZeroValue(t *testing.T) {
 		{"PackedBlobWriter/zero", (&PackedBlobWriter{}).Close},
 		{"DedicatedBlobWriter/nil", (*DedicatedBlobWriter)(nil).Close},
 		{"DedicatedBlobWriter/zero", (&DedicatedBlobWriter{}).Close},
+		{"Metadata/nil", (*Metadata)(nil).Close},
+		{"Metadata/zero", (&Metadata{}).Close},
+		{"Statistics/nil", (*Statistics)(nil).Close},
+		{"Statistics/zero", (&Statistics{}).Close},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

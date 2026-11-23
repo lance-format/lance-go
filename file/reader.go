@@ -172,7 +172,7 @@ func (r *Reader) Metadata() (*Metadata, error) {
 	if err != nil {
 		return nil, wrapError("reader metadata", r.uri, err)
 	}
-	return &Metadata{native: metadata, uri: r.uri}, nil
+	return newMetadata(metadata, r.uri), nil
 }
 
 // Schema returns the complete file schema.
@@ -197,7 +197,7 @@ func (r *Reader) Statistics() (*Statistics, error) {
 	if err != nil {
 		return nil, wrapError("reader statistics", r.uri, err)
 	}
-	return &Statistics{native: statistics, uri: r.uri}, nil
+	return newStatistics(statistics, r.uri), nil
 }
 
 // ReadGlobalBuffer reads a global buffer. Index 0 is the serialized schema;

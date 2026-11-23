@@ -48,9 +48,10 @@ func newTransaction(native *ffi.Transaction, uri string) *Transaction {
 	return tx
 }
 
-// Close releases the transaction. It is idempotent.
+// Close releases the transaction. It is idempotent, waits for in-flight
+// operations, and is a no-op for a nil or zero-value transaction.
 func (t *Transaction) Close() error {
-	if t == nil {
+	if t == nil || t.res == nil {
 		return nil
 	}
 	t.res.close()
@@ -206,9 +207,10 @@ func newOperation(native *ffi.Operation, uri string) *Operation {
 	return operation
 }
 
-// Close releases the operation. It is idempotent.
+// Close releases the operation. It is idempotent, waits for in-flight
+// operations, and is a no-op for a nil or zero-value operation.
 func (o *Operation) Close() error {
-	if o == nil {
+	if o == nil || o.res == nil {
 		return nil
 	}
 	o.res.close()
@@ -551,9 +553,10 @@ func NewDataReplacementGroup(fragmentID uint64, newFile *DataFile) (*DataReplace
 	return newDataReplacementGroup(native), nil
 }
 
-// Close releases the group. It is idempotent.
+// Close releases the group. It is idempotent, waits for in-flight operations,
+// and is a no-op for a nil or zero-value group.
 func (g *DataReplacementGroup) Close() error {
-	if g == nil {
+	if g == nil || g.res == nil {
 		return nil
 	}
 	g.res.close()

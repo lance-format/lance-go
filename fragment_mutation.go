@@ -63,9 +63,10 @@ func NewUpdatedFragmentOffsets(entries []FragmentOffsets) (*UpdatedFragmentOffse
 	return newUpdatedFragmentOffsets(native), nil
 }
 
-// Close releases the offsets. It is idempotent.
+// Close releases the offsets. It is idempotent, waits for in-flight
+// operations, and is a no-op for a nil or zero-value receiver.
 func (o *UpdatedFragmentOffsets) Close() error {
-	if o == nil {
+	if o == nil || o.res == nil {
 		return nil
 	}
 	o.res.close()
@@ -159,10 +160,11 @@ func newUpdateColumnsResult(native *ffi.UpdateColumnsResult, uri string) *Update
 	return result
 }
 
-// Close releases the result. It is idempotent. The detached fragment returned
-// by Fragment remains independently owned.
+// Close releases the result. It is idempotent, waits for in-flight operations,
+// and is a no-op for a nil or zero-value result. The detached fragment
+// returned by Fragment remains independently owned.
 func (r *UpdateColumnsResult) Close() error {
-	if r == nil {
+	if r == nil || r.res == nil {
 		return nil
 	}
 	r.res.close()

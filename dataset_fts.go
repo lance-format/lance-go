@@ -226,8 +226,8 @@ func NewFTSBoostQuery(positive, negative *FTSQuery, options FTSBoostOptions) (*F
 	return &FTSQuery{native: native}, nil
 }
 
-// Close releases the native query. It is idempotent and waits for in-flight
-// scanner attachment.
+// Close releases the native query. It is idempotent, waits for in-flight
+// scanner attachment, and is a no-op for a nil or zero-value query.
 func (q *FTSQuery) Close() error {
 	if q == nil || q.native == nil {
 		return nil
@@ -322,8 +322,8 @@ func (d *Dataset) PrepareFTSPhraseQuery(ctx context.Context, column, query strin
 	return &FTSPreparedQuery{native: native}, nil
 }
 
-// Close releases the native prepared context. It is idempotent and waits for
-// in-flight scanner attachment.
+// Close releases the native prepared context. It is idempotent, waits for
+// in-flight scanner attachment, and is a no-op for a nil or zero-value query.
 func (q *FTSPreparedQuery) Close() error {
 	if q == nil || q.native == nil {
 		return nil

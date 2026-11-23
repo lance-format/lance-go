@@ -13,7 +13,14 @@ import (
 // (typically a worker's uploaded artifact) can be discarded as soon as parsing
 // succeeds. Close the metadata when it is no longer needed.
 type IndexSegmentMetadata struct {
+	res    *resource
 	native *ffi.SegmentMetadata
+}
+
+func newIndexSegmentMetadata(native *ffi.SegmentMetadata) *IndexSegmentMetadata {
+	metadata := &IndexSegmentMetadata{native: native}
+	metadata.res = newResource(func() { _ = native.Close() })
+	return metadata
 }
 
 // ParseIndexSegmentMetadata decodes a segment metadata artifact produced by
@@ -25,27 +32,30 @@ func ParseIndexSegmentMetadata(data []byte) (*IndexSegmentMetadata, error) {
 	if err != nil {
 		return nil, wrapError(op, "", err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 func (m *IndexSegmentMetadata) call(op string, fn func(*ffi.SegmentMetadata) error) error {
-	if m == nil || m.native == nil {
+	if m == nil || m.res == nil || m.native == nil {
 		return invalidError(op, "", "index segment metadata is nil")
 	}
+	if !m.res.acquire() {
+		return closedError(op, "")
+	}
+	defer m.res.release()
 	if err := fn(m.native); err != nil {
 		return wrapError(op, "", err)
 	}
 	return nil
 }
 
-// Close releases the metadata. It is safe to call more than once.
+// Close releases the metadata. It is idempotent, waits for in-flight calls, and
+// is a no-op for a nil or zero-value receiver.
 func (m *IndexSegmentMetadata) Close() error {
-	if m == nil || m.native == nil {
+	if m == nil || m.res == nil {
 		return nil
 	}
-	if err := m.native.Close(); err != nil {
-		return wrapError("IndexSegmentMetadata.Close", "", err)
-	}
+	m.res.close()
 	return nil
 }
 
@@ -237,14 +247,18 @@ func (m *IndexSegmentMetadata) BaseID() (uint32, bool, error) {
 // Clone returns an independent copy of the metadata.
 func (m *IndexSegmentMetadata) Clone() (*IndexSegmentMetadata, error) {
 	const op = "IndexSegmentMetadata.Clone"
-	if m == nil || m.native == nil {
+	if m == nil || m.res == nil || m.native == nil {
 		return nil, invalidError(op, "", "index segment metadata is nil")
 	}
+	if !m.res.acquire() {
+		return nil, closedError(op, "")
+	}
+	defer m.res.release()
 	native, err := m.native.Clone()
 	if err != nil {
 		return nil, wrapError(op, "", err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // CloneWithFragmentIDs returns an independent copy whose coverage is replaced by
@@ -253,14 +267,18 @@ func (m *IndexSegmentMetadata) Clone() (*IndexSegmentMetadata, error) {
 // value without re-validating coverage.
 func (m *IndexSegmentMetadata) CloneWithFragmentIDs(fragmentIDs []uint32) (*IndexSegmentMetadata, error) {
 	const op = "IndexSegmentMetadata.CloneWithFragmentIDs"
-	if m == nil || m.native == nil {
+	if m == nil || m.res == nil || m.native == nil {
 		return nil, invalidError(op, "", "index segment metadata is nil")
 	}
+	if !m.res.acquire() {
+		return nil, closedError(op, "")
+	}
+	defer m.res.release()
 	native, err := m.native.CloneWithFragmentIDs(fragmentIDs)
 	if err != nil {
 		return nil, wrapError(op, "", err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // Encode serializes the metadata back to its transport form. Encoding

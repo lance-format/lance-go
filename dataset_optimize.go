@@ -230,7 +230,7 @@ func (t *OptimizeIndexTask) Reference() (*IndexSegmentMetadata, error) {
 	if err != nil {
 		return nil, wrapError(op, t.uri, err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // OldSegmentCount returns the number of old index segments the task may fold
@@ -250,7 +250,7 @@ func (t *OptimizeIndexTask) OldSegment(index uint64) (*IndexSegmentMetadata, err
 	if err != nil {
 		return nil, wrapError("optimize index task old segment", t.uri, err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // NumIndicesToMerge returns the task's optional merge limit.
@@ -382,7 +382,7 @@ func (m *OptimizeIndexMerge) OldSegment(index uint64) (*IndexSegmentMetadata, er
 	if err != nil {
 		return nil, wrapError("optimize index merge old segment", m.uri, err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // ReplaceCount returns the number of index segments the merge replaces.
@@ -527,7 +527,7 @@ func (r *IndexSegmentResult) Segment() (*IndexSegmentMetadata, error) {
 	if err != nil {
 		return nil, wrapError("index segment result segment", r.uri, err)
 	}
-	return &IndexSegmentMetadata{native: native}, nil
+	return newIndexSegmentMetadata(native), nil
 }
 
 // ReplaceCount returns the number of index segments the result replaces.
