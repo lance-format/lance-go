@@ -40,6 +40,7 @@ type CacheSpec struct {
 //
 // The hit and miss counters describe lookups. Entries and size bytes describe
 // the current cache contents. Session.CacheStats returns a copied snapshot.
+// Each field is documented on the alias target: [sharesession.CacheStats].
 type CacheStats = sharesession.CacheStats
 
 // Session owns shared index and metadata caches. Datasets and raw file
@@ -57,6 +58,7 @@ type CacheStats = sharesession.CacheStats
 // the approximate number of cached items. Close is idempotent, waits for
 // in-flight calls, and releases the caller's session handle; objects already
 // opened from the session remain usable.
+// Each method is documented on the alias target: [sharesession.Session].
 type Session = sharesession.Session
 
 // NewSession creates a session with fixed-size caches.

@@ -1,9 +1,9 @@
 // Package artifactmeta reads the packaging metadata that the artifact
-// generator writes into a data-only lance-c companion module's artifact.go.
+// generator writes into a data-only lance-c artifact module's artifact.go.
 //
 // The same metadata contract drives artifact verification and the CI
-// acquisition check that pins the library bytes to the companion module for
-// the current upstream commit.
+// acquisition check that pins the library bytes to the artifact module adopted
+// for the current upstream commit.
 package artifactmeta
 
 import (

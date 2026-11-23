@@ -2,7 +2,8 @@
 
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
-This guide describes the `main` branch and the public Go APIs it contains. The latest stable tag is `v0.1.0`, which bundles lance-c v0.2.0. The `v0.1.1-preview.1` preview keeps that API and bundles lance-c v0.2.1-beta.1; APIs added after `v0.1.0` are marked with their preview version below and are not available from the `v0.1.0` module.
+This guide describes the `main` branch and the public Go APIs it contains. The
+latest stable tag is `v0.1.1`, which bundles `lance-c v0.2.1-beta.3`.
 
 ## Read a dataset
 
@@ -101,8 +102,7 @@ snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
 
 `Dataset.URI()` returns the fully qualified URI native resolved when the
-snapshot was produced (available from `v0.1.1-preview.1`). For a namespace
-dataset it is the
+snapshot was produced. For a namespace dataset it is the
 resolved `describe_table` location, not the `$`-joined table identifier used in
 error diagnostics. Every returned snapshot reports its own native URI; for
 example, a created branch includes its branch path. The Go string is captured
@@ -234,8 +234,6 @@ and fragments returned by operations are independently owned and remain valid
 after their parent object is closed.
 
 ## Runtime diagnostics
-
-`RuntimeInfo()` and the runtime fields were added in `v0.1.0`; earlier modules do not contain them.
 
 `RuntimeInfo()` returns what this process has actually observed without
 inspecting the environment, extracting a bundle, loading a library, resolving
@@ -435,9 +433,6 @@ default), binary payloads for every blob column, or descriptions for every
 column carrying blob metadata.
 
 ### Query plan diagnostics
-
-These scanner diagnostics and `Scanner.CountRows` were added in `v0.1.0`;
-earlier modules do not contain them.
 
 `Scanner.ExplainPlan(ctx, verbose)` returns the native plan for the configured
 scan without starting it. `Scanner.AnalyzePlan(ctx)` executes that plan and
@@ -792,14 +787,12 @@ parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately. RTree support was
-introduced with `v0.1.0-preview.2`; the `v0.1.0-preview.1` API and bundle
-predate it. `v0.1.0` and `v0.1.1-preview.1` both bundle RTree-capable native
-libraries. The example below runs on a current default bundle. Use an explicit
-RTree-capable `LANCE_LIB_PATH` library only when testing an older SDK or
-library. The README release mapping and the
-[artifact record](../artifacts/README.md) identify the exact native pin for the
-installed Go tag.
+The Go API and the native library are versioned separately. The current
+release bundles an RTree-capable native library, so the example below runs on
+the default bundle. Use an explicit RTree-capable `LANCE_LIB_PATH` library only
+when testing an older SDK or library. The README and the [native package
+record](native-packages.md) identify the exact native pin for the installed Go
+tag.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -817,10 +810,9 @@ scan, err := indexed.Scan(
 RTree uses the generic scalar-index ABI. A native library that predates RTree
 still loads, but rejects the type with a native error. Scalar-index symbol
 presence is not proof that enum value 9 is supported; the SDK neither emulates
-RTree nor substitutes a different index. The preview.1 bundle rejects enum
-value 9; the README release mapping and the
-[artifact record](../artifacts/README.md) state the exact native requirement
-for the installed release.
+RTree nor substitutes a different index. The README and the [native package
+record](native-packages.md) state the exact native requirement for the installed
+release.
 
 ## Vector search
 
@@ -974,7 +966,7 @@ the scan.
 On `main`, the FTS query constructors return `*lance.Error` matching
 `ErrInvalidArgument` for invalid arguments, including embedded NUL bytes,
 invalid operators and nil or closed subqueries. This typed-error normalization
-was added in `v0.1.0`; some constructor checks in preview.2 return plain errors.
+applies to every current release.
 
 FTS and vector scans project `_score` or `_distance` automatically, even when a
 column projection is explicit. Call `WithoutScoringAutoprojection()` to disable

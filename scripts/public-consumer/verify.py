@@ -309,8 +309,7 @@ def command_binary(args):
         root_dependency = main_module
         root_source = "mod"
 
-    artifact_prefix = getattr(args, "artifact_prefix", "") or (args.root_module + "/artifacts")
-    artifact_prefix = artifact_prefix.rstrip("/") + "/"
+    artifact_prefix = args.artifact_prefix.rstrip("/") + "/"
     artifact_dependencies = [
         item
         for item in dependencies
@@ -402,7 +401,7 @@ def command_binary(args):
         "metadata": args.metadata,
         "binary_size": file_size(args.binary),
         "root_module": args.root_module,
-        "artifact_prefix": getattr(args, "artifact_prefix", ""),
+        "artifact_prefix": args.artifact_prefix,
         "package_path": metadata["package_path"],
         "main_module": main_module,
         "root_dependency": root_dependency,
@@ -699,7 +698,7 @@ def main(argv=None):
     binary.add_argument("--metadata", required=True)
     binary.add_argument("--payload", required=True)
     binary.add_argument("--root-module", required=True)
-    binary.add_argument("--artifact-prefix", default="")
+    binary.add_argument("--artifact-prefix", required=True)
     binary.add_argument("--expect-root-version", default="")
     binary.add_argument("--expect-root-sum", default="")
     binary.add_argument("--expect-artifact", required=True)

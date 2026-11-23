@@ -8,8 +8,9 @@
 # This lane runs only when a root v* release tag is pushed, or by manual
 # dispatch with that tag. It never accepts a commit SHA or pseudo-version:
 # exact-head CI covers the checkout/local-source consumers instead. The root
-# module and the matching artifacts/windows-<arch> module must already be
-# published and adopted; a missing module fails the lane and is never skipped.
+# module and the matching go.lance.org/liblance/windows-<arch> module must
+# already be published and adopted; a missing module fails the lane and is never
+# skipped.
 name: Windows public consumers
 
 on:
@@ -122,7 +123,7 @@ jobs:
           pwsh -NoProfile -File ./scripts/public-consumer/windows-harness-test.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Test default-bundle RTree and raw Blob v2 on the public companion
+      - name: Test default-bundle RTree and raw Blob v2 on the public module
         shell: pwsh
         env:
           EVIDENCE_DIR: ${{ runner.temp }}/public-consumer-evidence

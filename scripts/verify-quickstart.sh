@@ -16,8 +16,8 @@
 #   verification uses tags only; it never resolves a commit SHA or
 #   pseudo-version.
 #
-# Both modes download the companion artifact module by its exact published
-# version, so companion identity is still checked against the proxy and sumdb.
+# Both modes download the artifact module by its exact published version, so
+# the module identity is still checked against the proxy and sumdb.
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go

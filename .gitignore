@@ -34,3 +34,7 @@ go.work.sum
 
 # Local native build artifacts
 /dist/
+
+# Python bytecode from the consumer helper tests
+__pycache__/
+*.pyc

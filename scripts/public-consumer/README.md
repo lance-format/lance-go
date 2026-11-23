@@ -49,9 +49,9 @@ driver revision of their time.
 - The proxy-resolved tag version, `Sum`, `GoModSum`, archive, and source tree at
   the requested tag. The root module archive is compared with `git ls-tree`
   content and blob hashes; the tag's full commit is checked against the source.
-- Artifact metadata against the checked-out snapshot and the source pin;
-  downloaded payload size and SHA-256 against that matched metadata. The selected artifact is derived from the built binary,
-  not hardcoded.
+- The selected artifact module's own `artifact.go` against the source pin, and
+  the downloaded payload size and SHA-256 against that metadata. The selected
+  artifact is derived from the built binary, not hardcoded.
 - Default consumer: no `LANCE_LIB_PATH`, a cold SDK runtime cache, a standalone
   build from the public module using a fresh empty target module and build
   cache, and the literal roundtrip result
@@ -69,8 +69,8 @@ driver revision of their time.
   recorded; external is not a zero-download contract and no zero-archive rule
   is asserted for it.
 - The ordinary `go get` path is real, not simulated. It runs in a separate
-  install/get cache and may download every companion artifact archive because
-  it loads packages for all build tags. The driver records that complete set
+  install/get cache and may download every artifact module archive because it
+  loads packages for all build tags. The driver records that complete set
   and requires it to match the root module graph; those downloads are not
   attributed to the target build.
 
@@ -105,7 +105,7 @@ it is not a full runtime regression, a native rebuild, a release, or support
 for an unpublished platform. The native source version remains the packaging
 claim recorded in artifact metadata; no runtime version symbol is invented.
 `go mod tidy`, `go get`, and other module-graph commands may download every
-companion artifact archive because Go can load packages for all build tags.
+artifact module archive because Go can load packages for all build tags.
 This lane records those installation downloads separately and asserts the
 selected-archive boundary only for the default and namespace target builds. It
 makes no zero-download claim for `go get` or external mode.

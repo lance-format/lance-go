@@ -5,30 +5,28 @@ This is the maintainer sequence for a release that includes a compiled
 contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
-The current companion modules are published as ordinary Go modules at
+The native packages are published as ordinary Go modules at
 `go.lance.org/liblance/<target>@v0.2.0-preview.1`, not as Git tags, from the
 official `lance-c v0.2.1-beta.3` release. The annotated C tag
 `cff1c32dc03ac144f798b37953e2aba651711924` peels to
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`; the canonical header SHA-256 is
-`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`.
-All five active selectors and root requirements use those static module
-versions. The five release archives and checksums were verified, each companion
-payload decompresses byte-for-byte to the official archive library, and every
-module resolves through the public proxy and checksum database. Historical
-`v0.1.0` and `v0.1.1-preview.1` Git artifact modules/tags remain published and
-unchanged. Accepted exact-version evidence belongs to the release record.
+`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. All five
+active selectors and root requirements use those static module versions. The
+five release archives and checksums were verified, each module payload
+decompresses byte-for-byte to the official archive library, and every module
+resolves through the public proxy and checksum database. Accepted exact-version
+evidence belongs to the release record, and
+[docs/native-packages.md](docs/native-packages.md) records the current
+identities.
 
-Intel macOS is retired for new releases; its published module and tags remain
-at their original revisions, but no current release requires or selects them.
-The preview.1 six-target evidence and historical runs remain in
-[docs/PREVIEW.md](docs/PREVIEW.md) and the preview.1 release notes. Each new
-tag still requires its own post-tag runs. Real AWS S3 refresh passed in both
+Intel macOS is retired and has no module or selector. Each new tag still
+requires its own post-tag runs. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
-That is historical evidence against the `native88` library, not against
-`ef465b43`; it does not claim commercial namespace-service or
+That is historical evidence against the `native88` library, not against the
+current pin; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
-for the claimed target. They must not claim completion of issue #1; the
-broader RTree/raw v2.2 official-core work remains outside this release.
+for the claimed target. They must not claim completion of issue #1; the broader
+RTree/raw v2.2 official-core work remains outside this release.
 
 The maintained Unix workflow, `.github/workflows/unix-native.yml`, builds and
 tests three native runners and generates unpublished candidate modules for
@@ -76,51 +74,40 @@ REPO_ROOT=$(pwd)
 
 ## Documentation handoff
 
-Version-specific consumer documentation belongs to the same release handoff
-as the root version and native input. Do not derive it from an unversioned
-`main` checkout or publish it before the exact companion archives exist.
-Update together:
+Version-specific consumer documentation belongs to the same release handoff as
+the root version and native input. Do not derive it from an unversioned `main`
+checkout or publish it before the exact modules exist. Update together:
 
-- README Quickstart and application install command to the new root tag only
-  during `v0.1.1` release preparation; the adoption delta keeps the public
-  stable links on `v0.1.0`;
-- README release/native mapping, supported consumer table, and read-only
-  deployment example's exact static module, version and library hash only
-  during `v0.1.1` release preparation;
-- README RTree boundary, stating the Go tag and native requirement together;
+- README install command, quickstart tag, native release and Lance version
+  sentence, supported target table, and the read-only deployment recipe's
+  module, version and library hash;
 - [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
-  boundaries. Keep exact current native mapping in the README, release record
-  and [artifact record](artifacts/README.md), not duplicated in the guide;
+  boundaries. Keep the exact native mapping in the README, the
+  [native package record](docs/native-packages.md) and the release record, not
+  duplicated in the guide;
 - [`docs/development.md`](docs/development.md) "Building liblance_c" Rust
   requirement and matching native build guards, "Pinned ABI" reproducible
-  command, and "Testing" current RTree command. Keep the historical
-  `v0.1.0-preview.1` command pinned to that tag;
-- `scripts/verify-quickstart.sh` version, companion module/version, published
+  command, and "Testing" current RTree command;
+- [`docs/native-packages.md`](docs/native-packages.md) module versions, payload
+  sizes and hashes, native pin, platform scope and validation states;
+- `scripts/verify-quickstart.sh` version, module and version pins, published
   module archive size, and expected library size and SHA-256. Keep the module
-  archive size separate from the compressed native payload;
-- `artifacts/README.md` with the historical Git artifact record unchanged and
-  a separate static-origin section for the new versions, payload facts and
-  accepted exact-version evidence.
+  archive size separate from the compressed native payload.
 
-Keep [docs/PREVIEW.md](docs/PREVIEW.md) as the historical first-preview
-record. Do not rewrite its version facts; update only links whose documentation
-moved. Put new
-preview-specific notes in the release record or a new dated file rather than
-silently rewriting the historical one. The release handoff owns the
-beta/preview version wording; a docs-only change does not weaken the runtime
-acceptance requirements below.
+The release handoff owns the beta/preview version wording; a docs-only change
+does not weaken the runtime acceptance requirements below.
 
 ## 1. Choose and verify the native input
 
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
 header hash. `upstreamRelease` is informational; it does not prove that a
-release archive, tag, and commit contain the same header. The current pin is
-the annotated `v0.2.1-beta.1` tag, peeled to
-`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`, with canonical header
-`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`.
-Do not substitute another release archive for that pin. The selected
-`Cargo.toml` declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`,
-`ci.yml`, and `unix-native.yml` reject older Rust toolchains before building.
+release archive, tag, and commit contain the same header. The current pin is the
+annotated `v0.2.1-beta.3` tag, peeled to
+`a800fd5f28636bfff34778e3ad6663f3cf099a38`, with canonical header
+`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. Do not
+substitute another release archive for that pin. The selected `Cargo.toml`
+declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`, `ci.yml`, and
+`unix-native.yml` reject older Rust toolchains before building.
 
 Version selection is a maintainer decision tracked by issue #1. Check the
 actual native release, tag, and commit alignment before choosing a version. Do
@@ -187,14 +174,14 @@ NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
 ```
 
 The tool verifies the published per-asset checksum, the pinned header hash, and
-the target machine. It also requires the library to equal
-`artifacts/$SLUG/artifact.go` `UncompressedSHA256` when that companion metadata
-describes the same commit and header. After a pin bump, the existing companions
-describe the previous commit, so the check is inactive until the new companions
-are published and adopted; candidate packaging proceeds from the acquired
-bytes. Release archives are already stripped, so pass the library directly to
-the generator in step 3. Build from source only when the pin has no matching
-release archive.
+the target machine. It also compares the library with `UncompressedSHA256` in
+the artifact module that this target's generated selector imports, resolved
+through the Go proxy and checksum database. After a pin bump the adopted modules
+still describe the previous commit, so that independent check is inactive until
+new modules are published and adopted; candidate packaging proceeds from the
+acquired bytes. Release archives are already stripped, so pass the library
+directly to the generator in step 3. Build from source only when the pin has no
+matching release archive.
 
 For a source build on Linux or macOS, build from the pinned commit into an
 output directory outside the checkout:
@@ -262,8 +249,8 @@ these states separate; one does not imply another:
 
 Fill each cell with its tested object, result, and evidence, or an explicit
 pending/unsupported state. This is an evidence template, not a support claim.
-The pinned `ef465b43` native build exports 890 declared C symbols; the current
-Go bindings bind 608 of them. Record both counts separately. The ABI checker
+The pinned `a800fd5f` native build exports 890 `lance_*` symbols; the Go
+bindings bind 608 of them. Record both counts separately. The ABI checker
 validates the bound subset; it does not establish runtime coverage of every
 native export.
 
@@ -271,7 +258,8 @@ The official `linux/amd64` and `linux/arm64` release packages are generic
 glibc 2.28 builds. The macOS package uses deployment target 11.0 and is tested
 on macOS 15.x hosts. The other supported targets use their own bundles; their
 accepted hosts and current payload facts are listed in
-[artifacts/README.md](artifacts/README.md). Older glibc/macOS floors and musl
+[docs/native-packages.md](docs/native-packages.md). Older glibc/macOS floors and
+musl
 compatibility have not been established beyond the recorded package floors.
 The real S3 acceptance above is scoped to Linux amd64 and the historical
 `native88` library at source `59a427e`; it is not evidence for the
@@ -342,9 +330,9 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The current `linux/amd64` payload is 88,580,128 bytes compressed and
-345,989,752 bytes uncompressed; exact hashes and counts are recorded in
-[artifacts/README.md](artifacts/README.md). The published module ZIP is
+The current `linux/amd64` payload is 88,580,128 bytes compressed and 345,989,752
+bytes uncompressed; exact hashes are recorded in
+[docs/native-packages.md](docs/native-packages.md). The published module ZIP is
 87,897,705 bytes and `scripts/verify-quickstart.sh` pins it separately. The raw
 library is never committed. GitHub rejects ordinary Git blobs over 100 MiB, and
 warns above 50 MiB; static module publications do not add Git blobs, but the
@@ -418,17 +406,17 @@ Check the selector build constraint is `!lance_external_lib && <goos> &&
 staging path remains:
 
 ```sh
-if grep -R "artifacts/staging" internal/bundled go.mod go.sum; then
-  echo "legacy staging path remains; use the published artifact module" >&2
+if grep -R "artifacts/" internal/bundled go.mod go.sum; then
+  echo "legacy in-tree artifact path remains; use the published artifact module" >&2
   exit 1
 fi
 ```
 
 The command should produce no matches. Also confirm there is no `replace`
 directive for the root or artifact module, and that `go.sum` contains the
-recorded `Sum` and `GoModSum`. Update `artifacts/README.md` with the same
-target, payload sizes and hashes, native commit, header hash, and published
-requirement.
+recorded `Sum` and `GoModSum`. Update
+[docs/native-packages.md](docs/native-packages.md) with the same target, payload
+sizes and hashes, native commit, header hash, and published requirement.
 
 Commit and push the activation commit, then verify that exact head with the
 checkout/local-source mode below. Before the root tag exists, do not try to
@@ -509,7 +497,7 @@ Run the Unix driver locally on the matching native host against a tag:
 
 ```sh
 cd "$REPO_ROOT"
-ROOT_REVISION=v0.1.1-preview.1 \
+ROOT_REVISION=v0.1.1 \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
 EVIDENCE_DIR=/tmp/public-consumer-evidence \
@@ -556,30 +544,24 @@ platform:         target, ABI/runtime/race/default/external results, floor and d
 gaps:             untested targets and storage paths
 ```
 
-The current `linux/amd64` bundle, native
+The current `linux/amd64` package, native
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`, header
 `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`, payload
 `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and
 uncompressed library
 `011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are the
-v0.1.1 stable adoption examples. The published module is
-`go.lance.org/liblance/linux-amd64@v0.2.0-preview.1`.
-The published static versions, payload sizes, hashes, and accepted
-exact-version consumer runs are listed in
-[artifacts/README.md](artifacts/README.md) and the release evidence.
-The historical [v0.1.0 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)
-and v0.1.1-preview.1 Git artifact history remain published and unchanged;
-the v0.1.1 stable root tag still requires the gates above after the earlier
-v0.1.0 stable evidence.
+v0.1.1 adoption values. The published module is
+`go.lance.org/liblance/linux-amd64@v0.2.0-preview.1`. Published versions,
+payload sizes, hashes and accepted exact-version consumer runs are listed in
+[docs/native-packages.md](docs/native-packages.md) and the release evidence. The
+v0.1.1 root tag requires the gates above.
 
-The [historical preview preparation notes](docs/PREVIEW.md) record the first
-preview's evidence and release gates. Keep them as history; put a new release's
-notes in its release record. Include the artifact version, payload
-sizes and hashes, evidence location, supported bundle target and runtime floor,
-the default and external behavior, and what remains pending. Do not claim
-Windows or other Unix runtime support or completion of issue #1 without the
-corresponding accepted evidence. Describe S3 acceptance with its tested source,
-native library, and self-hosted namespace boundary.
+Include the artifact version, payload sizes and hashes, evidence location,
+supported bundle target and runtime floor, the default and external behavior,
+and what remains pending. Do not claim Windows or other Unix runtime support or
+completion of issue #1 without the corresponding accepted evidence. Describe S3
+acceptance with its tested source, native library, and self-hosted namespace
+boundary.
 
 This document is not release authorization or acceptance. A maintainer decides
 readiness and authorizes the release tag only after the evidence above exists
