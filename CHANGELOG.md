@@ -43,6 +43,10 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   exact value for `errors.As`.
 - `namespace.Some`, `namespace.Null` and `namespace.Absent` construct the three
   `Nullable[T]` states.
+- `ScanMetricKind` identifies native scan metric kinds. `ScanMetricKindCount`
+  and `ScanMetricKindTimeNanoseconds` match the pinned lance-c ABI, and
+  `String()` returns the native enumerator name or `ScanMetricKind(N)` for a
+  kind added by a newer native library. Unknown numeric kinds are preserved.
 
 ### Changed
 
@@ -246,6 +250,19 @@ if errors.Is(err, namespace.ErrNotFound) {
   `namespace.Some(version)`. Read presence through `field.Present` and
   `field.Value`, or `field.IsZero()` for absence. The JSON encoding is
   unchanged.
+- `ScanMetric.Kind` is now `ScanMetricKind` instead of `int32` (#108). Code that
+  assigns the field to `int32`, passes it to an `int32` parameter, or stores an
+  `int32` in the field needs an explicit conversion:
+  - `var kind int32 = metric.Kind` becomes `var kind int32 = int32(metric.Kind)`.
+  - `ScanMetric{Kind: kind}` with an `int32` `kind` becomes
+    `ScanMetric{Kind: ScanMetricKind(kind)}`.
+  - `f(metric.Kind)` with an `int32` parameter becomes `f(int32(metric.Kind))`.
+
+  Untyped numeric literals still work, including `ScanMetric{Kind: 0}` and
+  `metric.Kind == 1`; a typed literal such as `int32(1)` needs
+  `ScanMetricKind(1)`. Typed constants can now be used directly in switches.
+  Because `ScanMetricKind` implements `String`, `%v` and `%s` print the
+  enumerator name; use `%d` or `int32(metric.Kind)` for the numeric value.
 
 ## [v0.2.0] - 2026-11-23
 

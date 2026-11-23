@@ -498,6 +498,40 @@ projected column early. `WithBlobHandling` selects blob descriptors (the
 default), binary payloads for every blob column, or descriptions for every
 column carrying blob metadata.
 
+### Scan statistics
+
+`WithScanStatistics` receives one `ScanStatistics` snapshot when a scan reaches
+EOF, and `Scanner.Statistics` returns the same snapshot after iteration. The
+fixed fields summarize I/O and index work. `Metrics` carries additional native
+diagnostics; metric names and the set of metrics are not a stable API.
+
+`ScanMetric.Kind` is a `ScanMetricKind` matching the native
+`LanceScanMetricKind` value. `ScanMetricKindCount` identifies a count and
+`ScanMetricKindTimeNanoseconds` identifies a duration in nanoseconds. Use the
+field directly in comparisons and switches:
+
+```go
+for _, metric := range stats.Metrics {
+    switch metric.Kind {
+    case lance.ScanMetricKindCount:
+        fmt.Printf("%s: %d\n", metric.Name, metric.Value)
+    case lance.ScanMetricKindTimeNanoseconds:
+        fmt.Printf("%s: %dns\n", metric.Name, metric.Value)
+    default:
+        fmt.Printf("%s: %d (%s)\n", metric.Name, metric.Value, metric.Kind)
+    }
+}
+```
+
+`ScanMetricKind.String` returns the native enumerator name, or
+`ScanMetricKind(N)` for a value added by a newer native library. Unknown kinds
+are preserved in `ScanMetric.Kind` rather than dropped.
+
+v0.3.0 changed `ScanMetric.Kind` from `int32` to `ScanMetricKind`. Code that
+stores it in an `int32` variable or passes it to an `int32` parameter needs an
+explicit conversion, such as `int32(metric.Kind)` or
+`lance.ScanMetricKind(kind)`. Untyped literals such as `Kind: 0` still work.
+
 ### Query plan diagnostics
 
 `Scanner.ExplainPlan(ctx, verbose)` returns the native plan for the configured
