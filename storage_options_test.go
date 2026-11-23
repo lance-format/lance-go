@@ -220,6 +220,26 @@ func TestStorageOptionsAccessorCallbackErrors(t *testing.T) {
 	})
 }
 
+func TestStorageOptionsAccessorSnapshotClosedValues(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		accessor *lance.StorageOptionsAccessor
+	}{
+		{"nil", nil},
+		{"zero", &lance.StorageOptionsAccessor{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot, has, err := tc.accessor.Snapshot()
+			if !errors.Is(err, lance.ErrClosed) {
+				t.Fatalf("Snapshot = %v, has=%v, err=%v; want ErrClosed", snapshot, has, err)
+			}
+			if snapshot != nil || has {
+				t.Fatalf("Snapshot = %v, has=%v; want nil, false", snapshot, has)
+			}
+		})
+	}
+}
+
 func TestStorageOptionsSnapshotAfterClose(t *testing.T) {
 	requireNative(t)
 	owned, err := lance.NewStorageOptionsAccessor(nil, nil)

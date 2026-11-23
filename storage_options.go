@@ -108,7 +108,7 @@ func (a *StorageOptionsAccessor) ProviderID() string {
 // wraps provider fetch failures as IO errors while retaining their messages.
 func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error) {
 	if a == nil || a.coreAccessor == nil {
-		return nil, false, ffi.ErrClosed
+		return nil, false, closedError("storage options snapshot", "")
 	}
 	return a.coreAccessor.Snapshot()
 }
