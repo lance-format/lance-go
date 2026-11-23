@@ -3,7 +3,9 @@
 //
 // The native accessor caches, expires and refreshes options. Go callbacks only
 // translate one fetch request; they do not run a refresh loop or keep a second
-// credential cache.
+// credential cache. The root lance package declares the public wrapper types and
+// forwards to this package; sibling packages resolve that private state through
+// From without adding a public bridge method.
 package accessor
 
 import (
@@ -143,6 +145,27 @@ func newOwned(native *ffi.StorageOptionsAccessor, providerID string, wrapError f
 		providerID: providerID,
 		wrapError:  wrapError,
 	}
+}
+
+// carrier exposes the native owner to this package through a promoted method
+// on the public wrapper. The method is unexported, so the public type gains no
+// bridge member that callers can use.
+func (a *Accessor) carrier() *Accessor {
+	return a
+}
+
+type carrierOwner interface {
+	carrier() *Accessor
+}
+
+// From returns the implementation behind owner. It reports false when owner is
+// not a public root StorageOptionsAccessor wrapper.
+func From(owner any) (*Accessor, bool) {
+	carrier, ok := owner.(carrierOwner)
+	if !ok {
+		return nil, false
+	}
+	return carrier.carrier(), true
 }
 
 // ProviderID returns the native identity of the provider, or an empty string

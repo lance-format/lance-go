@@ -146,3 +146,75 @@ func TestRawFileSessionStorageOptionsAccessorAndOverrides(t *testing.T) {
 		t.Fatalf("session read ids = %v, want 4 rows", ids)
 	}
 }
+
+func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "root-accessor.lance")
+	schema := testSchema()
+	batch := testBatch(t, schema)
+	defer batch.Release()
+
+	owned, err := lance.NewStorageOptionsAccessor(nil, fileAccessorProvider{id: "test/file-root-accessor"})
+	if err != nil {
+		t.Fatalf("new root accessor: %v", err)
+	}
+	storage, err := file.NewStorageOptionsFromAccessor(owned)
+	if err != nil {
+		owned.Close()
+		t.Fatalf("adopt root accessor: %v", err)
+	}
+	writer, err := file.Create(ctx, path, schema, &file.WriterOptions{StorageOptions: storage})
+	if err != nil {
+		storage.Close()
+		t.Fatalf("create writer: %v", err)
+	}
+	if err := writer.Write(ctx, batch); err != nil {
+		writer.Close()
+		storage.Close()
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		writer.Close()
+		storage.Close()
+		t.Fatalf("finish: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		storage.Close()
+		t.Fatalf("close writer: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("close adopted storage options: %v", err)
+	}
+}
+
+func TestRawFileStorageOptionsFromZeroRootAccessor(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+
+	if _, err := file.NewStorageOptionsFromAccessor(nil); err == nil {
+		t.Fatal("nil root accessor was accepted")
+	}
+	zero := &lance.StorageOptionsAccessor{}
+	storage, err := file.NewStorageOptionsFromAccessor(zero)
+	if err != nil {
+		t.Fatalf("zero root accessor: %v", err)
+	}
+	if _, err := file.Open(ctx, filepath.Join(t.TempDir(), "zero.lance"), &file.ReaderOptions{StorageOptions: storage}); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("open with zero root accessor = %v, want ErrClosed", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
+	}
+	zeroSession := &lance.Session{}
+	fileSession, err := file.OpenSession(ctx, t.TempDir(), &file.SessionOptions{Session: zeroSession})
+	if err != nil {
+		t.Fatalf("zero root session: %v", err)
+	}
+	if err := fileSession.Close(); err != nil {
+		t.Fatalf("close zero root session: %v", err)
+	}
+}

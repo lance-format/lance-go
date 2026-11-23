@@ -1,6 +1,7 @@
 // Package session owns shared native Lance session lifetimes. The root lance
-// package exposes this type through an alias, and the file package borrows the
-// native handle without exposing it in the public API.
+// package declares the public Session wrapper and forwards to this package;
+// sibling packages resolve that private state through From without adding a
+// public bridge method.
 package session
 
 import (
@@ -41,6 +42,27 @@ func New(native *ffi.Session, wrapError func(op, uri string, err error) error, c
 		closedError: closedError,
 	}
 	return s
+}
+
+// carrier exposes the native owner to this package through a promoted method
+// on the public wrapper. The method is unexported, so the public type gains no
+// bridge member that callers can use.
+func (s *Session) carrier() *Session {
+	return s
+}
+
+type carrierOwner interface {
+	carrier() *Session
+}
+
+// From returns the implementation behind owner. It reports false when owner is
+// not a public root Session wrapper.
+func From(owner any) (*Session, bool) {
+	carrier, ok := owner.(carrierOwner)
+	if !ok {
+		return nil, false
+	}
+	return carrier.carrier(), true
 }
 
 // Acquire pins s for the duration of one native call. The returned release

@@ -43,7 +43,7 @@ release candidate rather than copying an earlier status table.
 ## Release units and order
 
 ```text
-root module          $ROOT_MODULE                         tag v0.1.1
+root module          $ROOT_MODULE                         tag v0.2.0
 linux/amd64 module   go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
 selector             internal/bundled/lance_bundle_linux_amd64.go
 root requirement     go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
@@ -140,15 +140,15 @@ Git tags. The following is syntax only, not a chosen release version:
 
 ```bash
 REPO_ROOT=$(pwd)
-ROOT_VERSION=v0.1.1                  # example root tag
+ROOT_VERSION=v0.2.0                  # example root tag
 TARGET=linux/amd64                  # example
 SLUG=${TARGET//\//-}
 ARTIFACT_MODULE="go.lance.org/liblance/$SLUG"
 ARTIFACT_VERSION=v0.2.0-preview.1   # example static module version
 ```
 
-A Go-only patch release may reuse the existing immutable artifact module
-versions and checksums when the native bytes are unchanged. Any native byte
+A Go-only release may reuse the existing immutable artifact module versions
+and checksums when the native bytes are unchanged. Any native byte
 change, including a new `lance-c` pin or a rebuilt library, requires new
 artifact module versions; never replace the bytes behind a published static
 module version.
@@ -498,7 +498,7 @@ Run the Unix driver locally on the matching native host against a tag:
 
 ```sh
 cd "$REPO_ROOT"
-ROOT_REVISION=v0.1.1 \
+ROOT_REVISION=v0.2.0 \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
 EVIDENCE_DIR=/tmp/public-consumer-evidence \
@@ -551,11 +551,11 @@ The current `linux/amd64` package, native
 `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and
 uncompressed library
 `011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are the
-v0.1.1 adoption values. The published module is
+v0.2.0 adoption values. The published module is
 `go.lance.org/liblance/linux-amd64@v0.2.0-preview.1`. Published versions,
 payload sizes, hashes and accepted exact-version consumer runs are listed in
 [docs/native-packages.md](docs/native-packages.md) and the release evidence. The
-v0.1.1 root tag requires the gates above.
+v0.2.0 root tag requires the gates above.
 
 Include the artifact version, payload sizes and hashes, evidence location,
 supported bundle target and runtime floor, the default and external behavior,

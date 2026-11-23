@@ -6,7 +6,7 @@ Arrow record batches. The package calls into Lance through the
 binary is built with `CGO_ENABLED=0`: no C toolchain, Rust toolchain or system
 Lance installation is needed to build or run a program that uses it.
 
-The current stable release is `v0.1.1`. It carries the official prebuilt
+The current stable release is `v0.2.0`. It carries the official prebuilt
 `lance-c v0.2.1-beta.3` libraries, built against Lance `15.0.0-beta.28`, for
 Linux amd64 and arm64, macOS arm64, and Windows amd64 and arm64. Applications
 need Go 1.23 or newer.
@@ -26,7 +26,7 @@ search, full-text search, mutations and versions, cloud storage and namespaces.
 ## Install
 
 ```sh
-go get github.com/lance-format/lance-go@v0.1.1
+go get github.com/lance-format/lance-go@v0.2.0
 ```
 
 ```go
@@ -42,7 +42,7 @@ so it needs neither a repository checkout nor a local installation of Lance.
 Run the bundled example straight from the published module:
 
 ```console
-$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.1.1
+$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.2.0
 Created, reopened and scanned 3 rows: [10 20 30]
 ```
 
@@ -171,7 +171,7 @@ and point `LANCE_LIB_PATH` at it. Build the application with
 Because `LANCE_LIB_PATH` is checked first, no extraction or cache write happens
 at runtime.
 
-For `v0.1.1` on `linux/amd64`, extract the published module payload:
+For `v0.2.0` on `linux/amd64`, extract the published module payload:
 
 ```console
 $ module=go.lance.org/liblance/linux-amd64
@@ -219,14 +219,19 @@ verification, so verify the staged file once during image build as shown above.
 
 ## Stability and compatibility
 
-`v0.1.1` is a patch release of the 0.1 line. It preserves the published 0.1
-Go API, including all exported type identities, and adds `Dataset.URI()`. The
-earlier pre-releases keep their own published versions and release notes.
+`v0.2.0` is the next minor release of the 0.x line. It adds `Dataset.URI()`
+and declares `Session`, `CacheStats`, `StorageOptionsProvider`,
+`ForceStorageOptionsProvider` and `StorageOptionsAccessor` directly in the root
+`lance` package, so `go doc` and pkg.go.dev index their methods, fields and
+interface signatures. Source that names these types keeps compiling, but their
+reflection identity moves from `internal/session` and `internal/accessor` to the
+root package. Other published 0.1 Go APIs keep source compatibility. The earlier
+pre-releases keep their own published versions and release notes.
 
-The package follows Semantic Versioning for `v0.x`: `0.1.x` patch releases
+The package follows Semantic Versioning for `v0.x`: `0.2.x` patch releases
 preserve source compatibility for published Go APIs, and necessary breaking
-changes move to the next minor release, `0.2`, with migration notes. Each
-release records the `lance-c` release, native commit, canonical header hash and
+changes move to the next minor release with migration notes. Each release
+records the `lance-c` release, native commit, canonical header hash and
 per-target library checksums it carries.
 
 The historical cross-language compatibility record covers Lance storage 2.1
@@ -243,7 +248,7 @@ pin only; see the [suite record](internal/compat/README.md#accepted-execution).
 
 ## Documentation
 
-- [Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.1.1) and [usage guide](docs/api-guide.md) for scans, mutations, search and dataset maintenance.
+- [Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.2.0) and [usage guide](docs/api-guide.md) for scans, mutations, search and dataset maintenance.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
 - [Native packages](docs/native-packages.md) for module versions, payload identity, platform scope and validation.
 - [Changelog](CHANGELOG.md) for user-facing changes by release.

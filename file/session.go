@@ -53,7 +53,14 @@ func acquireLanceSession(op, uri string, session *lance.Session) (*ffi.Session, 
 	if session == nil {
 		return nil, func() {}, nil
 	}
-	native, release, ok := sharesession.Acquire(session)
+	core, ok := sharesession.From(session)
+	if !ok {
+		return nil, nil, closedError(op, uri)
+	}
+	if core == nil {
+		return nil, func() {}, nil
+	}
+	native, release, ok := sharesession.Acquire(core)
 	if !ok {
 		return nil, nil, closedError(op, uri)
 	}

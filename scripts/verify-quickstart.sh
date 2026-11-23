@@ -12,7 +12,7 @@
 #   public proxy.
 # - published module: leave LANCE_GO_QUICKSTART_SOURCE_DIR unset.
 #   LANCE_GO_QUICKSTART_VERSION defaults to the root release being verified
-#   (currently v0.1.1) and must be an exact release tag. Release
+#   (currently v0.2.0) and must be an exact release tag. Release
 #   verification uses tags only; it never resolves a commit SHA or
 #   pseudo-version.
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go
-VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.1}
+VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.2.0}
 ARTIFACT_MODULE=go.lance.org/liblance/linux-amd64
 ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.2.0-preview.1}
 COMPANION_BYTES=87897705

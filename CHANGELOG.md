@@ -5,9 +5,31 @@ writes and searches Lance datasets through the `lance-c` C ABI with
 `CGO_ENABLED=0`. Each release records the exact native bundle it carries: the
 `lance-c` release, its upstream commit, the canonical header hash and the
 per-target library checksums. Versions follow Semantic Versioning; within
-`0.1.x`, patch releases preserve source compatibility for published Go APIs,
+`0.2.x`, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
+
+## [v0.2.0] - Unreleased
+
+`v0.2.0` is the next minor release. It bundles `lance-c v0.2.1-beta.3` through
+the static `go.lance.org/liblance/<target>@v0.2.0-preview.1` modules and keeps
+the published 0.1 Go APIs source compatible, except for the reflection identity
+change described below.
+
+### Added
+
+- `Dataset.URI()` returns the fully qualified URI native resolved for that
+  snapshot, including a branch or namespace-resolved location. The string is
+  captured once and stays available after `Close`.
+
+### Changed
+
+- `Session`, `CacheStats`, `StorageOptionsProvider`,
+  `ForceStorageOptionsProvider` and `StorageOptionsAccessor` are declared
+  directly in the root `lance` package, so `go doc` and pkg.go.dev index their
+  methods, fields and interface signatures. Source that names these types keeps
+  compiling, but `reflect.Type.PkgPath` and named type identity now report the
+  root package instead of `internal/session` or `internal/accessor`.
 
 ## [v0.1.1-preview.1] - 2026-11-23
 

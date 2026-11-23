@@ -53,18 +53,27 @@ func NewStorageOptionsWithProvider(initial map[string]string, provider lance.Sto
 	if err != nil {
 		return nil, wrapError("storage options", "", err)
 	}
-	return &StorageOptions{accessor: owned}, nil
+	core, ok := accessor.From(owned)
+	if !ok || core == nil {
+		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
+	}
+	return &StorageOptions{accessor: core}, nil
 }
 
 // NewStorageOptionsFromAccessor adopts an already-created root storage-options
 // accessor. Ownership transfers to the returned StorageOptions; closing it
 // closes the accessor. The accessor must not be closed separately while it is
-// in use here.
+// in use here. A non-nil zero-value accessor is accepted and behaves as already
+// closed.
 func NewStorageOptionsFromAccessor(owned *lance.StorageOptionsAccessor) (*StorageOptions, error) {
 	if owned == nil {
 		return nil, fmt.Errorf("storage options accessor must not be nil")
 	}
-	return &StorageOptions{accessor: owned}, nil
+	core, ok := accessor.From(owned)
+	if !ok {
+		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
+	}
+	return &StorageOptions{accessor: core}, nil
 }
 
 // Close releases the native accessor. It is idempotent and waits for open
