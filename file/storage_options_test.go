@@ -187,3 +187,34 @@ func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 		t.Fatalf("close adopted storage options: %v", err)
 	}
 }
+
+func TestRawFileStorageOptionsFromZeroRootAccessor(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+
+	if _, err := file.NewStorageOptionsFromAccessor(nil); err == nil {
+		t.Fatal("nil root accessor was accepted")
+	}
+	zero := &lance.StorageOptionsAccessor{}
+	storage, err := file.NewStorageOptionsFromAccessor(zero)
+	if err != nil {
+		t.Fatalf("zero root accessor: %v", err)
+	}
+	if _, err := file.Open(ctx, filepath.Join(t.TempDir(), "zero.lance"), &file.ReaderOptions{StorageOptions: storage}); !errors.Is(err, lance.ErrClosed) {
+		t.Fatalf("open with zero root accessor = %v, want ErrClosed", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("first close: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("second close: %v", err)
+	}
+	zeroSession := &lance.Session{}
+	fileSession, err := file.OpenSession(ctx, t.TempDir(), &file.SessionOptions{Session: zeroSession})
+	if err != nil {
+		t.Fatalf("zero root session: %v", err)
+	}
+	if err := fileSession.Close(); err != nil {
+		t.Fatalf("close zero root session: %v", err)
+	}
+}

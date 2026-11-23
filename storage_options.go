@@ -87,30 +87,19 @@ type ForceStorageOptionsProvider interface {
 // own reference. Callers own the provider value passed to
 // NewStorageOptionsAccessor; the accessor does not call a Go provider Close
 // method.
-type StorageOptionsAccessor struct {
-	core *accessor.Accessor
-}
+type coreAccessor = accessor.Accessor
 
-// init installs the private implementation lookup used by package file.
-// The public type must stay in this package for go doc indexing, and file
-// cannot read its unexported field directly.
-func init() {
-	accessor.SetResolver(func(owner any) (*accessor.Accessor, bool) {
-		owned, ok := owner.(*StorageOptionsAccessor)
-		if !ok || owned == nil || owned.core == nil {
-			return nil, false
-		}
-		return owned.core, true
-	})
+type StorageOptionsAccessor struct {
+	*coreAccessor
 }
 
 // ProviderID returns the native identity of the provider, or an empty string
 // for a purely static accessor.
 func (a *StorageOptionsAccessor) ProviderID() string {
-	if a == nil || a.core == nil {
+	if a == nil || a.coreAccessor == nil {
 		return ""
 	}
-	return a.core.ProviderID()
+	return a.coreAccessor.ProviderID()
 }
 
 // Snapshot returns the currently resolved options. A nil map with hasOptions
@@ -118,20 +107,20 @@ func (a *StorageOptionsAccessor) ProviderID() string {
 // The map is an independent copy and may be mutated by the caller. Native
 // wraps provider fetch failures as IO errors while retaining their messages.
 func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error) {
-	if a == nil || a.core == nil {
+	if a == nil || a.coreAccessor == nil {
 		return nil, false, ffi.ErrClosed
 	}
-	return a.core.Snapshot()
+	return a.coreAccessor.Snapshot()
 }
 
 // Close releases the caller's accessor handle and waits for in-flight local
 // acquisitions. Native datasets and stores retain their own references, so
 // they do not block Close and remain usable afterwards.
 func (a *StorageOptionsAccessor) Close() {
-	if a == nil || a.core == nil {
+	if a == nil || a.coreAccessor == nil {
 		return
 	}
-	a.core.Close()
+	a.coreAccessor.Close()
 }
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map
@@ -143,7 +132,7 @@ func NewStorageOptionsAccessor(initial map[string]string, provider StorageOption
 	if err != nil {
 		return nil, wrapError("create storage options accessor", "", err)
 	}
-	return &StorageOptionsAccessor{core: core}, nil
+	return &StorageOptionsAccessor{coreAccessor: core}, nil
 }
 
 // NewNamespaceStorageOptionsAccessor creates a table-scoped accessor backed by
@@ -173,7 +162,7 @@ func NewNamespaceStorageOptionsAccessor(ns namespace.Namespace, tableID []string
 	if err != nil {
 		return nil, wrapError("create namespace storage options accessor", "", err)
 	}
-	return &StorageOptionsAccessor{core: core}, nil
+	return &StorageOptionsAccessor{coreAccessor: core}, nil
 }
 
 // acquireStorageOptionsAccessor pins a caller-owned accessor for one native
@@ -182,10 +171,10 @@ func acquireStorageOptionsAccessor(op, uri string, options *StorageOptionsAccess
 	if options == nil {
 		return nil, func() {}, nil
 	}
-	if options.core == nil {
+	if options.coreAccessor == nil {
 		return nil, nil, closedError(op, uri)
 	}
-	native, release, ok := accessor.Acquire(options.core)
+	native, release, ok := accessor.Acquire(options.coreAccessor)
 	if !ok {
 		return nil, nil, closedError(op, uri)
 	}

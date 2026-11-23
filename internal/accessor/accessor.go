@@ -147,24 +147,25 @@ func newOwned(native *ffi.StorageOptionsAccessor, providerID string, wrapError f
 	}
 }
 
-// resolve maps a public owner to its private Accessor. The root lance package
-// installs it during initialization, because only that package can read the
-// unexported field that holds the implementation.
-var resolve func(owner any) (*Accessor, bool)
-
-// SetResolver installs the private access path used by sibling packages that
-// accept a public root type. It is called once by package lance during init.
-func SetResolver(fn func(owner any) (*Accessor, bool)) {
-	resolve = fn
+// carrier exposes the native owner to this package through a promoted method
+// on the public wrapper. The method is unexported, so the public type gains no
+// bridge member that callers can use.
+func (a *Accessor) carrier() *Accessor {
+	return a
 }
 
-// From returns the implementation behind owner. It is only for packages in this
-// module; it reports false when owner was not created by the root package.
+type carrierOwner interface {
+	carrier() *Accessor
+}
+
+// From returns the implementation behind owner. It reports false when owner is
+// not a public root StorageOptionsAccessor wrapper.
 func From(owner any) (*Accessor, bool) {
-	if resolve == nil {
+	carrier, ok := owner.(carrierOwner)
+	if !ok {
 		return nil, false
 	}
-	return resolve(owner)
+	return carrier.carrier(), true
 }
 
 // ProviderID returns the native identity of the provider, or an empty string

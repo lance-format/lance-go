@@ -66,29 +66,18 @@ type CacheStats struct {
 // the approximate number of cached items. Close is idempotent, waits for
 // in-flight calls, and releases the caller's session handle; objects already
 // opened from the session remain usable.
-type Session struct {
-	core *sharesession.Session
-}
+type coreSession = sharesession.Session
 
-// init installs the private implementation lookup used by package file.
-// The public type must stay in this package for go doc indexing, and file
-// cannot read its unexported field directly.
-func init() {
-	sharesession.SetResolver(func(owner any) (*sharesession.Session, bool) {
-		session, ok := owner.(*Session)
-		if !ok || session == nil || session.core == nil {
-			return nil, false
-		}
-		return session.core, true
-	})
+type Session struct {
+	*coreSession
 }
 
 // CacheStats returns a snapshot of the session caches.
 func (s *Session) CacheStats() (CacheStats, error) {
-	if s == nil || s.core == nil {
+	if s == nil || s.coreSession == nil {
 		return CacheStats{}, closedError("session cache stats", "")
 	}
-	stats, err := s.core.CacheStats()
+	stats, err := s.coreSession.CacheStats()
 	if err != nil {
 		return CacheStats{}, err
 	}
@@ -106,26 +95,26 @@ func (s *Session) CacheStats() (CacheStats, error) {
 
 // SizeBytes returns the approximate cache memory size.
 func (s *Session) SizeBytes() (uint64, error) {
-	if s == nil || s.core == nil {
+	if s == nil || s.coreSession == nil {
 		return 0, closedError("session size", "")
 	}
-	return s.core.SizeBytes()
+	return s.coreSession.SizeBytes()
 }
 
 // ApproxNumItems returns the approximate number of cached items.
 func (s *Session) ApproxNumItems() (uint64, error) {
-	if s == nil || s.core == nil {
+	if s == nil || s.coreSession == nil {
 		return 0, closedError("session items", "")
 	}
-	return s.core.ApproxNumItems()
+	return s.coreSession.ApproxNumItems()
 }
 
 // Close releases the native session after in-flight calls complete. It is idempotent.
 func (s *Session) Close() error {
-	if s == nil || s.core == nil {
+	if s == nil || s.coreSession == nil {
 		return nil
 	}
-	return s.core.Close()
+	return s.coreSession.Close()
 }
 
 // NewSession creates a session with fixed-size caches.
@@ -155,7 +144,7 @@ func NewSessionWithCacheSpecs(indexCache, metadataCache CacheSpec) (*Session, er
 }
 
 func newSession(native *ffi.Session) *Session {
-	return &Session{core: sharesession.New(native, wrapError, closedError)}
+	return &Session{coreSession: sharesession.New(native, wrapError, closedError)}
 }
 
 func toFFICacheSpec(spec CacheSpec) (ffi.CacheSpec, error) {
@@ -192,13 +181,10 @@ func toFFICacheSpec(spec CacheSpec) (ffi.CacheSpec, error) {
 // acquireSession pins s for one native call. The caller must call release
 // after the native call, including when the call fails.
 func acquireSession(op, uri string, s *Session) (*ffi.Session, func(), error) {
-	if s == nil {
+	if s == nil || s.coreSession == nil {
 		return nil, func() {}, nil
 	}
-	if s.core == nil {
-		return nil, nil, closedError(op, uri)
-	}
-	native, release, ok := sharesession.Acquire(s.core)
+	native, release, ok := sharesession.Acquire(s.coreSession)
 	if !ok {
 		return nil, nil, closedError(op, uri)
 	}
