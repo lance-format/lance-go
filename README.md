@@ -216,11 +216,16 @@ The cache entry lives at
 `<cache-root>/lance-go/<uncompressed-sha256>/<libraryName>`, where
 `<cache-root>` is `LANCE_CACHE_DIR` when non-empty and `os.UserCacheDir`
 otherwise. On Linux, `XDG_CACHE_HOME` moves the default user cache. Entries are
-content-addressed: after upgrading, remove stale `lance-go/<sha256>` directories
-when no process uses them. `LANCE_CACHE_DIR` only relocates the cache; it does
-not skip the size and SHA-256 verification performed under a cross-process lock
-on every process start, and an explicit `LANCE_LIB_PATH` avoids that
-verification, so verify the staged file once during image build as shown above.
+content-addressed. The SDK keeps sibling `lance-go/<sha256>` directories after
+an upgrade instead of pruning them: the entry lock covers verification, repair
+and publication, and ends before the library is opened, so it cannot prove that
+another process or an older SDK has finished using an entry. Reclaiming old
+directories is an explicit operator decision; remove them only when no process
+that may load that entry is running. `LANCE_CACHE_DIR` only relocates the
+cache; it does not skip the size and SHA-256 verification performed under a
+cross-process lock on every process start, and an explicit `LANCE_LIB_PATH`
+avoids that verification, so verify the staged file once during image build as
+shown above.
 
 ## Stability and compatibility
 

@@ -176,3 +176,28 @@ func TestLoadReturnsPublishedLibraryWithoutReopening(t *testing.T) {
 		t.Fatalf("Observe after publish = %+v", state)
 	}
 }
+
+// TestLoadRetriesAfterFailure verifies that a failed attempt is not published
+// and the next call runs discovery again. The two attempts fail with different
+// errors because LANCE_LIB_PATH changes between them.
+func TestLoadRetriesAfterFailure(t *testing.T) {
+	resetForTest()
+	t.Cleanup(resetForTest)
+
+	dir := t.TempDir()
+	t.Setenv(EnvLibPath, dir)
+	if _, err := Load(); err == nil {
+		t.Fatal("Load succeeded with a directory as LANCE_LIB_PATH")
+	} else if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("first Load error = %v, want a non-ENOENT file-type error", err)
+	}
+
+	missing := filepath.Join(dir, "missing-liblance_c.so")
+	t.Setenv(EnvLibPath, missing)
+	if _, err := Load(); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("second Load error = %v, want fs.ErrNotExist after retry", err)
+	}
+	if state := Observe(); state.Loaded {
+		t.Fatalf("Observe published a failed retry: %+v", state)
+	}
+}

@@ -77,6 +77,70 @@ func TestBundleReusesVerifiedCache(t *testing.T) {
 	}
 }
 
+// TestBundleRetainsSiblingCacheEntries pins the retention policy: publishing a
+// new digest does not remove the directory of a previously used library, and
+// reusing the old bundle returns its original entry.
+func TestBundleRetainsSiblingCacheEntries(t *testing.T) {
+	testCacheBase(t)
+	firstRaw := []byte("first cached library")
+	secondRaw := []byte("second cached library")
+	first := testBundle(t, firstRaw)
+	second := testBundle(t, secondRaw)
+	if first.UncompressedSHA256 == second.UncompressedSHA256 {
+		t.Fatal("test bundles share a digest")
+	}
+
+	firstPath, err := first.cachedLibrary()
+	if err != nil {
+		t.Fatalf("cache first bundle: %v", err)
+	}
+	secondPath, err := second.cachedLibrary()
+	if err != nil {
+		t.Fatalf("cache second bundle: %v", err)
+	}
+	if filepath.Dir(firstPath) == filepath.Dir(secondPath) {
+		t.Fatalf("bundles share cache directory %s", filepath.Dir(firstPath))
+	}
+
+	for _, tc := range []struct {
+		name string
+		path string
+		raw  []byte
+	}{
+		{name: "first", path: firstPath, raw: firstRaw},
+		{name: "second", path: secondPath, raw: secondRaw},
+	} {
+		got, err := os.ReadFile(tc.path)
+		if err != nil {
+			t.Fatalf("read %s cache entry: %v", tc.name, err)
+		}
+		if !bytes.Equal(got, tc.raw) {
+			t.Fatalf("%s cache entry = %q, want %q", tc.name, got, tc.raw)
+		}
+	}
+
+	// Reusing the older bundle must return its original entry, not extract a
+	// replacement or remove the newer sibling.
+	info, err := os.Stat(firstPath)
+	if err != nil {
+		t.Fatalf("stat first cache entry: %v", err)
+	}
+	reused, err := first.cachedLibrary()
+	if err != nil {
+		t.Fatalf("reuse first bundle: %v", err)
+	}
+	reusedInfo, err := os.Stat(reused)
+	if err != nil {
+		t.Fatalf("stat reused first cache entry: %v", err)
+	}
+	if !os.SameFile(info, reusedInfo) {
+		t.Fatal("reusing the first bundle replaced its cache entry")
+	}
+	if _, err := os.Stat(secondPath); err != nil {
+		t.Fatalf("second cache entry was removed: %v", err)
+	}
+}
+
 // TestBundleWarmCacheHitVerifiesUnderSharedLock pins the warm-hit fast path:
 // while another shared holder is active, cachedLibrary must still verify the
 // existing entry. A fast path that took the exclusive lock first would block
