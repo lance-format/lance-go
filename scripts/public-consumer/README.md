@@ -6,18 +6,20 @@ outside the checkout, and checks the default, namespace-only, and explicit
 library contracts on one native runner. It does not rebuild native code, use
 Rust, protoc, a private module, or a `replace`/`go.work` file.
 
-The hosted workflow is `.github/workflows/unix-public-consumers.yml`. A pull
-request runs it on the exact PR head commit; manual dispatch takes one exact
-full commit SHA or checked-out tag in `revision`. The canonical root module is
-`github.com/lance-format/lance-go`; the requested revision must already be publicly
-resolvable by the Go module proxy.
+The hosted workflow is `.github/workflows/unix-public-consumers.yml`. It runs
+when a root `v*` release tag is pushed, or by manual dispatch that names that
+tag in `revision`; it never accepts a commit SHA or pseudo-version. The
+canonical root module is `github.com/lance-format/lance-go`; the requested tag
+must already be publicly resolvable by the Go module proxy. Exact-head CI
+covers the equivalent checkout/local-source consumer behavior instead of
+resolving a PR head through the proxy.
 
 ## Local invocation
 
 Run on the matching native host from the repository checkout:
 
 ```sh
-ROOT_REVISION=<full-sha-or-tag> \
+ROOT_REVISION=v0.1.1-preview.1 \
 SOURCE_COMMIT=<optional-full-sha> \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
@@ -38,10 +40,9 @@ driver revision of their time.
 
 ## What is checked
 
-- The proxy-resolved version, `Sum`, `GoModSum`, archive, and source tree at the
-  requested revision. The root module archive is compared with `git ls-tree`
-  content and blob hashes; a pseudo-version's 12-hex commit prefix or a tag's
-  full commit is checked against the source.
+- The proxy-resolved tag version, `Sum`, `GoModSum`, archive, and source tree at
+  the requested tag. The root module archive is compared with `git ls-tree`
+  content and blob hashes; the tag's full commit is checked against the source.
 - Artifact metadata against the checked-out snapshot and the source pin;
   downloaded payload size and SHA-256 against that matched metadata. The selected artifact is derived from the built binary,
   not hardcoded.

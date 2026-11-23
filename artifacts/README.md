@@ -186,10 +186,13 @@ fresh empty caches.
 
 ## Public-consumer acceptance
 
-`scripts/public-consumer/run.sh` resolves an exact root revision from the
-public proxy and builds standalone default, namespace-only, and external
-consumers on one native runner. It verifies the root archive and source tree,
-the artifact selected by the built binary, payload and extracted-library bytes,
+`scripts/public-consumer/run.sh` resolves an exact official release tag from
+the public proxy and builds standalone default, namespace-only, and external
+consumers on one native runner. The hosted lanes run on root `v*` tag pushes or
+by dispatch naming that tag, never for a commit SHA or pseudo-version; exact-head
+CI covers the checkout/local-source quickstart and read-only path instead. The
+driver verifies the root archive and source tree, the artifact selected by the
+built binary, payload and extracted-library bytes,
 safe cache modes, and the roundtrip output. It records the complete `go get`
 download set against the root module graph, then requires each default and
 namespace target build to fetch only the selected artifact payload archive from

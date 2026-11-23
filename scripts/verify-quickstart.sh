@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# Verify the version-pinned README quickstart and its read-only deployment path.
+# Verify the README quickstart and its read-only deployment path.
 #
-# This runs on linux/amd64. It resolves the published Go modules from the public
-# proxy, never builds Rust or lance-c, and never uses a preinstalled native
-# library or an existing dataset.
+# This runs on linux/amd64. It never builds Rust or lance-c, and never uses a
+# preinstalled native library or an existing dataset.
 #
-# LANCE_GO_QUICKSTART_VERSION defaults to the root release being prepared
-# (currently v0.1.1-preview.1). A full 40-hex commit is resolved to that
-# module's pseudo-version through the public proxy and checksum database first,
-# so release CI can verify the exact candidate revision before the root tag
-# exists; the companion module follows the same artifact version.
+# Two modes:
+# - checkout/local source: set LANCE_GO_QUICKSTART_SOURCE_DIR to a repository
+#   checkout. The script builds a consumer module that replaces the root module
+#   with that checkout and runs the roundtrip example from it. Exact-head CI
+#   uses this mode, so it does not need the head SHA to resolve through the
+#   public proxy.
+# - published module: leave LANCE_GO_QUICKSTART_SOURCE_DIR unset.
+#   LANCE_GO_QUICKSTART_VERSION defaults to the root release being verified
+#   (currently v0.1.1-preview.1) and must be an exact release tag. Release
+#   verification uses tags only; it never resolves a commit SHA or
+#   pseudo-version.
+#
+# Both modes download the companion artifact module by its exact published
+# version, so companion identity is still checked against the proxy and sumdb.
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go
@@ -31,6 +39,19 @@ for tool in go zstd sha256sum; do
     exit 1
   fi
 done
+
+LOCAL_SOURCE_DIR=${LANCE_GO_QUICKSTART_SOURCE_DIR:-}
+if [[ -n $LOCAL_SOURCE_DIR ]]; then
+  [[ -d $LOCAL_SOURCE_DIR ]] || {
+    echo "verify-quickstart: LANCE_GO_QUICKSTART_SOURCE_DIR is not a directory: $LOCAL_SOURCE_DIR" >&2
+    exit 1
+  }
+  LOCAL_SOURCE_DIR=$(cd "$LOCAL_SOURCE_DIR" && pwd -P)
+  [[ -f $LOCAL_SOURCE_DIR/go.mod ]] || {
+    echo "verify-quickstart: no go.mod in $LOCAL_SOURCE_DIR" >&2
+    exit 1
+  }
+fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/lance-go-quickstart.XXXXXX")
 cleanup() {
@@ -54,41 +75,44 @@ common_env=(
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org
   GOMODCACHE="$modcache" GOCACHE="$buildcache"
 )
+if [[ -n $LOCAL_SOURCE_DIR ]]; then
+  # The local consumer module needs to resolve the replaced root requirement
+  # without a module cache entry for the prospective root version.
+  common_env+=("GOFLAGS=-mod=mod")
+fi
 
-# A release candidate is identified by its exact commit before the root tag
-# exists. `go run <package>@<revision>` does not resolve a bare revision for a
-# package path, so resolve the module version and record its proxy identity.
+# A published module is identified by its exact release tag. Exact-head CI
+# uses the local source mode and does not resolve the root module at all.
 QUICKSTART_VERSION=$VERSION
-ROOT_SUM=
-ROOT_GOMODSUM=
-if [[ $VERSION =~ ^[0-9a-f]{40}$ ]]; then
-  resolution="$work/root-resolution.json"
-  if ! env "${common_env[@]}" go mod download -json "$ROOT_MODULE@$VERSION" \
-    >"$resolution" 2>"$work/root-resolution.err"; then
-    cat "$work/root-resolution.err" >&2
-    echo "verify-quickstart: cannot resolve $ROOT_MODULE@$VERSION" >&2
-    exit 1
-  fi
-  if grep -q '"Error"' "$resolution"; then
-    cat "$resolution" >&2
-    exit 1
-  fi
-  QUICKSTART_VERSION=$(sed -n 's/.*"Version": "\([^"]*\)".*/\1/p' "$resolution")
-  ROOT_SUM=$(sed -n 's/.*"Sum": "\([^"]*\)".*/\1/p' "$resolution")
-  ROOT_GOMODSUM=$(sed -n 's/.*"GoModSum": "\([^"]*\)".*/\1/p' "$resolution")
-  if [[ -z $QUICKSTART_VERSION ]]; then
-    echo "verify-quickstart: resolved root module version is empty" >&2
-    exit 1
-  fi
+if [[ -n $LOCAL_SOURCE_DIR ]]; then
+  QUICKSTART_VERSION=local-source
+elif [[ ! $VERSION =~ ^v[0-9] ]]; then
+  echo "verify-quickstart: LANCE_GO_QUICKSTART_VERSION must be an exact release tag, or set LANCE_GO_QUICKSTART_SOURCE_DIR for local source: $VERSION" >&2
+  exit 1
+fi
+
+if [[ -n $LOCAL_SOURCE_DIR ]]; then
+  # Build an ordinary consumer module outside the checkout that replaces the
+  # root module with the local source, so the run exercises consumer builds
+  # rather than the repository's own package list.
+  (
+    cd "$run_dir"
+    env "${common_env[@]}" go mod init lance-go-quickstart >/dev/null
+    env "${common_env[@]}" go mod edit -replace="$ROOT_MODULE=$LOCAL_SOURCE_DIR"
+    env "${common_env[@]}" go mod edit -require="$ROOT_MODULE@$VERSION"
+  )
 fi
 
 run_quickstart() {
   local stdout=$1 stderr=$2
   shift 2
+  local package="$ROOT_MODULE/examples/roundtrip"
+  if [[ -z $LOCAL_SOURCE_DIR ]]; then
+    package="$package@$QUICKSTART_VERSION"
+  fi
   (
     cd "$run_dir"
-    env "${common_env[@]}" "$@" \
-      go run "$ROOT_MODULE/examples/roundtrip@$QUICKSTART_VERSION"
+    env "${common_env[@]}" "$@" go run "$package"
   ) >"$stdout" 2>"$stderr"
 }
 
@@ -175,10 +199,9 @@ assert_quickstart_output "$work/readonly.out"
   exit 1
 }
 
-printf 'root_revision=%s\n' "$VERSION"
+printf 'root_revision=%s\n' "${LOCAL_SOURCE_DIR:-$VERSION}"
+printf 'root_source=%s\n' "${LOCAL_SOURCE_DIR:+local}"
 printf 'quickstart_version=%s\n' "$QUICKSTART_VERSION"
-[[ -z $ROOT_SUM ]] || printf 'root_sum=%s\n' "$ROOT_SUM"
-[[ -z $ROOT_GOMODSUM ]] || printf 'root_gomodsum=%s\n' "$ROOT_GOMODSUM"
 printf 'quickstart_output=%s\n' "$EXPECTED_OUTPUT"
 printf 'companion_archives=1\n'
 printf 'companion_bytes=%s\n' "$companion_size"

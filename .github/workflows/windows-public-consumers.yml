@@ -1,43 +1,34 @@
 # Public-consumer acceptance for the Windows static-CRT artifact.
 #
-# The lane resolves one published root revision from the public Go module
-# proxy, builds standalone default, namespace-only, and explicitly supplied
-# DLL consumers outside the checkout, and inspects the actual loaded module.
+# The lane resolves one exact release tag from the public Go module proxy,
+# builds standalone default, namespace-only, and explicitly supplied DLL
+# consumers outside the checkout, and inspects the actual loaded module.
 # It does not build native code, publish modules, or activate a selector.
 #
-# A pull request uses the exact head commit. Manual dispatch accepts one exact
-# full commit SHA or checked-out tag. The root module and the matching
-# artifacts/windows-<arch> module must already be published and adopted; a
-# missing module fails the lane and is never skipped.
+# This lane runs only when a root v* release tag is pushed, or by manual
+# dispatch with that tag. It never accepts a commit SHA or pseudo-version:
+# exact-head CI covers the checkout/local-source consumers instead. The root
+# module and the matching artifacts/windows-<arch> module must already be
+# published and adopted; a missing module fails the lane and is never skipped.
 name: Windows public consumers
 
 on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Exact root revision (full commit SHA or tag) to resolve from proxy.golang.org"
+        description: "Exact official release tag (for example v0.1.1-preview.1) to resolve from proxy.golang.org"
         required: true
         type: string
-  pull_request:
-    paths:
-      - ".github/workflows/windows-public-consumers.yml"
-      - "scripts/public-consumer/**"
-      - "internal/tools/public-consumer/**"
-      - "artifacts/**"
-      - "internal/ffi/**"
-      - "internal/loader/**"
-      - "internal/bundled/**"
-      - "namespace/**"
-      - "examples/roundtrip/**"
-      - "go.mod"
-      - "go.sum"
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CGO_ENABLED: "0"
@@ -74,8 +65,8 @@ jobs:
       LIBRARY_NAME: lance_c.dll
       EXPECTED_PROCESSOR_ARCH: ${{ matrix.processor_arch }}
       EXPECTED_OS_NAME: ${{ matrix.os_name }}
-      ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
-      SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+      ROOT_REVISION: ${{ github.event_name == 'push' && github.ref_name || inputs.revision }}
+      SOURCE_COMMIT: ""
     steps:
       - name: Disable Git line-ending conversion
         shell: pwsh
@@ -86,10 +77,29 @@ jobs:
       - name: Check out exact source revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.revision }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Require an official release tag
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:ROOT_REVISION -notmatch '^v[0-9]') {
+            throw "public consumers only run for an official release tag, got: $($env:ROOT_REVISION)"
+          }
+          if ($env:ROOT_REVISION -match '^[0-9a-f]{40}$') {
+            throw "public consumers do not accept a commit SHA: $($env:ROOT_REVISION)"
+          }
+          $head = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $refs = git ls-remote --tags origin "refs/tags/$($env:ROOT_REVISION)" "refs/tags/$($env:ROOT_REVISION)^{}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $commits = @($refs | ForEach-Object { ($_ -split "\s+")[0] })
+          if ($commits -notcontains $head) {
+            throw "checked-out HEAD $head is not the tag $($env:ROOT_REVISION)"
+          }
 
       - name: Set up Go 1.23 from go.mod
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

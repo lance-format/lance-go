@@ -458,9 +458,11 @@ recorded `Sum` and `GoModSum`. Update `artifacts/README.md` with the same
 target, payload sizes and hashes, native commit, header hash, and published
 requirement.
 
-Commit and push the activation commit before running the consumer. The public
-proxy cannot fetch an unpublished commit. Set `ROOT_COMMIT` to the full pushed
-activation commit, then verify that the consumer resolves exactly that object.
+Commit and push the activation commit, then verify that exact head with the
+checkout/local-source mode below. Before the root tag exists, do not try to
+resolve the activation commit through the public proxy: public module
+acceptance uses release tags only. After the tag exists, the same recipe can
+use `ROOT_VERSION`.
 
 A manual consumer recipe is only an illustrative install smoke test. It is not
 release acceptance and does not establish cold target or runtime caches:
@@ -473,7 +475,7 @@ go mod init release-smoke
 env -u GOPRIVATE -u GONOPROXY -u GONOSUMDB \
   GOENV=off GOWORK=off GOMODCACHE="$SMOKE_WORK/modcache" \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-  go get "$ROOT_MODULE@$ROOT_COMMIT"
+  go get "$ROOT_MODULE@$ROOT_VERSION"
 env -u LANCE_LIB_PATH CGO_ENABLED=0 GOWORK=off \
   GOMODCACHE="$SMOKE_WORK/modcache" GOCACHE="$SMOKE_WORK/buildcache" \
   GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
@@ -510,19 +512,32 @@ Required public-distribution acceptance uses both maintained lanes:
   See [the Windows driver contract](scripts/public-consumer/WINDOWS.md) for
   host requirements, DLL identity checks and Windows cache properties.
 
-Each lane resolves one exact root revision through `proxy.golang.org` and
-`sum.golang.org`, and builds standalone default, namespace-only, and external
-consumers outside the checkout. It verifies the root archive and source tree,
-the artifact selected by the built binary, payload and extracted-library
-bytes, platform cache properties, and the roundtrip result. It does not rebuild native code.
-The manual smoke test above is not a substitute for this driver.
+Both lanes resolve one exact **official release tag** through
+`proxy.golang.org` and `sum.golang.org`, and build standalone default,
+namespace-only, and external consumers outside the checkout. They verify the
+root archive and source tree, the artifact selected by the built binary, payload
+and extracted-library bytes, platform cache properties, and the roundtrip
+result. They do not rebuild native code. The manual smoke test above is not a
+substitute for these drivers.
 
-A pull request uses the exact PR head commit; manual dispatch takes a full
-commit SHA or checked-out tag. Run the Unix driver locally on the matching native host:
+The workflows run when a root `v*` release tag is pushed, or by manual dispatch
+that names and checks out that tag. They never accept a commit SHA or
+pseudo-version: a tag is the published install unit. Exact-head CI keeps the
+equivalent coverage without public resolution by building the quickstart from
+the checkout, checking the read-only deployment path, and running the bundled
+RTree and raw Blob v2 regressions on linux/amd64; the native workflows cover
+the rest of the runtime matrix. Maintainers can run the same exact-head check
+locally:
+
+```sh
+LANCE_GO_QUICKSTART_SOURCE_DIR="$PWD" ./scripts/verify-quickstart.sh
+```
+
+Run the Unix driver locally on the matching native host against a tag:
 
 ```sh
 cd "$REPO_ROOT"
-ROOT_REVISION=<full-sha-or-tag> \
+ROOT_REVISION=v0.1.1-preview.1 \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
 EVIDENCE_DIR=/tmp/public-consumer-evidence \
@@ -615,8 +630,9 @@ Create the release for that pushed root tag, mark it as a pre-release when
 appropriate, and attach the evidence. Do not move or reuse a published version
 to hide a mismatch; document the failure and fix forward.
 
-After publication, dispatch both maintained public-consumer workflows against
-the published tag. Set both the workflow ref and its revision input to that
+After publication, the tag push starts both maintained public-consumer
+workflows. They can also be dispatched with the same tag, for example to
+re-run a failed lane. Set both the workflow ref and its revision input to that
 tag so the checked-out driver and publicly resolved root identify the release:
 
 ```sh

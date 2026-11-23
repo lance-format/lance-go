@@ -232,11 +232,14 @@ The race lane also enables Go's pointer checks; native Rust internals are outsid
 Go's race detector.
 
 The CI workflow runs on pull requests and pushes to `main`. It also runs
-[`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh), which executes
-the version-pinned quickstart from an empty directory, checks its literal
-output and selected companion, then reruns the example with the exact companion
-library extracted and a read-only runtime cache. That check uses the published
-modules and does not build Rust or `lance-c`. The default Go lane
+[`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh) in local-source
+mode with `LANCE_GO_QUICKSTART_SOURCE_DIR`, which builds a consumer module that
+replaces the root module with the checkout, checks the roundtrip output and
+selected companion, then reruns the example with the exact companion library
+extracted and a read-only runtime cache. The same job runs the bundled RTree and
+raw Blob v2 regressions from the checkout. Neither step resolves the root
+revision through the public proxy; the companion tag still comes from the public
+proxy and checksum database. The default Go lane
 runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered

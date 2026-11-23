@@ -1,17 +1,19 @@
 # Windows public consumers
 
 `run-windows.ps1` is the Windows acceptance harness for the published
-`artifacts/windows-<arch>` modules. It is deliberately separate from
-`run.sh`: Windows has a different cache contract, needs a PE check, and can
-report the module that the loader actually mapped.
+`artifacts/windows-<arch>` modules. It runs only for an exact official release
+tag (tag push or manual dispatch naming the tag), never for a commit SHA or
+pseudo-version. It is deliberately separate from `run.sh`: Windows has a
+different cache contract, needs a PE check, and can report the module that the
+loader actually mapped.
 
 The Windows modules are published at `v0.1.0` (stable) and
 `v0.1.1-preview.1` (preview). The preview modules come from the official
 `lance-c v0.2.1-beta.1` release at
 `ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`. Both payload sets decompress
-byte-for-byte to the matching official archive DLLs. Candidate public-consumer
-acceptance for each release belongs to its release PR and post-tag record; the
-preview.1 six-target evidence remains historical.
+byte-for-byte to the matching official archive DLLs. Public-consumer
+acceptance for each release is recorded against its release tag; the preview.1
+six-target evidence remains historical.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for
@@ -19,7 +21,7 @@ post-tag checks or establish older Windows support.
 
 ## Prerequisite
 
-The following must exist on the public proxy for the tested root revision:
+The following must exist on the public proxy for the tested root tag:
 
 - the root module version;
 - `artifacts/windows-amd64` or `artifacts/windows-arm64`, published from a
@@ -45,9 +47,10 @@ closure, not a new product security contract.
 - `windows-2022` for native amd64;
 - `windows-11-vs2026-arm` for native arm64.
 
-It uses the exact PR head commit, or an explicit full commit SHA or tag passed
-to manual dispatch. The revision is passed through environment variables, not
-interpolated into a shell command. Go is configured with `CGO_ENABLED=0`,
+It runs when a root `v*` release tag is pushed, or when manual dispatch names
+that tag. The revision is the tag, passed through environment variables rather
+than interpolated into a shell command; commit SHAs and pseudo-versions are
+rejected. Go is configured with `CGO_ENABLED=0`,
 `GOTOOLCHAIN=local`, `GOWORK=off`, and the public `proxy.golang.org` /
 `sum.golang.org` endpoints. The workflow never runs `go mod tidy`, `go mod
 verify`, a native build, Rust, or protoc. It disables Git line-ending
