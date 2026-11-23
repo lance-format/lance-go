@@ -41,6 +41,8 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   `ErrUnsupported`, `ErrThrottled`, `ErrUnavailable` and `ErrInternal`. The
   categories follow the native namespace code meaning, and every code keeps its
   exact value for `errors.As`.
+- `namespace.Some`, `namespace.Null` and `namespace.Absent` construct the three
+  `Nullable[T]` states.
 
 ### Changed
 
@@ -108,6 +110,18 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   value.
 - `CreateBranch` rejects an explicit nil `BranchOption` with
   `ErrInvalidArgument` instead of ignoring it.
+- `namespace.Nullable[T]` is a value type that models store directly. The three
+  wire states are unchanged: absent omits the field, explicit null encodes as
+  `null`, and a concrete value encodes as itself, including zero values and
+  empty slices and maps. Construct a field with `namespace.Some(value)`,
+  `namespace.Null[T]()` or `namespace.Absent[T]()`, or leave the zero
+  `namespace.Nullable[T]`.
+- `namespace/models_nullable.go` no longer lists every optional field. Each of
+  the ten models decodes into a fresh destination in one pass, so a field absent
+  from the document still resets when a response is decoded into a reused value.
+  Those models replace the whole destination, so an omitted ordinary field
+  resets too; models without a `Nullable` field keep `encoding/json`'s behavior
+  of leaving omitted fields untouched.
 
 ### Fixed
 
@@ -225,6 +239,13 @@ if errors.Is(err, namespace.ErrNotFound) {
   including zero, means `Some`. A Fragment value above `math.MaxUint32` is
   rejected before the native call. `CreateBranch` now rejects an explicit nil
   option.
+- `namespace` model fields for native `Option<Option<T>>` values no longer use
+  pointers. Replace `SrcVersion: nil` with `namespace.Absent[int32]()`,
+  `SrcVersion: &namespace.Nullable[int32]{}` with `namespace.Null[int32]()`, and
+  `SrcVersion: &namespace.Nullable[int32]{Value: &version}` with
+  `namespace.Some(version)`. Read presence through `field.Present` and
+  `field.Value`, or `field.IsZero()` for absence. The JSON encoding is
+  unchanged.
 
 ## [v0.2.0] - 2026-11-23
 
