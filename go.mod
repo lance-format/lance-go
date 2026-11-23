@@ -1,6 +1,6 @@
 module github.com/lance-format/lance-go
 
-go 1.23.0
+go 1.26.0
 
 require (
 	github.com/apache/arrow-go/v18 v18.4.1

@@ -85,8 +85,7 @@ Each mode performs the public-consumer setup first:
 The setup phase keeps its own module and build caches, its command log, the
 generated consumer `go.mod` and `go.sum` (the module files stay in place and
 setup copies are saved in the evidence directory), and module-cache inventory
-rows. Go 1.23 resolves imports with `imports.AnyTags` during `go get`, so setup
-is
+rows. The setup `go get` resolves imports with `imports.AnyTags`, so setup is
 expected to download every artifact archive pinned by the root module. The
 driver validates those setup archive identities and versions against the
 downloaded root requirements. A missing pinned archive, a foreign archive, or a

@@ -385,7 +385,7 @@ func testPin(t *testing.T) pin {
 // for one target uses.
 func writeSDKRoot(t *testing.T, root string, requirements map[string]string) {
 	t.Helper()
-	source := "module " + testRootModule + "\n\ngo 1.23.0\n\nrequire (\n"
+	source := "module " + testRootModule + "\n\ngo 1.26.0\n\nrequire (\n"
 	for module, version := range requirements {
 		source += "\t" + module + " " + version + "\n"
 	}

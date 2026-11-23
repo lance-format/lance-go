@@ -2,7 +2,7 @@
 # Package an already-built liblance_c into a data-only Go artifact module and
 # a platform selector. This command does not build or download lance-c.
 #
-# Requires: go 1.23+, the dependencies added to the root go.mod, and a
+# Requires: go 1.26+, the dependencies added to the root go.mod, and a
 # library/header built from the exact commit pinned in internal/ffi/upstream.go.
 set -euo pipefail
 

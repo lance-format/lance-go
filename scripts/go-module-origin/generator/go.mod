@@ -1,6 +1,6 @@
 module github.com/lance-format/lance-go/tools/go-module-origin
 
-go 1.23.0
+go 1.26.0
 
 require (
 	github.com/klauspost/compress v1.18.0

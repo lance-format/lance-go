@@ -10,6 +10,7 @@ import (
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
 	"github.com/lance-format/lance-go/internal/lifetime"
+	"github.com/lance-format/lance-go/internal/streamreader"
 )
 
 // ReaderOptions configures a raw file reader. Pointer fields distinguish an
@@ -241,7 +242,7 @@ func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordRea
 	if err != nil {
 		return nil, wrapError("read all", r.uri, err)
 	}
-	return newRecordReader(ctx, stream, func(err error) error {
+	return streamreader.NewReader(ctx, stream, stream.Schema(), func(err error) error {
 		return wrapError("read all", r.uri, err)
 	}), nil
 }
@@ -268,7 +269,7 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 	if err != nil {
 		return nil, wrapError("read range", r.uri, err)
 	}
-	return newRecordReader(ctx, stream, func(err error) error {
+	return streamreader.NewReader(ctx, stream, stream.Schema(), func(err error) error {
 		return wrapError("read range", r.uri, err)
 	}), nil
 }
@@ -294,7 +295,7 @@ func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOpt
 	if err != nil {
 		return nil, wrapError("read indices", r.uri, err)
 	}
-	return newRecordReader(ctx, stream, func(err error) error {
+	return streamreader.NewReader(ctx, stream, stream.Schema(), func(err error) error {
 		return wrapError("read indices", r.uri, err)
 	}), nil
 }

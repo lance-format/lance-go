@@ -11,6 +11,11 @@ The current stable release is `v0.2.0`. It carries the official prebuilt
 Linux amd64 and arm64, macOS arm64, and Windows amd64 and arm64. Applications
 need Go 1.23 or newer.
 
+The development branch prepares `v0.3.0`, which requires Go 1.26 or newer. No
+`v0.3.0` release exists yet, so keep installing `v0.2.0` until it does. See
+[Go version support](#go-version-support) for the supported Go versions and
+the `v0.3.0` minimum.
+
 ## What you can do
 
 - **Search** with exact or indexed vector similarity, full-text match, phrase, boolean and boost queries, or MinHash similarity.
@@ -219,7 +224,7 @@ verification, so verify the staged file once during image build as shown above.
 
 ## Stability and compatibility
 
-`v0.2.0` is the next minor release of the 0.x line. It adds `Dataset.URI()`
+`v0.2.0` is the current stable release of the 0.x line. It adds `Dataset.URI()`
 and declares `Session`, `CacheStats`, `StorageOptionsProvider`,
 `ForceStorageOptionsProvider` and `StorageOptionsAccessor` directly in the root
 `lance` package, so `go doc` and pkg.go.dev index their methods, fields and
@@ -227,6 +232,10 @@ interface signatures. Source that names these types keeps compiling, but their
 reflection identity moves from `internal/session` and `internal/accessor` to the
 root package. Other published 0.1 Go APIs keep source compatibility. The earlier
 pre-releases keep their own published versions and release notes.
+
+The development branch prepares `v0.3.0`, which raises the module minimum to
+Go 1.26 and carries further minor-release changes. It is not tagged yet;
+`v0.2.0` stays published and installable with Go 1.23 until it is.
 
 The package follows Semantic Versioning for `v0.x`: `0.2.x` patch releases
 preserve source compatibility for published Go APIs, and necessary breaking
@@ -238,6 +247,24 @@ The historical cross-language compatibility record covers Lance storage 2.1
 reads and appends across Go, Python, Java and Rust on Linux amd64. It was
 produced before the 0.1 releases and is evidence for that fixture and native
 pin only; see the [suite record](internal/compat/README.md#accepted-execution).
+
+### Go version support
+
+`v0.3.0` requires Go 1.26 or newer. That minimum is the supported and tested
+floor: CI runs Go 1.26 and the current stable release, Go 1.27, on Linux and
+Windows, and the native and release lanes run the floor with
+`GOTOOLCHAIN=local`. Earlier Go releases are outside the tested set. `v0.2.0`
+keeps its published `go 1.23.0` directive and builds with Go 1.23 or newer.
+
+The `go` directive in `go.mod` enforces the minimum. With `GOTOOLCHAIN=local`,
+an older toolchain stops with `go.mod requires go >= 1.26.0`; with the default
+`GOTOOLCHAIN=auto`, Go downloads a toolchain that satisfies the directive
+instead.
+
+A future minimum change is a separate minor-release decision. It does not follow
+an automatic schedule from the upstream release calendar, and the release that
+makes it records the new floor in its migration notes. Patch releases do not
+change the minimum.
 
 ## Troubleshooting
 

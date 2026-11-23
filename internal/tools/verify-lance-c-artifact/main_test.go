@@ -44,7 +44,7 @@ func TestVerifyModuleLayout(t *testing.T) {
 			dir := t.TempDir()
 			files := map[string]string{
 				"artifact.go":       tt.source,
-				"go.mod":            "module example.com/artifact\n\ngo 1.23.0\n",
+				"go.mod":            "module example.com/artifact\n\ngo 1.26.0\n",
 				"liblance_c.so.zst": "payload bytes checked separately",
 			}
 			if tt.extra != "" {
