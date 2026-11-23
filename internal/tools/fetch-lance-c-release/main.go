@@ -2,11 +2,15 @@
 // header from the official GitHub release for one target.
 //
 // It downloads the archive for the target triple named after the pinned
-// release, verifies it against the checksum published with the release,
-// extracts only the header and shared library, and verifies that the header
-// bytes match the pin in internal/ffi/upstream.go and that the library's
-// object format and machine match the requested target. It never builds
-// lance-c from source, and it never substitutes a different release or target.
+// release, verifies it against the checksum published with the release, and
+// extracts the shared library together with every public include/lance/*.h
+// header. The C++ header lance.hpp is not part of the Go header set. Legacy
+// archives that ship only include/lance/lance.h are still accepted, with the
+// single header verified against upstreamHeaderSHA256. A split header set is
+// verified against an independently supplied HEADER-MANIFEST or composite
+// identity, because the umbrella header alone is not a complete identity. The
+// command never builds lance-c from source, and it never substitutes a
+// different release or target.
 //
 // Usage:
 //
@@ -26,12 +30,15 @@
 //	acquisition.txt                 verified provenance for the rest of the lane
 //	lance-c-<tag>-<triple>.tar.xz   the verified published archive
 //	...tar.xz.sha256                the published per-asset checksum
-//	include/lance/lance.h           canonical header (LF line endings)
+//	include/lance/*.h               canonical public C headers (LF line endings)
+//	HEADER-MANIFEST                 split header manifest, when applicable
+//	COMPOSITE-SHA256                split header identity, when applicable
 //	lib/<library>                   the published shared library, byte for byte
 //
-// Linux and macOS archives ship an LF header; the Windows archive ships the
-// same header with CRLF line endings. The command writes the canonical LF form
-// recorded by upstreamHeaderSHA256 and records both hashes.
+// Linux and macOS archives ship LF headers; the Windows archive ships the same
+// headers with CRLF line endings. The command writes the canonical LF form and
+// records both hashes. A split manifest lists sorted "include/lance/<name>
+// <sha256>" lines, and its identity is the SHA-256 of that exact text.
 //
 // When the published artifact module that this target's generated selector
 // imports records the same upstream repository, commit, and header as the pin,
@@ -77,6 +84,7 @@ import (
 	"time"
 
 	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
+	"github.com/lance-format/lance-go/internal/tools/headeridentity"
 	"github.com/lance-format/lance-go/internal/tools/reporoot"
 	"github.com/ulikunitz/xz"
 )
@@ -86,6 +94,8 @@ func main() {
 	outFlag := flag.String("out", "", "new output directory; must not exist (absolute path; relative values resolve from the internal/tools module directory)")
 	pinFlag := flag.String("pin", "", "pin file with the upstream provenance constants (absolute path; relative values resolve from the internal/tools module directory; default: <root>/internal/ffi/upstream.go)")
 	rootFlag := flag.String("root", "", "repository root that provides go.mod and internal/bundled (absolute path; relative values resolve from the internal/tools module directory; default: discovered from the current directory)")
+	headerIdentityFlag := flag.String("expected-header-identity", "", "expected composite SHA-256 of a split HEADER-MANIFEST; defaults to upstreamHeaderIdentitySHA256 when the pin records one")
+	headerManifestFlag := flag.String("expected-header-manifest", "", "expected split HEADER-MANIFEST file (absolute path; relative values resolve from the internal/tools module directory); its exact text digest is used as the identity")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
@@ -109,7 +119,7 @@ func main() {
 		pin = filepath.Join(root, "internal", "ffi", "upstream.go")
 	}
 
-	if err := run(*targetFlag, *outFlag, pin, root); err != nil {
+	if err := run(*targetFlag, *outFlag, pin, root, *headerIdentityFlag, *headerManifestFlag); err != nil {
 		fail(err)
 	}
 }
@@ -120,10 +130,11 @@ func fail(err error) {
 }
 
 type pin struct {
-	repo      string
-	release   string
-	commit    string
-	headerSHA string
+	repo              string
+	release           string
+	commit            string
+	headerSHA         string
+	headerIdentitySHA string
 }
 
 type pinCheck struct {
@@ -132,12 +143,16 @@ type pinCheck struct {
 	want string
 }
 
-func run(targetName, outDir, pinFile, root string) error {
+func run(targetName, outDir, pinFile, root, expectedIdentity, expectedManifestPath string) error {
 	pinned, err := readPin(pinFile)
 	if err != nil {
 		return err
 	}
 	spec, err := resolveTarget(targetName)
+	if err != nil {
+		return err
+	}
+	expected, err := loadHeaderExpectation(expectedManifestPath, expectedIdentity, pinned.headerIdentitySHA)
 	if err != nil {
 		return err
 	}
@@ -149,7 +164,7 @@ func run(targetName, outDir, pinFile, root string) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory %s: %w", outDir, err)
 	}
-	if err := acquire(pinned, spec, outDir, root); err != nil {
+	if err := acquire(pinned, spec, outDir, root, expected); err != nil {
 		return err
 	}
 
@@ -163,8 +178,44 @@ func run(targetName, outDir, pinFile, root string) error {
 
 const recordName = "acquisition.txt"
 
+// headerExpectation is the independently supplied identity for a split header
+// set. manifest is nil when the caller supplied only a composite digest.
+type headerExpectation struct {
+	manifest []byte
+	identity string
+}
+
+// loadHeaderExpectation combines the command-line expectation with the
+// optional identity recorded in the pin. A supplied manifest is authoritative:
+// its exact text digest must agree with any additional identity.
+func loadHeaderExpectation(manifestPath, identity, pinIdentity string) (headerExpectation, error) {
+	expected := headerExpectation{identity: identity}
+	if expected.identity == "" {
+		expected.identity = pinIdentity
+	}
+	if manifestPath != "" {
+		data, err := os.ReadFile(manifestPath)
+		if err != nil {
+			return headerExpectation{}, fmt.Errorf("read expected header manifest %s: %w", manifestPath, err)
+		}
+		if _, err := headeridentity.Parse(data); err != nil {
+			return headerExpectation{}, fmt.Errorf("expected header manifest %s: %w", manifestPath, err)
+		}
+		manifestIdentity := sha256Hex(data)
+		if expected.identity != "" && expected.identity != manifestIdentity {
+			return headerExpectation{}, fmt.Errorf("expected header manifest %s has sha256 %s, but the supplied identity is %s", manifestPath, manifestIdentity, expected.identity)
+		}
+		expected.manifest = data
+		expected.identity = manifestIdentity
+	}
+	if expected.identity != "" && !headeridentity.ValidDigest(expected.identity) {
+		return headerExpectation{}, fmt.Errorf("expected header identity %q is not a lowercase SHA-256", expected.identity)
+	}
+	return expected, nil
+}
+
 // acquire downloads, verifies, extracts, and records one release archive.
-func acquire(pinned pin, spec targetSpec, outDir, root string) error {
+func acquire(pinned pin, spec targetSpec, outDir, root string, expected headerExpectation) error {
 	assetName := fmt.Sprintf("lance-c-%s-%s.tar.xz", pinned.release, spec.triple)
 	baseURL := strings.TrimSuffix(pinned.repo, "/") + "/releases/download/" + url.PathEscape(pinned.release)
 	assetURL := baseURL + "/" + assetName
@@ -197,22 +248,23 @@ func acquire(pinned pin, spec targetSpec, outDir, root string) error {
 		return err
 	}
 
-	expected := []string{headerMember, spec.libraryMember}
+	expectedMembers := []string{headeridentity.Umbrella, spec.libraryMember}
 	if spec.importLibraryMember != "" {
-		expected = append(expected, spec.importLibraryMember)
+		expectedMembers = append(expectedMembers, spec.importLibraryMember)
 	}
-	fmt.Printf("extract: %s (header and shared library only)\n", assetName)
-	if _, err := extractMembers(archivePath, outDir, expected); err != nil {
+	fmt.Printf("extract: %s (public C headers and shared library only)\n", assetName)
+	if _, err := extractMembers(archivePath, outDir, expectedMembers); err != nil {
 		return fmt.Errorf("extract from %s: %w", assetName, err)
 	}
 
-	headerPath := filepath.Join(outDir, filepath.FromSlash(strings.TrimPrefix(headerMember, "./")))
-	headerSHA, headerArchiveSHA, lineEndings, err := canonicalHeader(headerPath, pinned.headerSHA)
+	headers, err := verifyAcquiredHeaders(outDir, pinned, expected)
 	if err != nil {
-		return fmt.Errorf("header from %s: %w", assetName, err)
+		return fmt.Errorf("headers from %s: %w", assetName, err)
 	}
+	headerPath, headerSHA := headers.umbrellaPath, headers.umbrellaSHA
+	headerArchiveSHA, lineEndings := headers.umbrellaArchiveSHA, headers.umbrellaLineEndings
 	if lineEndings != "lf" {
-		fmt.Printf("note: %s ships the pinned header with %s line endings; wrote the canonical LF form (archive sha256 %s)\n",
+		fmt.Printf("note: %s ships the umbrella header with %s line endings; wrote the canonical LF form (archive sha256 %s)\n",
 			assetName, strings.ToUpper(lineEndings), headerArchiveSHA)
 	}
 
@@ -261,6 +313,7 @@ func acquire(pinned pin, spec targetSpec, outDir, root string) error {
 		"header_sha256=" + headerSHA,
 		"header_archive_sha256=" + headerArchiveSHA,
 		"header_archive_line_endings=" + lineEndings,
+		"header_count=" + strconv.Itoa(len(headers.files)),
 		"library=" + libraryPath,
 		"library_bytes=" + strconv.FormatInt(librarySize, 10),
 		"library_sha256=" + librarySHA,
@@ -277,6 +330,17 @@ func acquire(pinned pin, spec targetSpec, outDir, root string) error {
 		)
 	} else {
 		record = append(record, "independent_identity_reason="+independent.reason)
+	}
+	if headers.split {
+		record = append(record,
+			"headers="+headers.dir,
+			"header_manifest="+headers.manifestPath,
+			"header_manifest_sha256="+headers.identity,
+			"header_identity_sha256="+headers.identity,
+		)
+	}
+	if pinned.headerIdentitySHA != "" {
+		record = append(record, "upstream_header_identity_sha256="+pinned.headerIdentitySHA)
 	}
 	if importLibraryPath != "" {
 		record = append(record,
@@ -301,7 +365,107 @@ func readRecord(path string) (string, error) {
 	return string(data), nil
 }
 
-// readPin reads the four provenance constants from internal/ffi/upstream.go.
+// readPin reads the provenance constants from internal/ffi/upstream.go.
+// upstreamHeaderIdentitySHA256 is optional and is used for a split header set.
+// acquiredHeaderSet is the verified public C header set extracted from one
+// release archive. split distinguishes the eight-header layout from a legacy
+// archive that ships only include/lance/lance.h.
+type acquiredHeaderSet struct {
+	dir                 string
+	files               []headeridentity.File
+	identity            string
+	split               bool
+	manifestPath        string
+	umbrellaPath        string
+	umbrellaSHA         string
+	umbrellaArchiveSHA  string
+	umbrellaLineEndings string
+}
+
+// verifyAcquiredHeaders canonicalizes the extracted headers, verifies them
+// against the independent expectation, and writes the manifest evidence for a
+// split set. A legacy single header keeps the published upstreamHeaderSHA256
+// check and output shape.
+func verifyAcquiredHeaders(outDir string, pinned pin, expected headerExpectation) (acquiredHeaderSet, error) {
+	dir := filepath.Join(outDir, "include", "lance")
+	raw, err := headeridentity.Scan(dir)
+	if err != nil {
+		return acquiredHeaderSet{}, err
+	}
+	split := len(raw) > 1 || raw[0].Path != headeridentity.Umbrella
+	result := acquiredHeaderSet{
+		dir:          dir,
+		split:        split,
+		umbrellaPath: filepath.Join(dir, "lance.h"),
+	}
+
+	expectedHashes := map[string]string{}
+	if expected.manifest != nil {
+		manifest, err := headeridentity.Parse(expected.manifest)
+		if err != nil {
+			return acquiredHeaderSet{}, fmt.Errorf("parse expected %s: %w", headeridentity.ManifestName, err)
+		}
+		for _, file := range manifest {
+			expectedHashes[file.Path] = file.SHA256
+		}
+	}
+
+	for _, file := range raw {
+		path := filepath.Join(dir, filepath.Base(file.Path))
+		var canonicalSHA, archiveSHA, lineEndings string
+		if want, ok := expectedHashes[file.Path]; ok {
+			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeaderAgainst(path, want,
+				"expected "+headeridentity.ManifestName, "the release does not contain the expected header")
+		} else if split {
+			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeaderLoose(path)
+		} else {
+			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeader(path, pinned.headerSHA)
+		}
+		if err != nil {
+			return acquiredHeaderSet{}, fmt.Errorf("%s: %w", file.Path, err)
+		}
+		if file.Path == headeridentity.Umbrella {
+			result.umbrellaSHA = canonicalSHA
+			result.umbrellaArchiveSHA = archiveSHA
+			result.umbrellaLineEndings = lineEndings
+		}
+	}
+
+	switch {
+	case expected.manifest != nil || expected.identity != "":
+		files, identity, err := headeridentity.Verify(dir, expected.manifest, expected.identity)
+		if err != nil {
+			return acquiredHeaderSet{}, err
+		}
+		result.files = files
+		result.identity = identity
+	case split:
+		return acquiredHeaderSet{}, fmt.Errorf("split header set requires an expected identity; pass -expected-header-identity or -expected-header-manifest, or record upstreamHeaderIdentitySHA256 in the pin")
+	default:
+		files, err := headeridentity.Scan(dir)
+		if err != nil {
+			return acquiredHeaderSet{}, err
+		}
+		result.files = files
+	}
+
+	if result.split {
+		manifest, err := headeridentity.Encode(result.files)
+		if err != nil {
+			return acquiredHeaderSet{}, err
+		}
+		result.manifestPath = filepath.Join(outDir, headeridentity.ManifestName)
+		if err := os.WriteFile(result.manifestPath, manifest, 0o644); err != nil {
+			return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", result.manifestPath, err)
+		}
+		compositePath := filepath.Join(outDir, headeridentity.CompositeName)
+		if err := os.WriteFile(compositePath, []byte(result.identity+"\n"), 0o644); err != nil {
+			return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", compositePath, err)
+		}
+	}
+	return result, nil
+}
+
 func readPin(path string) (pin, error) {
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
@@ -339,10 +503,11 @@ func readPin(path string) (pin, error) {
 	}
 
 	pinned := pin{
-		repo:      values["upstreamRepo"],
-		release:   values["upstreamRelease"],
-		commit:    values["upstreamCommit"],
-		headerSHA: values["upstreamHeaderSHA256"],
+		repo:              values["upstreamRepo"],
+		release:           values["upstreamRelease"],
+		commit:            values["upstreamCommit"],
+		headerSHA:         values["upstreamHeaderSHA256"],
+		headerIdentitySHA: values["upstreamHeaderIdentitySHA256"],
 	}
 	checks := []pinCheck{
 		{"upstreamRepo", func(v string) bool {
@@ -361,6 +526,9 @@ func readPin(path string) (pin, error) {
 			return pin{}, fmt.Errorf("pin %s has %s = %q, want %s", path, check.name, value, check.want)
 		}
 	}
+	if value := pinned.headerIdentitySHA; value != "" && !sha256Pattern.MatchString(value) {
+		return pin{}, fmt.Errorf("pin %s has upstreamHeaderIdentitySHA256 = %q, want a lowercase SHA-256", path, value)
+	}
 	return pinned, nil
 }
 
@@ -370,8 +538,6 @@ var (
 	commitPattern  = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	sha256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
-
-const headerMember = "./include/lance/lance.h"
 
 type targetSpec struct {
 	name                string
@@ -545,10 +711,18 @@ func retryable(err error) bool {
 	return true
 }
 
-// canonicalHeader verifies the extracted header against the pin. A header that
-// differs only by CRLF line endings is accepted and rewritten in canonical LF
-// form; both hashes are recorded.
+// canonicalHeader verifies the extracted legacy header against the pin. A
+// header that differs only by CRLF line endings is accepted and rewritten in
+// canonical LF form; both hashes are recorded.
 func canonicalHeader(path, pinSHA string) (canonicalSHA, archiveSHA, lineEndings string, err error) {
+	return canonicalHeaderAgainst(path, pinSHA, "pin", "the release does not contain the pinned header")
+}
+
+// canonicalHeaderAgainst verifies one header against an expected SHA-256. A
+// header that differs only by CRLF line endings is accepted and rewritten in
+// canonical LF form. expectation and failure describe the source of the
+// expected digest in error messages.
+func canonicalHeaderAgainst(path, expectedSHA, expectation, failure string) (canonicalSHA, archiveSHA, lineEndings string, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", "", "", err
@@ -556,14 +730,36 @@ func canonicalHeader(path, pinSHA string) (canonicalSHA, archiveSHA, lineEndings
 	archiveSHA = sha256Hex(raw)
 	canonical := raw
 	lineEndings = "lf"
-	if archiveSHA != pinSHA {
+	if archiveSHA != expectedSHA {
 		normalized := bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 		normalizedSHA := sha256Hex(normalized)
-		if normalizedSHA != pinSHA {
-			return "", "", "", fmt.Errorf("sha256 is %s as published and %s with LF line endings, pin says %s; the release does not contain the pinned header",
-				archiveSHA, normalizedSHA, pinSHA)
+		if normalizedSHA != expectedSHA {
+			return "", "", "", fmt.Errorf("sha256 is %s as published and %s with LF line endings, %s says %s; %s",
+				archiveSHA, normalizedSHA, expectation, expectedSHA, failure)
 		}
 		canonical = normalized
+		lineEndings = "crlf"
+		if err := os.WriteFile(path, canonical, 0o644); err != nil {
+			return "", "", "", fmt.Errorf("write canonical header: %w", err)
+		}
+	}
+	canonicalSHA = sha256Hex(canonical)
+	return canonicalSHA, archiveSHA, lineEndings, nil
+}
+
+// canonicalHeaderLoose normalizes CRLF line endings for a split header that
+// has no per-file expected digest yet. The identity check then binds the
+// canonical LF manifest.
+func canonicalHeaderLoose(path string) (canonicalSHA, archiveSHA, lineEndings string, err error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", "", err
+	}
+	archiveSHA = sha256Hex(raw)
+	canonical := raw
+	lineEndings = "lf"
+	if bytes.Contains(raw, []byte("\r\n")) {
+		canonical = bytes.ReplaceAll(raw, []byte("\r\n"), []byte("\n"))
 		lineEndings = "crlf"
 		if err := os.WriteFile(path, canonical, 0o644); err != nil {
 			return "", "", "", fmt.Errorf("write canonical header: %w", err)
@@ -939,13 +1135,21 @@ func resolveModuleDir(modulePath, version string) (string, error) {
 	return result.Dir, nil
 }
 
-// extractMembers streams the compressed tar archive once and writes only the
-// requested regular-file members. It returns every member name it saw so a
-// missing expected member can be reported against the published layout.
+// extractMembers streams the compressed tar archive once and writes the
+// requested regular-file members plus every public include/lance/*.h header.
+// Archive names with or without a leading "./" are accepted. It returns every
+// member name it saw so a missing expected member can be reported against the
+// published layout.
 func extractMembers(archivePath, outDir string, members []string) ([]string, error) {
 	wanted := make(map[string]bool, len(members))
+	canonicalMembers := make([]string, 0, len(members))
 	for _, member := range members {
-		wanted[member] = true
+		clean, err := canonicalArchiveMember(member)
+		if err != nil {
+			return nil, fmt.Errorf("expected member %q: %w", member, err)
+		}
+		wanted[clean] = true
+		canonicalMembers = append(canonicalMembers, clean)
 	}
 	archive, err := os.Open(archivePath)
 	if err != nil {
@@ -967,7 +1171,11 @@ func extractMembers(archivePath, outDir string, members []string) ([]string, err
 		if err != nil {
 			return seen, fmt.Errorf("read tar stream: %w", err)
 		}
-		seen = append(seen, header.Name)
+		clean, err := canonicalArchiveMember(header.Name)
+		if err != nil {
+			return seen, fmt.Errorf("archive member %q: %w", header.Name, err)
+		}
+		seen = append(seen, clean)
 		switch header.Typeflag {
 		case tar.TypeDir:
 			continue
@@ -975,43 +1183,58 @@ func extractMembers(archivePath, outDir string, members []string) ([]string, err
 		default:
 			return seen, fmt.Errorf("archive member %s has unsupported type %q; the release archive must contain only regular files and directories", header.Name, header.Typeflag)
 		}
-		if !wanted[header.Name] {
+		if !wanted[clean] && !isPublicHeader(clean) {
 			continue
 		}
-		if extracted[header.Name] {
-			return seen, fmt.Errorf("archive member %s appears more than once", header.Name)
+		if clean == "." {
+			return seen, fmt.Errorf("archive member %q escapes the output directory", header.Name)
+		}
+		if extracted[clean] {
+			return seen, fmt.Errorf("archive member %s appears more than once", clean)
 		}
 		if header.Size <= 0 {
-			return seen, fmt.Errorf("archive member %s is empty", header.Name)
-		}
-		clean := path.Clean(header.Name)
-		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
-			return seen, fmt.Errorf("archive member %q escapes the output directory", header.Name)
+			return seen, fmt.Errorf("archive member %s is empty", clean)
 		}
 		destination := filepath.Join(outDir, filepath.FromSlash(clean))
 		if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
-			return seen, fmt.Errorf("extract %s: %w", header.Name, err)
+			return seen, fmt.Errorf("extract %s: %w", clean, err)
 		}
 		file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 		if err != nil {
-			return seen, fmt.Errorf("extract %s: %w", header.Name, err)
+			return seen, fmt.Errorf("extract %s: %w", clean, err)
 		}
 		_, copyErr := io.Copy(file, reader)
 		closeErr := file.Close()
 		if copyErr != nil {
-			return seen, fmt.Errorf("extract %s: %w", header.Name, copyErr)
+			return seen, fmt.Errorf("extract %s: %w", clean, copyErr)
 		}
 		if closeErr != nil {
-			return seen, fmt.Errorf("extract %s: %w", header.Name, closeErr)
+			return seen, fmt.Errorf("extract %s: %w", clean, closeErr)
 		}
-		extracted[header.Name] = true
+		extracted[clean] = true
 	}
-	for _, member := range members {
+	for _, member := range canonicalMembers {
 		if !extracted[member] {
 			return seen, fmt.Errorf("archive does not contain %s; published members: %s", member, memberSummary(seen))
 		}
 	}
 	return seen, nil
+}
+
+// canonicalArchiveMember normalizes an archive member name so the legacy
+// "./include/..." form and the split "include/..." form match the same entry.
+func canonicalArchiveMember(name string) (string, error) {
+	clean := path.Clean(strings.TrimPrefix(name, "./"))
+	if clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
+		return "", fmt.Errorf("member escapes the output directory")
+	}
+	return clean, nil
+}
+
+// isPublicHeader reports whether name is a public C header directly under
+// include/lance. lance.hpp is deliberately excluded.
+func isPublicHeader(name string) bool {
+	return path.Dir(name) == headeridentity.Dir && strings.HasSuffix(name, ".h")
 }
 
 func memberSummary(members []string) string {

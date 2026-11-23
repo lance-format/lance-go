@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lance-format/lance-go/internal/tools/headeridentity"
 	"github.com/ulikunitz/xz"
 )
 
@@ -787,7 +789,7 @@ func TestExtractMembers(t *testing.T) {
 	}
 
 	_, err = extractMembers(archive, t.TempDir(), []string{"./lib/lance_c.dll"})
-	if err == nil || !strings.Contains(err.Error(), "does not contain ./lib/lance_c.dll") {
+	if err == nil || !strings.Contains(err.Error(), "does not contain lib/lance_c.dll") {
 		t.Fatalf("missing member error = %v", err)
 	}
 
@@ -809,5 +811,304 @@ func TestExtractMembers(t *testing.T) {
 	if _, err := extractMembers(duplicateArchive, t.TempDir(), []string{"./lib/liblance_c.so"}); err == nil ||
 		!strings.Contains(err.Error(), "appears more than once") {
 		t.Fatalf("duplicate member error = %v", err)
+	}
+}
+
+func TestAcquireSplitHeaders(t *testing.T) {
+	headers := map[string]string{
+		"include/lance/lance.h": "/* umbrella */\n#include \"error.h\"\n",
+		"include/lance/error.h": "int lance_last_error_code(void);\n",
+		"include/lance/fwd.h":   "typedef struct LanceDataset LanceDataset;\n",
+	}
+	files := make([]headeridentity.File, 0, len(headers))
+	for path, content := range headers {
+		files = append(files, headeridentity.File{Path: path, SHA256: sha256Hex([]byte(content))})
+	}
+	manifest, err := headeridentity.Encode(files)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	identity, err := headeridentity.Digest(files)
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+
+	pinned := testPin(t)
+	pinned.repo = "https://example.invalid"
+	pinned.release = "v0.2.0-beta.1"
+	pinned.headerSHA = sha256Hex([]byte(headers["include/lance/lance.h"]))
+	spec, err := resolveTarget("linux/amd64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+	archiveName := "lance-c-v0.2.0-beta.1-x86_64-unknown-linux-gnu.tar.xz"
+	lib := append(syntheticELF(62), bytes.Repeat([]byte{0}, 128)...)
+	archivePath := filepath.Join(t.TempDir(), "release.tar.xz")
+	entries := []tarEntry{
+		{name: "include/", typeflag: tar.TypeDir},
+		{name: "include/lance/", typeflag: tar.TypeDir},
+	}
+	for path, content := range headers {
+		entries = append(entries, tarEntry{name: path, data: []byte(content)})
+	}
+	entries = append(entries,
+		tarEntry{name: "include/lance/lance.hpp", data: []byte("// C++ only\n")},
+		tarEntry{name: "lib/", typeflag: tar.TypeDir},
+		tarEntry{name: "lib/liblance_c.so", data: lib},
+	)
+	writeTarXZ(t, archivePath, entries)
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("read archive: %v", err)
+	}
+	archiveSHA := sha256Hex(archiveBytes)
+	checksum := archiveSHA + "  " + archiveName + "\n"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases/download/v0.2.0-beta.1/" + archiveName:
+			w.Write(archiveBytes)
+		case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
+			io.WriteString(w, checksum)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	pinned.repo = server.URL
+	root := t.TempDir()
+	writeSDKRoot(t, root, nil)
+
+	t.Run("manifest and identity", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "release")
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			t.Fatalf("create output: %v", err)
+		}
+		if err := acquire(pinned, spec, out, root, headerExpectation{manifest: manifest, identity: identity}); err != nil {
+			t.Fatalf("acquire: %v", err)
+		}
+		gotManifest, err := os.ReadFile(filepath.Join(out, headeridentity.ManifestName))
+		if err != nil {
+			t.Fatalf("read manifest: %v", err)
+		}
+		if !bytes.Equal(gotManifest, manifest) {
+			t.Fatalf("manifest = %q, want %q", gotManifest, manifest)
+		}
+		gotIdentity, err := os.ReadFile(filepath.Join(out, headeridentity.CompositeName))
+		if err != nil {
+			t.Fatalf("read identity: %v", err)
+		}
+		if string(gotIdentity) != identity+"\n" {
+			t.Fatalf("identity = %q, want %q", gotIdentity, identity+"\n")
+		}
+		if _, err := os.Stat(filepath.Join(out, "include", "lance", "lance.hpp")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("lance.hpp was extracted: %v", err)
+		}
+		record, err := os.ReadFile(filepath.Join(out, recordName))
+		if err != nil {
+			t.Fatalf("read record: %v", err)
+		}
+		for _, want := range []string{
+			"header_count=3\n",
+			"header_identity_sha256=" + identity + "\n",
+			"header_manifest=" + filepath.Join(out, headeridentity.ManifestName) + "\n",
+			"fetch_lance_c_release=ok\n",
+		} {
+			if !strings.Contains(string(record), want) {
+				t.Fatalf("record does not contain %q:\n%s", want, record)
+			}
+		}
+	})
+
+	t.Run("identity only", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "release")
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			t.Fatalf("create output: %v", err)
+		}
+		if err := acquire(pinned, spec, out, root, headerExpectation{identity: identity}); err != nil {
+			t.Fatalf("acquire: %v", err)
+		}
+	})
+
+	t.Run("missing expectation", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "release")
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			t.Fatalf("create output: %v", err)
+		}
+		err := acquire(pinned, spec, out, root, headerExpectation{})
+		if err == nil || !strings.Contains(err.Error(), "requires an expected identity") {
+			t.Fatalf("acquire error = %v, want a missing-identity error", err)
+		}
+	})
+
+	t.Run("changed identity", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "release")
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			t.Fatalf("create output: %v", err)
+		}
+		err := acquire(pinned, spec, out, root, headerExpectation{identity: strings.Repeat("0", 64)})
+		if err == nil || !strings.Contains(err.Error(), "header set identity") {
+			t.Fatalf("acquire error = %v, want an identity mismatch", err)
+		}
+	})
+
+	t.Run("crlf windows headers", func(t *testing.T) {
+		crlfDir := t.TempDir()
+		crlfEntries := []tarEntry{
+			{name: "include/lance/", typeflag: tar.TypeDir},
+			{name: "include/lance/lance.h", data: []byte(strings.ReplaceAll(headers["include/lance/lance.h"], "\n", "\r\n"))},
+			{name: "include/lance/error.h", data: []byte(strings.ReplaceAll(headers["include/lance/error.h"], "\n", "\r\n"))},
+			{name: "include/lance/fwd.h", data: []byte(strings.ReplaceAll(headers["include/lance/fwd.h"], "\n", "\r\n"))},
+			{name: "lib/", typeflag: tar.TypeDir},
+			{name: "lib/liblance_c.so", data: lib},
+		}
+		crlfArchive := filepath.Join(crlfDir, "release.tar.xz")
+		writeTarXZ(t, crlfArchive, crlfEntries)
+		crlfBytes, err := os.ReadFile(crlfArchive)
+		if err != nil {
+			t.Fatalf("read archive: %v", err)
+		}
+		crlfChecksum := sha256Hex(crlfBytes) + "  " + archiveName + "\n"
+		crlfServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/releases/download/v0.2.0-beta.1/" + archiveName:
+				w.Write(crlfBytes)
+			case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
+				io.WriteString(w, crlfChecksum)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer crlfServer.Close()
+		crlfPin := pinned
+		crlfPin.repo = crlfServer.URL
+		out := filepath.Join(t.TempDir(), "release")
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			t.Fatalf("create output: %v", err)
+		}
+		if err := acquire(crlfPin, spec, out, root, headerExpectation{manifest: manifest, identity: identity}); err != nil {
+			t.Fatalf("acquire CRLF headers: %v", err)
+		}
+		written, err := os.ReadFile(filepath.Join(out, "include", "lance", "error.h"))
+		if err != nil {
+			t.Fatalf("read canonical header: %v", err)
+		}
+		if string(written) != headers["include/lance/error.h"] {
+			t.Fatalf("header was not rewritten in canonical LF form: %q", written)
+		}
+	})
+}
+
+func TestAcquireLegacySingleHeaderRecordUnchanged(t *testing.T) {
+	header := "/* legacy */\nint lance_last_error_code(void);\n"
+	pinned := testPin(t)
+	pinned.release = "v0.2.0-beta.1"
+	pinned.headerSHA = sha256Hex([]byte(header))
+	spec, err := resolveTarget("linux/amd64")
+	if err != nil {
+		t.Fatalf("resolveTarget: %v", err)
+	}
+	archiveName := "lance-c-v0.2.0-beta.1-x86_64-unknown-linux-gnu.tar.xz"
+	lib := append(syntheticELF(62), bytes.Repeat([]byte{0}, 128)...)
+	archivePath := filepath.Join(t.TempDir(), "release.tar.xz")
+	writeTarXZ(t, archivePath, []tarEntry{
+		{name: "./include/lance/lance.h", data: []byte(header)},
+		{name: "./include/lance/lance.hpp", data: []byte("// C++ only\n")},
+		{name: "./lib/liblance_c.so", data: lib},
+	})
+	archiveBytes, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatalf("read archive: %v", err)
+	}
+	checksum := sha256Hex(archiveBytes) + "  " + archiveName + "\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/releases/download/v0.2.0-beta.1/" + archiveName:
+			w.Write(archiveBytes)
+		case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
+			io.WriteString(w, checksum)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	pinned.repo = server.URL
+	root := t.TempDir()
+	writeSDKRoot(t, root, nil)
+	out := filepath.Join(t.TempDir(), "release")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatalf("create output: %v", err)
+	}
+	if err := acquire(pinned, spec, out, root, headerExpectation{}); err != nil {
+		t.Fatalf("acquire legacy: %v", err)
+	}
+	record, err := os.ReadFile(filepath.Join(out, recordName))
+	if err != nil {
+		t.Fatalf("read record: %v", err)
+	}
+	for _, unwanted := range []string{"header_manifest=", "header_identity_sha256="} {
+		if strings.Contains(string(record), unwanted) {
+			t.Fatalf("legacy record unexpectedly contains %q:\n%s", unwanted, record)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(out, headeridentity.ManifestName)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy acquisition wrote a split manifest: %v", err)
+	}
+}
+
+func TestLoadHeaderExpectation(t *testing.T) {
+	manifest := []byte("include/lance/error.h " + strings.Repeat("b", 64) + "\n" +
+		"include/lance/lance.h " + strings.Repeat("a", 64) + "\n")
+	manifestPath := writeFile(t, t.TempDir(), headeridentity.ManifestName, string(manifest))
+	identity := sha256Hex(manifest)
+
+	got, err := loadHeaderExpectation(manifestPath, "", "")
+	if err != nil {
+		t.Fatalf("loadHeaderExpectation manifest: %v", err)
+	}
+	if !bytes.Equal(got.manifest, manifest) || got.identity != identity {
+		t.Fatalf("unexpected expectation: %+v", got)
+	}
+	got, err = loadHeaderExpectation(manifestPath, identity, "")
+	if err != nil {
+		t.Fatalf("loadHeaderExpectation matching identity: %v", err)
+	}
+	if got.identity != identity {
+		t.Fatalf("identity = %q, want %q", got.identity, identity)
+	}
+	got, err = loadHeaderExpectation("", "", identity)
+	if err != nil {
+		t.Fatalf("loadHeaderExpectation pin identity: %v", err)
+	}
+	if got.manifest != nil || got.identity != identity {
+		t.Fatalf("unexpected pin expectation: %+v", got)
+	}
+
+	if _, err := loadHeaderExpectation(manifestPath, strings.Repeat("0", 64), ""); err == nil ||
+		!strings.Contains(err.Error(), "but the supplied identity is") {
+		t.Fatalf("mismatched manifest identity error = %v", err)
+	}
+	if _, err := loadHeaderExpectation(writeFile(t, t.TempDir(), headeridentity.ManifestName, "bad\n"), "", ""); err == nil {
+		t.Fatal("loadHeaderExpectation accepted an invalid manifest")
+	}
+	if _, err := loadHeaderExpectation("", strings.Repeat("Z", 64), ""); err == nil ||
+		!strings.Contains(err.Error(), "lowercase SHA-256") {
+		t.Fatalf("invalid identity error = %v", err)
+	}
+}
+
+func TestReadPinOptionalHeaderIdentity(t *testing.T) {
+	valid := testPinFile + "\nconst upstreamHeaderIdentitySHA256 = \"" + strings.Repeat("a", 64) + "\"\n"
+	pinned, err := readPin(writeFile(t, t.TempDir(), "upstream.go", valid))
+	if err != nil {
+		t.Fatalf("readPin with optional identity: %v", err)
+	}
+	if pinned.headerIdentitySHA != strings.Repeat("a", 64) {
+		t.Fatalf("header identity = %q", pinned.headerIdentitySHA)
+	}
+	invalid := testPinFile + "\nconst upstreamHeaderIdentitySHA256 = \"short\"\n"
+	if _, err := readPin(writeFile(t, t.TempDir(), "upstream.go", invalid)); err == nil ||
+		!strings.Contains(err.Error(), "upstreamHeaderIdentitySHA256") {
+		t.Fatalf("readPin accepted an invalid optional identity: %v", err)
 	}
 }

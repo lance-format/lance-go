@@ -53,8 +53,11 @@ checksum database, and that the bytes match the official release archive:
 
 - `fetch-lance-c-release` in the `internal/tools` module acquires the archive
   for the pinned release, verifies the published per-asset checksum and the
-  canonical header, and then compares the extracted library with the resolved
-  artifact module that this target's generated selector imports. A release
+  canonical header set, and then compares the extracted library with the resolved
+  artifact module that this target's generated selector imports. A legacy
+  archive keeps the single-file `upstreamHeaderSHA256` check; a split archive
+  extracts every public `include/lance/*.h` (excluding `lance.hpp`) and verifies
+  the sorted manifest against an independent composite identity. A release
   archive and a replacement checksum cannot change the bytes CI tests without
   failing that comparison. The check reports itself as inactive while a new pin
   has no republished module yet.
@@ -63,7 +66,9 @@ checksum database, and that the bytes match the official release archive:
   macOS deployment floor, and every symbol the Go bindings bind.
 - `check-abi-symbols` in the `internal/tools` module verifies that each bound
   symbol is declared by the header with compatible arity and pointer/integer
-  classes.
+  classes. It accepts a single legacy header or a verified `include/lance`
+  directory; the directory form checks the manifest and parses the union,
+  including type-only headers.
 
 The pinned `lance-c v0.2.1-beta.3` library exports 890 `lance_*` symbols; the Go
 bindings bind 608 of them. The ABI check covers that bound subset and does not
