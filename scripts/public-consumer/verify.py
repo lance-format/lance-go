@@ -137,6 +137,20 @@ def excluded_module(path, nested_modules):
     return False
 
 
+def nested_modules_from_tree(tree):
+    """Return the directories in a Git tree that contain a go.mod file.
+
+    The Go module ZIP excludes every nested module. Deriving that set from the
+    compared commit keeps historical tags correct: a tag published before a
+    nested module existed still expects that module's files in its ZIP.
+    """
+    return {
+        path[: -len("/go.mod")]
+        for path in tree
+        if path.endswith("/go.mod")
+    }
+
+
 def command_archive(args):
     errors = []
     differences = []
@@ -156,10 +170,11 @@ def command_archive(args):
         write_json(args.out, report)
         return report_errors("archive", errors)
 
+    nested_modules = sorted(set(args.nested_module) | nested_modules_from_tree(tree))
     expected = {
         path: item
         for path, item in tree.items()
-        if not excluded_module(path, args.nested_module)
+        if not excluded_module(path, nested_modules)
     }
     missing = sorted(set(expected) - set(archive))
     extra = sorted(set(archive) - set(expected))
@@ -184,7 +199,7 @@ def command_archive(args):
         "version": args.version,
         "zip": args.zip,
         "source_commit": args.source_commit,
-        "nested_modules_excluded": args.nested_module,
+        "nested_modules_excluded": nested_modules,
         "expected_files": len(expected),
         "archive_files": len(archive),
         "differences": differences,
@@ -689,7 +704,7 @@ def main(argv=None):
     archive.add_argument("--module", required=True)
     archive.add_argument("--version", required=True)
     archive.add_argument("--source-commit", required=True)
-    archive.add_argument("--nested-module", action="append", default=[])
+    archive.add_argument("--nested-module", action="append", default=[], help="additional nested module to exclude; modules whose directory contains go.mod are discovered from --source-commit")
     archive.add_argument("--out", required=True)
     archive.set_defaults(func=command_archive)
 

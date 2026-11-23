@@ -21,7 +21,7 @@ mkdir -p "$EVIDENCE_DIR"
 EVIDENCE_DIR=$(cd "$EVIDENCE_DIR" && pwd -P)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 VERIFY="$SCRIPT_DIR/verify.py"
-NAMESPACE_SOURCE="$REPO_DIR/internal/tools/public-consumer/namespace-consumer/main.go"
+NAMESPACE_SOURCE="$REPO_DIR/scripts/public-consumer/consumer-src/namespace-consumer/main.go"
 WORK=$(mktemp -d "${RUNNER_TEMP:-/tmp}/public-consumer.XXXXXX")
 COMMANDS="$EVIDENCE_DIR/commands.log"
 SUMMARY="$EVIDENCE_DIR/summary.txt"
@@ -761,7 +761,6 @@ resolve_root() {
       --module "$ROOT_MODULE" \
       --version "$ROOT_VERSION" \
       --source-commit "$SOURCE_COMMIT" \
-      --nested-module scripts/go-module-origin/generator \
       --out "$EVIDENCE_DIR/root-archive.json"; then
     fail "root archive does not match the checked-out source tree"
   fi
