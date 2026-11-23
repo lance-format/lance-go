@@ -98,9 +98,30 @@ checkout or publish it before the exact modules exist. Update together:
   generators, the public-consumer toolchain assertions, and the version support
   text in README and `docs/development.md`. State the minimum and the tested Go
   versions in the release notes and migration notes.
+- `apidiff/v0.2.0.txt` and the v0.3.0 migration notes when the release carries
+  reviewed API changes. Confirm the allowlist matches the exported API and the
+  notes cover every caller-visible migration.
 
 The release handoff owns the beta/preview version wording; a docs-only change
 does not weaken the runtime acceptance requirements below.
+
+### API compatibility review
+
+`v0.3.0` intentionally carries reviewed Go API changes. `apidiff/v0.2.0.txt`
+records the 89 incompatible entries against the published `v0.2.0` tag. The
+review material is the v0.3.0 migration notes and the guide's "Options",
+"Optional values", "Scan statistics", "Resource lifetime" and "Migrating
+accessor ownership from v0.2.0" sections. Before the stable decision:
+
+```sh
+./scripts/check-api-compat.sh v0.2.0
+```
+
+Confirm every entry still matches the exported API and every caller-visible
+migration is documented. The allowlist is scoped to `v0.2.0`; the new stable
+tag becomes the next comparison base. A patch line must not add an allowlist.
+CI runs this gate on pull requests and manual dispatch, not on main pushes,
+because the approved deltas predate the new tag.
 
 ## 1. Choose and verify the native input
 
@@ -562,6 +583,7 @@ The evidence record must identify the exact objects:
 ```text
 root:             commit, tag, module path
 go:               module minimum and tested Go versions
+api diff:         base tag, reviewed entry count, review location
 artifact:         static module path and version, go.sum entries, proxy/sumdb identity
 native:           repository, commit, tag or explicit absence, header SHA-256
 library:          bytes, SHA-256, packaging source
