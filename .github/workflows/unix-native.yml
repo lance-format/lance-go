@@ -28,6 +28,8 @@ on:
       - internal/tools/artifactgen/**
       - internal/tools/verify-lance-c-artifact/**
       - internal/tools/fetch-lance-c-release/**
+      - internal/tools/go.mod
+      - internal/tools/go.sum
       - .github/workflows/unix-native.yml
   pull_request:
     paths:
@@ -41,6 +43,8 @@ on:
       - internal/tools/artifactgen/**
       - internal/tools/verify-lance-c-artifact/**
       - internal/tools/fetch-lance-c-release/**
+      - internal/tools/go.mod
+      - internal/tools/go.sum
       - .github/workflows/unix-native.yml
 
 permissions:
@@ -92,7 +96,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            internal/tools/go.sum
 
       - name: Record runner and target
         run: |
@@ -136,7 +142,7 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/lance-c-release"
-          go run ./internal/tools/fetch-lance-c-release \
+          go -C internal/tools run ./fetch-lance-c-release \
             -target "$TARGET" \
             -out "$out" | tee "$RUNNER_TEMP/evidence/acquisition.txt"
           record="$out/acquisition.txt"
@@ -171,7 +177,7 @@ jobs:
           LANCE_C_HEADER: ${{ steps.native.outputs.header }}
         run: |
           set -euo pipefail
-          go run ./internal/tools/check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
+          go -C internal/tools run ./check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
 
       - name: Test default build against installed library
         env:
@@ -325,7 +331,7 @@ jobs:
           test -f "$CANDIDATE_ROOT/module/artifact.go"
           grep -Fq "//go:build !lance_external_lib && $TARGET_GOOS && $TARGET_GOARCH" "$selector"
           grep -Fq "\"$MODULE_PATH\"" "$selector"
-          go run ./internal/tools/verify-lance-c-artifact \
+          go -C internal/tools run ./verify-lance-c-artifact \
             -module "$CANDIDATE_ROOT/module" \
             -library "$LANCE_LIBRARY" \
             -target "$TARGET" \

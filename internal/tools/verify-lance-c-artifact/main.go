@@ -8,7 +8,7 @@
 //
 // Usage:
 //
-//	go run ./internal/tools/verify-lance-c-artifact \
+//	go -C internal/tools run ./verify-lance-c-artifact \
 //	  -module /tmp/staging/linux-amd64/module \
 //	  -library /path/to/liblance_c.so \
 //	  -target linux/amd64 \
@@ -34,12 +34,13 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
+	"github.com/lance-format/lance-go/internal/tools/reporoot"
 )
 
 func main() {
 	moduleDir := flag.String("module", "", "generated module directory to verify")
 	libraryPath := flag.String("library", "", "native library the module was packaged from")
-	pinPath := flag.String("pin", "internal/ffi/upstream.go", "pin file with the upstream provenance constants")
+	pinPath := flag.String("pin", "", "pin file with the upstream provenance constants (default: <repository root>/internal/ffi/upstream.go)")
 	target := flag.String("target", "", "expected target as GOOS/GOARCH")
 	modulePath := flag.String("module-path", "", "expected module path in module/go.mod")
 	flag.Parse()
@@ -50,6 +51,13 @@ func main() {
 	if *moduleDir == "" || *libraryPath == "" || *target == "" {
 		flag.Usage()
 		fail(errors.New("-module, -library, and -target are required"))
+	}
+	if *pinPath == "" {
+		root, err := reporoot.Find()
+		if err != nil {
+			fail(err)
+		}
+		*pinPath = filepath.Join(root, "internal", "ffi", "upstream.go")
 	}
 
 	md, err := artifactmeta.Read(filepath.Join(*moduleDir, "artifact.go"))

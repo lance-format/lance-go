@@ -103,7 +103,7 @@ cold archive snapshots must show exactly the selected artifact for default and
 namespace builds. External builds record their actual setup and cold download
 scopes without claiming that no artifact module was downloaded.
 
-The identity helper in `internal/tools/public-consumer/windows-consumer/` uses
+The identity helper in `scripts/public-consumer/consumer-src/windows-consumer/` uses
 `x/sys/windows` to enumerate loaded modules. For default and namespace runs,
 the loaded `lance_c.dll` must be the verified cache file. For external runs
 it must be the explicitly supplied copy. A DLL under the repository or build tree is a failure. The

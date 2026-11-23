@@ -1202,7 +1202,7 @@ function Add-IdentityHelperSource([string]$Label, $Mode) {
     # Resolve the helper's pinned dependency during setup. Building the helper
     # in the cold target phase must not run go get and contaminate its archive
     # observations.
-    $source = Join-Path $script:RepoDir 'internal/tools/public-consumer/windows-consumer/main.go'
+    $source = Join-Path $script:RepoDir 'scripts/public-consumer/consumer-src/windows-consumer/main.go'
     if (-not (Test-Path -LiteralPath $source)) {
         Fail "identity fixture is missing: $source"
     }
@@ -1530,7 +1530,7 @@ try {
     $namespace = New-Mode 'namespace'
     $null = Invoke-Go $namespace.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
     Save-ModuleCacheSnapshot 'namespace/setup/go-get' $namespace.SetupModCache
-    $namespaceSource = Join-Path $script:RepoDir 'internal/tools/public-consumer/namespace-consumer/main.go'
+    $namespaceSource = Join-Path $script:RepoDir 'scripts/public-consumer/consumer-src/namespace-consumer/main.go'
     if (-not (Test-Path -LiteralPath $namespaceSource)) {
         Fail "namespace fixture is missing: $namespaceSource"
     }

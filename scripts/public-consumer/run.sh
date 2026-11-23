@@ -21,7 +21,7 @@ mkdir -p "$EVIDENCE_DIR"
 EVIDENCE_DIR=$(cd "$EVIDENCE_DIR" && pwd -P)
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 VERIFY="$SCRIPT_DIR/verify.py"
-NAMESPACE_SOURCE="$REPO_DIR/internal/tools/public-consumer/namespace-consumer/main.go"
+NAMESPACE_SOURCE="$REPO_DIR/scripts/public-consumer/consumer-src/namespace-consumer/main.go"
 WORK=$(mktemp -d "${RUNNER_TEMP:-/tmp}/public-consumer.XXXXXX")
 COMMANDS="$EVIDENCE_DIR/commands.log"
 SUMMARY="$EVIDENCE_DIR/summary.txt"
