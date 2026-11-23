@@ -1,0 +1,20 @@
+# Reviewed incompatible API changes relative to v0.2.0.
+#
+# One entry per line: <package>: <exact apidiff change>.
+# This file records the approved v0.3.0 migrations. The accompanying review
+# material is the "Migrating accessor ownership from v0.2.0" section in
+# docs/api-guide.md (#121): Close() now returns error and implements io.Closer,
+# and file.StorageOptions is now an alias for lance.StorageOptionsAccessor, so
+# the constructors and the reader/writer/session option fields use the root
+# accessor type.
+#
+# This file belongs to an approved minor release only. A patch line must not
+# add one. It stops applying when a new stable tag becomes the comparison base.
+lance: (*StorageOptionsAccessor).Close: changed from func() to func() error
+file: NewStorageOptions: changed from func(map[string]string) (*StorageOptions, error) to func(map[string]string) (*StorageOptions, error)
+file: NewStorageOptionsFromAccessor: changed from func(*github.com/lance-format/lance-go.StorageOptionsAccessor) (*StorageOptions, error) to func(*github.com/lance-format/lance-go.StorageOptionsAccessor) (*StorageOptions, error)
+file: NewStorageOptionsWithProvider: changed from func(map[string]string, github.com/lance-format/lance-go.StorageOptionsProvider) (*StorageOptions, error) to func(map[string]string, github.com/lance-format/lance-go.StorageOptionsProvider) (*StorageOptions, error)
+file: ReaderOptions.StorageOptions: changed from *StorageOptions to *StorageOptions
+file: SessionOptions.StorageOptions: changed from *StorageOptions to *StorageOptions
+file: StorageOptions: changed from StorageOptions to github.com/lance-format/lance-go.StorageOptionsAccessor
+file: WriterOptions.StorageOptions: changed from *StorageOptions to *StorageOptions
