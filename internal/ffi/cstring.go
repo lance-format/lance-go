@@ -9,31 +9,34 @@ import (
 // cStringList owns NUL-terminated copies of Go strings and the pointer array
 // used for C array parameters. The backing buffers and the array itself are
 // pinned so native code may keep their addresses for the duration of a call:
-// release must run after the native call returns. Ownership is registered as
-// soon as an object is pinned, so a failed partial construction cannot leak a
-// pin.
+// release must run after the native call returns. The list takes ownership of
+// its pins before the first Pin, so a failed partial construction can release
+// them.
 //
 // A nil list pointer array is passed as NULL to C.
 //
 // A cStringList must not be copied after construction.
 type cStringList struct {
-	ptrs []*byte
-	bufs [][]byte
-	pin  runtime.Pinner
-	pins int
+	ptrs     []*byte
+	bufs     [][]byte
+	pin      runtime.Pinner
+	acquired bool
 }
 
-// pinnedObjects counts the objects currently pinned by live cStringList
-// values. Tests compare it with a baseline to prove that an exit path released
-// its pins; a missing unpin otherwise only surfaces as a fatal runtime.Pinner
-// panic from a finalizer.
-var pinnedObjects atomic.Int64
+// acquiredLists counts string lists whose pins are still held. It changes once
+// per list, never per pinned string, and exists so tests can prove that every
+// exit path released its list; a missing unpin otherwise only surfaces as a
+// fatal runtime.Pinner panic from a finalizer.
+var acquiredLists atomic.Int64
 
-// pinPointer pins one object and records it for release.
-func (l *cStringList) pinPointer(pointer any) {
-	l.pin.Pin(pointer)
-	l.pins++
-	pinnedObjects.Add(1)
+// acquire records list ownership before the first Pin. release is the single
+// place that clears it, so a partially built list can be released on error.
+func (l *cStringList) acquire() {
+	if l.acquired {
+		return
+	}
+	l.acquired = true
+	acquiredLists.Add(1)
 }
 
 func newCStringList(values []string) (*cStringList, error) {
@@ -45,6 +48,7 @@ func newCStringList(values []string) (*cStringList, error) {
 		ptrs: make([]*byte, len(values)+1),
 		bufs: make([][]byte, len(values)),
 	}
+	list.acquire()
 	for i, value := range values {
 		buf, err := cStringBuffer(value)
 		if err != nil {
@@ -52,10 +56,10 @@ func newCStringList(values []string) (*cStringList, error) {
 			return nil, err
 		}
 		list.bufs[i] = buf
-		list.pinPointer(&list.bufs[i][0])
+		list.pin.Pin(&list.bufs[i][0])
 		list.ptrs[i] = &list.bufs[i][0]
 	}
-	list.pinPointer(&list.ptrs[0])
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
 }
 
@@ -71,6 +75,7 @@ func newNullableCStringList(values []*string) (*cStringList, error) {
 		ptrs: make([]*byte, len(values)+1),
 		bufs: make([][]byte, len(values)),
 	}
+	list.acquire()
 	for i, value := range values {
 		if value == nil {
 			continue
@@ -81,10 +86,10 @@ func newNullableCStringList(values []*string) (*cStringList, error) {
 			return nil, err
 		}
 		list.bufs[i] = buf
-		list.pinPointer(&list.bufs[i][0])
+		list.pin.Pin(&list.bufs[i][0])
 		list.ptrs[i] = &list.bufs[i][0]
 	}
-	list.pinPointer(&list.ptrs[0])
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
 }
 
@@ -107,7 +112,8 @@ func newPresentCStringList(values []string) (*cStringList, error) {
 	}
 	if list.ptrs == nil {
 		list.ptrs = []*byte{nil}
-		list.pinPointer(&list.ptrs[0])
+		list.acquire()
+		list.pin.Pin(&list.ptrs[0])
 	}
 	return list, nil
 }
@@ -134,12 +140,12 @@ func (l *cStringList) data() **byte {
 // the native call that consumed them returns. It is safe to call repeatedly,
 // including on a nil list.
 func (l *cStringList) release() {
-	if l == nil || l.pins == 0 {
+	if l == nil || !l.acquired {
 		return
 	}
 	l.pin.Unpin()
-	pinnedObjects.Add(int64(-l.pins))
-	l.pins = 0
+	l.acquired = false
+	acquiredLists.Add(-1)
 }
 
 func cStringBuffer(value string) ([]byte, error) {

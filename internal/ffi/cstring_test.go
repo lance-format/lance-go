@@ -109,7 +109,7 @@ func TestCStringPairsAlternateAndTerminate(t *testing.T) {
 }
 
 func TestCStringListReleaseIsIdempotent(t *testing.T) {
-	baseline := pinBaseline()
+	baseline := listBaseline()
 	list, err := newCStringList([]string{"alpha"})
 	if err != nil {
 		t.Fatalf("newCStringList: %v", err)
@@ -118,7 +118,7 @@ func TestCStringListReleaseIsIdempotent(t *testing.T) {
 	list.release()
 	var nilList *cStringList
 	nilList.release()
-	assertNoNewPins(t, baseline)
+	assertNoLiveLists(t, baseline)
 }
 
 func TestStorageOptionListSortsKeys(t *testing.T) {

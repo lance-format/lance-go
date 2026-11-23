@@ -1619,6 +1619,7 @@ func newCStringPairs(keys, values []string) (*cStringList, error) {
 		ptrs: make([]*byte, len(keys)*2+1),
 		bufs: make([][]byte, len(keys)*2),
 	}
+	list.acquire()
 	for i := range keys {
 		keyBuf, err := cStringBuffer(keys[i])
 		if err != nil {
@@ -1632,12 +1633,12 @@ func newCStringPairs(keys, values []string) (*cStringList, error) {
 		}
 		list.bufs[i*2] = keyBuf
 		list.bufs[i*2+1] = valueBuf
-		list.pinPointer(&list.bufs[i*2][0])
-		list.pinPointer(&list.bufs[i*2+1][0])
+		list.pin.Pin(&list.bufs[i*2][0])
+		list.pin.Pin(&list.bufs[i*2+1][0])
 		list.ptrs[i*2] = &list.bufs[i*2][0]
 		list.ptrs[i*2+1] = &list.bufs[i*2+1][0]
 	}
-	list.pinPointer(&list.ptrs[0])
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
 }
 
