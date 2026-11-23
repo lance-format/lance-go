@@ -39,13 +39,13 @@ func requireFileClassifiedError(t *testing.T, err error, wantCode lance.Code, wa
 // not need native code.
 func TestRawFileStorageOptionValidationErrors(t *testing.T) {
 	if _, err := file.NewStorageOptionsWithProvider(nil, nil); err != nil {
-		requireFileClassifiedError(t, err, lance.CodeInvalidArgument, lance.ErrInvalidArgument, "storage options provider must not be nil")
+		_ = requireFileClassifiedError(t, err, lance.CodeInvalidArgument, lance.ErrInvalidArgument, "storage options provider must not be nil")
 	} else {
 		t.Fatal("nil provider was accepted")
 	}
 
 	if _, err := file.NewStorageOptionsFromAccessor(nil); err != nil {
-		requireFileClassifiedError(t, err, lance.CodeInvalidArgument, lance.ErrInvalidArgument, "storage options accessor must not be nil")
+		_ = requireFileClassifiedError(t, err, lance.CodeInvalidArgument, lance.ErrInvalidArgument, "storage options accessor must not be nil")
 	} else {
 		t.Fatal("nil accessor was accepted")
 	}

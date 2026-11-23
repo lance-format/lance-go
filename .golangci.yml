@@ -1,0 +1,63 @@
+# Static analysis gates for the Go SDK.
+#
+# The enabled set is intentionally small. Every linter must mean a real defect,
+# a missing error check, or a compatibility signal; style-only suggestions stay
+# out so findings stay actionable.
+version: "2"
+
+run:
+  timeout: 10m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    # Unchecked errors and unchecked results of functions that return errors.
+    - errcheck
+    # Broken error chains: wrapping, errors.Is/errors.As and fmt.Errorf verbs.
+    - errorlint
+    # The standard vet analyzers.
+    - govet
+    # Assignments whose value is never read.
+    - ineffassign
+    # Misspelled words in comments and strings.
+    - misspell
+    # SA correctness checks from staticcheck.
+    - staticcheck
+    # Redundant type conversions that hide the real type.
+    - unconvert
+  settings:
+    staticcheck:
+      checks:
+        # SA* only. The S* simplifications and QF* and ST* style checks are
+        # deliberately not gated: they produce churn without a correctness
+        # signal.
+        - all
+        - -S*
+        - -QF*
+        - -ST*
+  exclusions:
+    presets:
+      # Keep the historical errcheck exclusions for deferred Close/Flush and
+      # print results. Failures there belong to the owning resource, and
+      # flagging every `defer x.Close()` would bury the useful findings.
+      - std-error-handling
+    rules:
+      # arrow-go deprecates the Record alias in favor of RecordBatch. The
+      # published 0.2.x API keeps the alias name; the v0.3.0 API migration is
+      # tracked in issue #93. Drop this rule together with those signatures.
+      - linters:
+          - staticcheck
+        text: "SA1019: github.com/apache/arrow-go/v18/arrow.Record is deprecated"
+      # The loader wraps only ErrNotFound so callers can match the stable
+      # sentinel; the loader's own failure stays diagnostic text. errorlint's
+      # fmt.Errorf verb check assumes every error argument should join the
+      # chain, which is not this function's contract.
+      - linters:
+          - errorlint
+        path: ^internal/loader/loader\.go$
+        text: non-wrapping format verb
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

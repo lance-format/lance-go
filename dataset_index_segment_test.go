@@ -281,7 +281,7 @@ func TestIndexSegmentAndTrainerValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			requireInvalidArgumentError(t, tt.call(), "string contains an embedded NUL byte")
+			_ = requireInvalidArgumentError(t, tt.call(), "string contains an embedded NUL byte")
 		})
 	}
 }
@@ -717,9 +717,9 @@ func TestIndexSegmentProgressAndMetadata(t *testing.T) {
 	}
 
 	_, err = lance.ParseIndexSegmentMetadata(nil)
-	requireInvalidArgumentError(t, err, "segment metadata must not be empty")
+	_ = requireInvalidArgumentError(t, err, "segment metadata must not be empty")
 	_, err = lance.ParseIndexSegmentMetadata([]byte("not index metadata"))
-	requireInvalidArgumentError(t, err, "")
+	_ = requireInvalidArgumentError(t, err, "")
 
 	// Bitmap segments carry a present but empty details payload, which must stay
 	// distinguishable from an absent payload.

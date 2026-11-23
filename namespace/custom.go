@@ -146,7 +146,7 @@ func encodeCustomResponse(operation string, response any) ([]byte, error) {
 		return nil, fmt.Errorf("custom namespace %s returned a nil response", operation)
 	}
 	value := reflect.ValueOf(response)
-	if value.Kind() == reflect.Ptr && value.IsNil() {
+	if value.Kind() == reflect.Pointer && value.IsNil() {
 		return nil, fmt.Errorf("custom namespace %s returned a nil response", operation)
 	}
 	data, err := json.Marshal(response)
@@ -162,7 +162,7 @@ func isNilCustomClient(client CustomClient) bool {
 	}
 	value := reflect.ValueOf(client)
 	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 		return value.IsNil()
 	default:
 		return false

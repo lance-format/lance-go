@@ -145,8 +145,8 @@ func TestErrorUnwrapClassifiesNativeCodes(t *testing.T) {
 			t.Errorf("code %s: errors.Is(%v) = false, want true", code, want)
 		}
 		for _, sentinel := range categorySentinels {
-			if matches := errors.Is(err, sentinel); matches != (sentinel == want) {
-				t.Errorf("code %s matched %v = %v, want %v", code, sentinel, matches, sentinel == want)
+			if matches := errors.Is(err, sentinel); matches != errors.Is(sentinel, want) {
+				t.Errorf("code %s matched %v = %v, want %v", code, sentinel, matches, errors.Is(sentinel, want))
 			}
 		}
 		var namespaceErr *Error
@@ -309,7 +309,8 @@ func TestDeprecatedTypeAliasesPreserveIdentity(t *testing.T) {
 	if !errors.As(newNameErr, &deprecated) {
 		t.Fatal("errors.As into *NamespaceError failed for a *Error value")
 	}
-	oldCode := NamespaceErrorCode(ErrorCodeThrottling)
+	// The deprecated alias must still classify an explicit value.
+	var oldCode NamespaceErrorCode = ErrorCodeThrottling
 	if !errors.Is(&Error{Code: oldCode}, ErrThrottled) {
 		t.Fatal("deprecated code alias lost category classification")
 	}

@@ -196,9 +196,6 @@ func TestRawFileStorageOptionsInvalidMapError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.call()
-			if _, ok := err.(*lance.Error); !ok {
-				t.Fatalf("error type = %T, want *lance.Error", err)
-			}
 			var lanceErr *lance.Error
 			if !errors.As(err, &lanceErr) {
 				t.Fatalf("error = %T (%v), want *lance.Error", err, err)

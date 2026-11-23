@@ -82,6 +82,9 @@ func run(uri, mode string, timeout time.Duration, storageOptions map[string]stri
 			return err
 		}
 		dataset, err = lance.Open(ctx, uri, openOptions...)
+		if err != nil {
+			return err
+		}
 	case "open":
 		dataset, err = lance.Open(ctx, uri, openOptions...)
 	default:

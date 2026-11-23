@@ -125,7 +125,6 @@ func executeDirect(cfg config, prefix targetPrefix) *report {
 	}
 	accessor, err = lance.NewStorageOptionsAccessor(initial, provider)
 	clearStorageOptions(initial)
-	initial = nil
 	seed.AccessKeyID = ""
 	seed.SecretAccessKey = ""
 	seed.SessionToken = ""
@@ -252,7 +251,6 @@ func executeDirect(cfg config, prefix targetPrefix) *report {
 	reopenInitial := map[string]string{"region": cfg.region}
 	reopenAccessor, err = lance.NewStorageOptionsAccessor(reopenInitial, reopenProvider)
 	clearStorageOptions(reopenInitial)
-	reopenInitial = nil
 	if err != nil {
 		return fail("reopen", "accessor", err)
 	}

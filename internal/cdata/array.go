@@ -639,7 +639,7 @@ func ExportRecordBatch(batch arrow.RecordBatch, dst *ArrowArray) error {
 
 	n := batch.NumCols()
 	if n > 0 {
-		if n > int64(maxIntValue()) {
+		if n > maxIntValue() {
 			e.freeTree()
 			return invalidf("record batch has too many columns: %d", n)
 		}
@@ -659,7 +659,7 @@ func ExportRecordBatch(batch arrow.RecordBatch, dst *ArrowArray) error {
 			e.cChildren[int(i)] = &child.value
 		}
 	}
-	e.value.NChildren = int64(n)
+	e.value.NChildren = n
 	e.register()
 	*dst = e.value
 	return nil
@@ -763,8 +763,8 @@ func exportNode(data arrow.ArrayData, dt arrow.DataType) (*arrayExporter, error)
 				e.freeTree()
 				return nil, err
 			}
-			e.children[int(i)] = child
-			e.cChildren[int(i)] = &child.value
+			e.children[i] = child
+			e.cChildren[i] = &child.value
 		}
 	}
 	if dictData := dictionaryData(data); dictData != nil {

@@ -139,7 +139,7 @@ func WithDynamicContextProvider(provider DynamicContextProvider) Option {
 		}
 		value := reflect.ValueOf(provider)
 		switch value.Kind() {
-		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 			if value.IsNil() {
 				return errors.New("namespace: dynamic context provider must not be nil")
 			}
@@ -389,7 +389,7 @@ func encodeRequest(request any) (string, error) {
 		return "{}", nil
 	}
 	value := reflect.ValueOf(request)
-	if value.Kind() == reflect.Ptr && value.IsNil() {
+	if value.Kind() == reflect.Pointer && value.IsNil() {
 		return "{}", nil
 	}
 	data, err := json.Marshal(request)
