@@ -498,6 +498,108 @@ func TestMetadataEmptyColumnCollections(t *testing.T) {
 	}
 }
 
+func TestMetadataNestedColumnDescriptors(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+
+	t.Run("empty", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "empty-nested.lance")
+		writer, err := file.Create(ctx, path, testSchema(), nil)
+		if err != nil {
+			t.Fatalf("create writer: %v", err)
+		}
+		if _, err := writer.Finish(ctx); err != nil {
+			t.Fatalf("finish zero-row file: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatalf("close writer: %v", err)
+		}
+
+		reader, err := file.Open(ctx, path, nil)
+		if err != nil {
+			t.Fatalf("open zero-row file: %v", err)
+		}
+		defer reader.Close()
+		metadata, err := reader.Metadata()
+		if err != nil {
+			t.Fatalf("reader metadata: %v", err)
+		}
+		defer metadata.Close()
+		info, err := metadata.Info()
+		if err != nil {
+			t.Fatalf("metadata info: %v", err)
+		}
+		columns, err := metadata.Columns()
+		if err != nil {
+			t.Fatalf("metadata columns: %v", err)
+		}
+		if info.NumRows != 0 || info.NumPhysicalColumns == 0 || uint64(len(columns)) != info.NumPhysicalColumns {
+			t.Fatalf("metadata info = %+v, columns = %d", info, len(columns))
+		}
+		for i, column := range columns {
+			if len(column.Buffers) != 0 || len(column.Pages) != 0 {
+				t.Fatalf("column %d = %d buffers, %d pages; want empty nested descriptors", i, len(column.Buffers), len(column.Pages))
+			}
+		}
+	})
+
+	t.Run("nonempty", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "nonempty-nested.lance")
+		schema := testSchema()
+		writer, err := file.Create(ctx, path, schema, nil)
+		if err != nil {
+			t.Fatalf("create writer: %v", err)
+		}
+		batch := testBatch(t, schema)
+		defer batch.Release()
+		if err := writer.Write(ctx, batch); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		if _, err := writer.Finish(ctx); err != nil {
+			t.Fatalf("finish file: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatalf("close writer: %v", err)
+		}
+
+		reader, err := file.Open(ctx, path, nil)
+		if err != nil {
+			t.Fatalf("open file: %v", err)
+		}
+		defer reader.Close()
+		metadata, err := reader.Metadata()
+		if err != nil {
+			t.Fatalf("reader metadata: %v", err)
+		}
+		defer metadata.Close()
+		info, err := metadata.Info()
+		if err != nil {
+			t.Fatalf("metadata info: %v", err)
+		}
+		columns, err := metadata.Columns()
+		if err != nil {
+			t.Fatalf("metadata columns: %v", err)
+		}
+		if info.NumRows != 4 || info.NumPhysicalColumns == 0 || uint64(len(columns)) != info.NumPhysicalColumns {
+			t.Fatalf("metadata info = %+v, columns = %d", info, len(columns))
+		}
+		pagesWithBuffers := 0
+		for i, column := range columns {
+			if len(column.Pages) == 0 {
+				t.Fatalf("column %d has no pages", i)
+			}
+			for _, page := range column.Pages {
+				if len(page.Buffers) > 0 {
+					pagesWithBuffers++
+				}
+			}
+		}
+		if pagesWithBuffers == 0 {
+			t.Fatal("nonempty metadata has no page buffers")
+		}
+	})
+}
+
 func TestAbortUnfinishedFile(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()

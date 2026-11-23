@@ -291,8 +291,11 @@ type FilePageMetadata struct {
 	EncodingDescription string
 }
 
+// filePageMetadata mirrors LancePageMetadata. Buffers is a native Vec address
+// held as uintptr because an empty Vec reports a non-nil dangling address that
+// must not enter a Go pointer field.
 type filePageMetadata struct {
-	Buffers             *fileBufferDescriptor
+	Buffers             uintptr
 	BufferCount         uint64
 	NumRows             uint64
 	Priority            uint64
@@ -307,10 +310,12 @@ type FileColumnMetadata struct {
 	Encoding FileEncodingDescriptor
 }
 
+// fileColumnMetadata mirrors LanceColumnMetadata. Buffers and Pages are native
+// Vec addresses held as uintptr for the same reason as filePageMetadata.
 type fileColumnMetadata struct {
-	Buffers     *fileBufferDescriptor
+	Buffers     uintptr
 	BufferCount uint64
-	Pages       *filePageMetadata
+	Pages       uintptr
 	PageCount   uint64
 	Encoding    fileEncodingDescriptor
 }

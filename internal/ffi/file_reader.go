@@ -414,10 +414,10 @@ func (m *FileMetadata) Columns() ([]FileColumnMetadata, error) {
 		}
 		pages := make([]FilePageMetadata, 0, int(column.PageCount))
 		if column.PageCount > 0 {
-			if column.Pages == nil {
+			if column.Pages == 0 {
 				return nil, fmt.Errorf("ffi: column %d has %d pages with NULL data", i, column.PageCount)
 			}
-			rawPages := unsafe.Slice(column.Pages, int(column.PageCount))
+			rawPages := nativeBorrowedArray[filePageMetadata](column.Pages, column.PageCount)
 			for j, page := range rawPages {
 				pageBuffers, err := copyBufferDescriptors(page.Buffers, page.BufferCount)
 				if err != nil {
@@ -466,17 +466,17 @@ func nativeBorrowedArray[T any](address uintptr, count uint64) []T {
 	return unsafe.Slice((*T)(pointer), int(count))
 }
 
-func copyBufferDescriptors(buffers *fileBufferDescriptor, count uint64) ([]FileBufferDescriptor, error) {
+func copyBufferDescriptors(buffers uintptr, count uint64) ([]FileBufferDescriptor, error) {
 	if count == 0 {
 		return []FileBufferDescriptor{}, nil
 	}
-	if buffers == nil {
+	if buffers == 0 {
 		return nil, fmt.Errorf("ffi: metadata returned %d buffers with NULL data", count)
 	}
 	if count > uint64(maxIntValue()) {
 		return nil, fmt.Errorf("ffi: too many buffers: %d", count)
 	}
-	raw := unsafe.Slice(buffers, int(count))
+	raw := nativeBorrowedArray[fileBufferDescriptor](buffers, count)
 	result := make([]FileBufferDescriptor, len(raw))
 	for i, buffer := range raw {
 		result[i] = FileBufferDescriptor{Position: buffer.Position, Size: buffer.Size}
