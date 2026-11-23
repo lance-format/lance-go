@@ -3,13 +3,13 @@ package file
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 )
 
 // ReaderOptions configures a raw file reader. Pointer fields distinguish an
@@ -66,8 +66,7 @@ func (o *ReaderOptions) ffiOptions() (*ffi.FileReaderOptions, *ffi.FileScheduler
 // for in-flight calls and is idempotent. Record readers and metadata snapshots
 // already returned remain usable after Close.
 type Reader struct {
-	mu     sync.RWMutex
-	closed bool
+	res    *lifetime.Resource
 	native *ffi.FileReader
 	uri    string
 }
@@ -103,7 +102,13 @@ func Open(ctx context.Context, uri string, opts *ReaderOptions) (*Reader, error)
 	if err != nil {
 		return nil, wrapError("open file", uri, err)
 	}
-	return &Reader{native: native, uri: uri}, nil
+	return newReader(native, uri), nil
+}
+
+func newReader(native *ffi.FileReader, uri string) *Reader {
+	reader := &Reader{native: native, uri: uri}
+	reader.res = lifetime.New(native.Close)
+	return reader
 }
 
 func storageOptions(opts *ReaderOptions) *StorageOptions {
@@ -121,30 +126,19 @@ func readerSession(opts *ReaderOptions) *lance.Session {
 }
 
 func (r *Reader) acquire(op string) (*ffi.FileReader, func(), error) {
-	r.mu.RLock()
-	if r.closed {
-		r.mu.RUnlock()
+	if r.res == nil || !r.res.Acquire() {
 		return nil, nil, closedError(op, r.uri)
 	}
-	return r.native, r.mu.RUnlock, nil
+	return r.native, r.res.Release, nil
 }
 
 // Close releases the reader allocation and waits for in-flight calls. Streams
 // already returned by ReadAll, ReadRange, or ReadIndices remain usable.
 func (r *Reader) Close() error {
-	if r == nil {
+	if r == nil || r.res == nil {
 		return nil
 	}
-	r.mu.Lock()
-	if r.closed {
-		r.mu.Unlock()
-		return nil
-	}
-	r.closed = true
-	native := r.native
-	r.native = nil
-	r.mu.Unlock()
-	native.Close()
+	r.res.Close()
 	return nil
 }
 
@@ -246,7 +240,9 @@ func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordRea
 	if err != nil {
 		return nil, wrapError("read all", r.uri, err)
 	}
-	return newRecordReader(ctx, stream), nil
+	return newRecordReader(ctx, stream, func(err error) error {
+		return wrapError("read all", r.uri, err)
+	}), nil
 }
 
 // ReadRange streams numRows rows starting at offset. RecordsRange iterates
@@ -272,7 +268,9 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 	if err != nil {
 		return nil, wrapError("read range", r.uri, err)
 	}
-	return newRecordReader(ctx, stream), nil
+	return newRecordReader(ctx, stream, func(err error) error {
+		return wrapError("read range", r.uri, err)
+	}), nil
 }
 
 // ReadIndices streams rows at strictly increasing, unique row indices.
@@ -297,7 +295,9 @@ func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOpt
 	if err != nil {
 		return nil, wrapError("read indices", r.uri, err)
 	}
-	return newRecordReader(ctx, stream), nil
+	return newRecordReader(ctx, stream, func(err error) error {
+		return wrapError("read indices", r.uri, err)
+	}), nil
 }
 
 // IOStats returns cumulative native IO counters.

@@ -15,7 +15,7 @@ import (
 // must be released by the caller.
 func importArrowStream(stream *cdata.ArrowArrayStream) ([]arrow.RecordBatch, error) {
 	if stream.Release == 0 || stream.GetSchema == 0 || stream.GetNext == 0 {
-		return nil, fmt.Errorf("ffi: native Arrow stream is missing required callbacks")
+		return nil, internalf("native Arrow stream is missing required callbacks")
 	}
 	defer cdata.ReleaseStream(stream)
 
@@ -27,7 +27,7 @@ func importArrowStream(stream *cdata.ArrowArrayStream) ([]arrow.RecordBatch, err
 
 	schema, err := cdata.ImportSchema(&rawSchema)
 	if err != nil {
-		return nil, fmt.Errorf("ffi: import Arrow stream schema: %w", err)
+		return nil, internalf("import Arrow stream schema: %v", err)
 	}
 
 	var batches []arrow.RecordBatch
@@ -49,7 +49,7 @@ func importArrowStream(stream *cdata.ArrowArrayStream) ([]arrow.RecordBatch, err
 		if err != nil {
 			// ImportRecordBatch consumes the array on every return path.
 			releaseRecordBatches(batches)
-			return nil, fmt.Errorf("ffi: import Arrow stream batch: %w", err)
+			return nil, internalf("import Arrow stream batch: %v", err)
 		}
 		batches = append(batches, batch)
 	}
@@ -80,6 +80,9 @@ func callStreamGetNext(stream *cdata.ArrowArrayStream, out *cdata.ArrowArray) ui
 	return result
 }
 
+// streamError reports a native Arrow stream failure. The C Data Interface
+// exposes only the error text through get_last_error, without a code, so the
+// failure is classified as an I/O error while the native message is retained.
 func streamError(stream *cdata.ArrowArrayStream, operation string) error {
 	message := "native Arrow stream reported an error"
 	if stream.GetLastError != 0 {
@@ -89,5 +92,5 @@ func streamError(stream *cdata.ArrowArrayStream, operation string) error {
 			message = goString(ptr)
 		}
 	}
-	return fmt.Errorf("ffi: Arrow stream %s: %s", operation, message)
+	return &Error{Code: CodeIO, Message: fmt.Sprintf("Arrow stream %s: %s", operation, message)}
 }

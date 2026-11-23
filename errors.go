@@ -73,6 +73,10 @@ type Error struct {
 	URI     string
 	Code    Code
 	Message string
+
+	// cause preserves the underlying failure for errors.Unwrap when the
+	// classified error was derived from another Go error.
+	cause error
 }
 
 // ErrorCode returns the native Lance error code. It lets callback adapters
@@ -98,8 +102,22 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("lance: %s %s: %s", e.Op, e.URI, message)
 }
 
-// Unwrap maps the native code to its sentinel error.
+// Is reports whether target is the sentinel for this error's code. It keeps
+// sentinel matching working when Unwrap returns a preserved cause.
+func (e *Error) Is(target error) bool {
+	return target != nil && e.sentinel() == target
+}
+
+// Unwrap returns the preserved cause when one is set, otherwise the sentinel
+// for the native code.
 func (e *Error) Unwrap() error {
+	if e.cause != nil {
+		return e.cause
+	}
+	return e.sentinel()
+}
+
+func (e *Error) sentinel() error {
 	switch e.Code {
 	case CodeInvalidArgument:
 		return ErrInvalidArgument

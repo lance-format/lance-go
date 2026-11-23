@@ -15,7 +15,7 @@ import (
 	"github.com/lance-format/lance-go/internal/loader"
 )
 
-func requireNative(t *testing.T) {
+func requireNative(t testing.TB) {
 	t.Helper()
 	if _, err := loader.Load(); err != nil {
 		if errors.Is(err, loader.ErrNotFound) {

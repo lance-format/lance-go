@@ -179,6 +179,50 @@ func TestCompactFilesCleanDatasetNoOp(t *testing.T) {
 	}
 }
 
+func TestPlanCompactionExcludedFragmentIDs(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	dataset, _ := createFragmentedDataset(t, 8)
+
+	fragmentIDs, err := dataset.FragmentIDs()
+	if err != nil {
+		t.Fatalf("FragmentIDs: %v", err)
+	}
+	if len(fragmentIDs) < 2 {
+		t.Fatalf("fragment count = %d, want a multi-fragment fixture", len(fragmentIDs))
+	}
+	excluded := make([]uint32, len(fragmentIDs))
+	for i, id := range fragmentIDs {
+		excluded[i] = uint32(id)
+	}
+
+	options := func() *compaction.Options {
+		return &compaction.Options{
+			TargetRowsPerFragment: compactionPtr(uint64(4)),
+			MaxRowsPerGroup:       compactionPtr(uint64(1)),
+		}
+	}
+	plan, err := dataset.PlanCompaction(ctx, options())
+	if err != nil {
+		t.Fatalf("PlanCompaction: %v", err)
+	}
+	if plan.TaskCount() == 0 {
+		t.Fatal("plan without exclusions has no tasks")
+	}
+
+	// ExcludedFragmentIDs is forwarded as a native uint32 list. Excluding every
+	// fragment in the snapshot must leave nothing to rewrite.
+	withExclusions := options()
+	withExclusions.ExcludedFragmentIDs = excluded
+	empty, err := dataset.PlanCompaction(ctx, withExclusions)
+	if err != nil {
+		t.Fatalf("PlanCompaction with every fragment excluded: %v", err)
+	}
+	if empty.TaskCount() != 0 {
+		t.Fatalf("plan with every fragment excluded has %d tasks, want 0", empty.TaskCount())
+	}
+}
+
 func TestCompactionPlanJSONTransport(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()

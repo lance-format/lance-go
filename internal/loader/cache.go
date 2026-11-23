@@ -24,6 +24,12 @@ var errCacheMismatch = errors.New("cached library does not match bundle metadata
 // cachedLibrary verifies or creates the private cache file for b and returns
 // its path. All processes publishing the same cache entry coordinate through
 // an advisory lock in the entry directory.
+//
+// A warm hit verifies the existing entry under a shared lock so concurrent
+// processes hash the same library in parallel. A miss or mismatch releases the
+// shared lock, takes the exclusive lock, and verifies again before repairing
+// or publishing: another process may have completed the entry while this one
+// waited.
 func (b *Bundle) cachedLibrary() (string, error) {
 	if err := b.validate(); err != nil {
 		return "", err
@@ -50,11 +56,31 @@ func (b *Bundle) cachedLibrary() (string, error) {
 	}
 	defer lock.Close()
 
-	if err := lockExclusive(lock); err != nil {
+	if err := lockShared(lock); err != nil {
 		return "", fmt.Errorf("lock cache directory %s: %w", dir, err)
 	}
 
 	target := filepath.Join(dir, b.LibraryName)
+	err = verifyCachedLibrary(target, b)
+	if err == nil {
+		if err := unlock(lock); err != nil {
+			return "", fmt.Errorf("unlock cache directory %s: %w", dir, err)
+		}
+		return target, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errCacheMismatch) {
+		return "", fmt.Errorf("verify cached library %s: %w", target, err)
+	}
+
+	// Upgrade to the exclusive lock and verify again: another process may have
+	// published or repaired the entry while this one held the shared lock.
+	if err := unlock(lock); err != nil {
+		return "", fmt.Errorf("unlock cache directory %s: %w", dir, err)
+	}
+	if err := lockExclusive(lock); err != nil {
+		return "", fmt.Errorf("lock cache directory %s: %w", dir, err)
+	}
+
 	err = verifyCachedLibrary(target, b)
 	switch {
 	case err == nil:

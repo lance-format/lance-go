@@ -5,6 +5,30 @@ See the [quickstart](../README.md#quickstart) to install Lance and create a samp
 This guide describes the `main` branch and the public Go APIs it contains. The
 latest stable tag is `v0.2.0`, which bundles `lance-c v0.2.1-beta.3`.
 
+Signatures, option fields, defaults and error contracts are documented on the
+symbols themselves, so this guide does not repeat them. The
+[package reference](https://pkg.go.dev/github.com/lance-format/lance-go) is the
+authoritative source for the version you build against; the subpackages are
+[`compaction`](https://pkg.go.dev/github.com/lance-format/lance-go/compaction),
+[`file`](https://pkg.go.dev/github.com/lance-format/lance-go/file),
+[`index`](https://pkg.go.dev/github.com/lance-format/lance-go/index) and
+[`namespace`](https://pkg.go.dev/github.com/lance-format/lance-go/namespace).
+
+## Topics
+
+- Read and inspect: [Read a dataset](#read-a-dataset),
+  [Scanner controls](#scanner-controls), [Storage options](#storage-options),
+  [Raw `.lance` files](#raw-lance-files), [Blob columns](#blob-columns)
+- Write and organize: [Mutations and schema evolution](#mutations-and-schema-evolution),
+  [Versions, tags and branches](#versions-tags-and-branches),
+  [Native namespaces](#native-namespaces)
+- Search: [Scalar indexes](#scalar-indexes), [Vector search](#vector-search),
+  [Full-text search](#full-text-search), [Distributed index segments](#distributed-index-segments),
+  [Index optimization](#index-optimization)
+- Maintain: [Compaction and cleanup](#compaction-and-cleanup)
+- Reference: [Runtime diagnostics](#runtime-diagnostics), [Optional values](#optional-values),
+  [Errors](#errors), [Context cancellation](#context-cancellation)
+
 ## Read a dataset
 
 On a target with a published selector (`linux/amd64`, `linux/arm64`,
@@ -1269,7 +1293,12 @@ zero. Scalar zero values documented as defaults keep that meaning.
 
 Dataset, scanner, writer, session and transaction operations return
 `*lance.Error` for failures reported by native code and for argument
-validation. The value carries:
+validation. Record readers returned by dataset blob reads and by the `file`
+package report iteration failures from `Err()` the same way. A native Arrow
+stream failure classifies as `ErrIO` because the C Data Interface carries only
+the error text; schema and batch import failures classify as `ErrInternal`.
+Native metadata JSON that cannot be decoded reports `CodeInternal`, and its
+decode failure remains reachable through `errors.Unwrap`. The value carries:
 
 - `Op`: the operation name, such as `open`, `delete` or `scan`;
 - `URI`: the dataset or namespace identifier when one is available;
