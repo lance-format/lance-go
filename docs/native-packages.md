@@ -57,10 +57,13 @@ checksum database, and that the bytes match the official release archive:
   artifact module that this target's generated selector imports. A legacy
   archive keeps the single-file `upstreamHeaderSHA256` check; a split archive
   extracts every public `include/lance/*.h` (excluding `lance.hpp`) and verifies
-  the sorted manifest against an independent composite identity. A release
-  archive and a replacement checksum cannot change the bytes CI tests without
-  failing that comparison. The check reports itself as inactive while a new pin
-  has no republished module yet.
+  the sorted manifest against an independent composite identity. The record
+  keeps `header=` for file consumers and adds `abi_header=` for the ABI
+  checker; `scripts/abi-checker-input.sh` selects the directory for split
+  layouts and the validated file for legacy layouts. A release archive and a
+  replacement checksum cannot change the bytes CI tests without failing that
+  comparison. The check reports itself as inactive while a new pin has no
+  republished module yet.
 - `scripts/check-native-library.sh` validates the acquired library against the
   pinned header, object format and architecture, dependency closure, libc or
   macOS deployment floor, and every symbol the Go bindings bind.

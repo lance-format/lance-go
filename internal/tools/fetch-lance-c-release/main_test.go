@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -910,6 +912,7 @@ func TestAcquireSplitHeaders(t *testing.T) {
 		}
 		for _, want := range []string{
 			"header_count=3\n",
+			"abi_header=" + filepath.Join(out, "include", "lance") + "\n",
 			"header_identity_sha256=" + identity + "\n",
 			"header_manifest=" + filepath.Join(out, headeridentity.ManifestName) + "\n",
 			"fetch_lance_c_release=ok\n",
@@ -1054,6 +1057,57 @@ func TestAcquireLegacySingleHeaderRecordUnchanged(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, headeridentity.ManifestName)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("legacy acquisition wrote a split manifest: %v", err)
 	}
+	for _, want := range []string{
+		"header=" + filepath.Join(out, "include", "lance", "lance.h") + "\n",
+		"abi_header=" + filepath.Join(out, "include", "lance", "lance.h") + "\n",
+	} {
+		if !strings.Contains(string(record), want) {
+			t.Fatalf("legacy record does not contain %q:\n%s", want, record)
+		}
+	}
+
+	matchingManifest := []byte("include/lance/lance.h " + pinned.headerSHA + "\n")
+	matchingIdentity := sha256Hex(matchingManifest)
+	matchingOut := filepath.Join(t.TempDir(), "release")
+	if err := os.MkdirAll(matchingOut, 0o755); err != nil {
+		t.Fatalf("create output: %v", err)
+	}
+	if err := acquire(pinned, spec, matchingOut, root, headerExpectation{manifest: matchingManifest, identity: matchingIdentity}); err != nil {
+		t.Fatalf("acquire with a matching supplemental manifest: %v", err)
+	}
+}
+
+func TestLegacyHeaderAlwaysUsesPin(t *testing.T) {
+	out := t.TempDir()
+	headerDir := filepath.Join(out, "include", "lance")
+	if err := os.MkdirAll(headerDir, 0o755); err != nil {
+		t.Fatalf("create header directory: %v", err)
+	}
+	header := []byte("/* pinned */\nLanceErrorCode lance_last_error_code(void);\n")
+	headerPath := filepath.Join(headerDir, "lance.h")
+	if err := os.WriteFile(headerPath, header, 0o644); err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+	pinned := pin{headerSHA: sha256Hex(header)}
+	matchingManifest := []byte("include/lance/lance.h " + pinned.headerSHA + "\n")
+	if _, err := verifyAcquiredHeaders(out, pinned, headerExpectation{
+		manifest: matchingManifest,
+		identity: sha256Hex(matchingManifest),
+	}); err != nil {
+		t.Fatalf("matching supplemental input: %v", err)
+	}
+
+	changed := []byte("/* changed */\nLanceErrorCode lance_last_error_code(void);\n")
+	if err := os.WriteFile(headerPath, changed, 0o644); err != nil {
+		t.Fatalf("write changed header: %v", err)
+	}
+	changedManifest := []byte("include/lance/lance.h " + sha256Hex(changed) + "\n")
+	if _, err := verifyAcquiredHeaders(out, pinned, headerExpectation{
+		manifest: changedManifest,
+		identity: sha256Hex(changedManifest),
+	}); err == nil || !strings.Contains(err.Error(), "pin says") {
+		t.Fatalf("supplemental input bypassed the single-header pin: %v", err)
+	}
 }
 
 func TestLoadHeaderExpectation(t *testing.T) {
@@ -1110,5 +1164,54 @@ func TestReadPinOptionalHeaderIdentity(t *testing.T) {
 	if _, err := readPin(writeFile(t, t.TempDir(), "upstream.go", invalid)); err == nil ||
 		!strings.Contains(err.Error(), "upstreamHeaderIdentitySHA256") {
 		t.Fatalf("readPin accepted an invalid optional identity: %v", err)
+	}
+}
+
+func TestABICheckerInputSelection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the shared consumer helper is exercised on Unix; Windows uses the record field directly")
+	}
+	script := filepath.Join("..", "..", "..", "scripts", "abi-checker-input.sh")
+	dir := t.TempDir()
+	header := writeFile(t, dir, "lance.h", "/* header */\n")
+	splitDir := filepath.Join(t.TempDir(), "include", "lance")
+	if err := os.MkdirAll(splitDir, 0o755); err != nil {
+		t.Fatalf("create split directory: %v", err)
+	}
+	writeFile(t, splitDir, "lance.h", "/* header */\n")
+
+	cases := map[string]struct {
+		record string
+		want   string
+	}{
+		"split directory": {
+			record: "abi_header=" + splitDir + "\nheader=" + filepath.Join(splitDir, "lance.h") + "\n",
+			want:   splitDir,
+		},
+		"legacy file": {
+			record: "abi_header=" + header + "\nheader=" + header + "\n",
+			want:   header,
+		},
+		"historical record": {
+			record: "header=" + header + "\n",
+			want:   header,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			record := writeFile(t, t.TempDir(), "acquisition.txt", tc.record)
+			output, err := exec.Command("bash", script, record).CombinedOutput()
+			if err != nil {
+				t.Fatalf("helper failed: %v\n%s", err, output)
+			}
+			if strings.TrimSpace(string(output)) != tc.want {
+				t.Fatalf("helper printed %q, want %q", strings.TrimSpace(string(output)), tc.want)
+			}
+		})
+	}
+
+	missing := writeFile(t, t.TempDir(), "acquisition.txt", "abi_header="+filepath.Join(dir, "missing")+"\n")
+	if output, err := exec.Command("bash", script, missing).CombinedOutput(); err == nil {
+		t.Fatalf("helper accepted a missing abi_header: %s", output)
 	}
 }

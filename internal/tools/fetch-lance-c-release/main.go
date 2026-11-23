@@ -314,6 +314,7 @@ func acquire(pinned pin, spec targetSpec, outDir, root string, expected headerEx
 		"header_archive_sha256=" + headerArchiveSHA,
 		"header_archive_line_endings=" + lineEndings,
 		"header_count=" + strconv.Itoa(len(headers.files)),
+		"abi_header=" + headers.abiHeader,
 		"library=" + libraryPath,
 		"library_bytes=" + strconv.FormatInt(librarySize, 10),
 		"library_sha256=" + librarySHA,
@@ -376,6 +377,7 @@ type acquiredHeaderSet struct {
 	identity            string
 	split               bool
 	manifestPath        string
+	abiHeader           string
 	umbrellaPath        string
 	umbrellaSHA         string
 	umbrellaArchiveSHA  string
@@ -396,7 +398,34 @@ func verifyAcquiredHeaders(outDir string, pinned pin, expected headerExpectation
 	result := acquiredHeaderSet{
 		dir:          dir,
 		split:        split,
+		abiHeader:    dir,
 		umbrellaPath: filepath.Join(dir, "lance.h"),
+	}
+
+	if !split {
+		result.abiHeader = result.umbrellaPath
+		canonicalSHA, archiveSHA, lineEndings, err := canonicalHeader(result.umbrellaPath, pinned.headerSHA)
+		if err != nil {
+			return acquiredHeaderSet{}, fmt.Errorf("%s: %w", headeridentity.Umbrella, err)
+		}
+		result.umbrellaSHA = canonicalSHA
+		result.umbrellaArchiveSHA = archiveSHA
+		result.umbrellaLineEndings = lineEndings
+		if expected.manifest != nil || expected.identity != "" {
+			files, identity, err := headeridentity.Verify(dir, expected.manifest, expected.identity)
+			if err != nil {
+				return acquiredHeaderSet{}, err
+			}
+			result.files = files
+			result.identity = identity
+		} else {
+			files, err := headeridentity.Scan(dir)
+			if err != nil {
+				return acquiredHeaderSet{}, err
+			}
+			result.files = files
+		}
+		return result, nil
 	}
 
 	expectedHashes := map[string]string{}
@@ -416,10 +445,8 @@ func verifyAcquiredHeaders(outDir string, pinned pin, expected headerExpectation
 		if want, ok := expectedHashes[file.Path]; ok {
 			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeaderAgainst(path, want,
 				"expected "+headeridentity.ManifestName, "the release does not contain the expected header")
-		} else if split {
-			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeaderLoose(path)
 		} else {
-			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeader(path, pinned.headerSHA)
+			canonicalSHA, archiveSHA, lineEndings, err = canonicalHeaderLoose(path)
 		}
 		if err != nil {
 			return acquiredHeaderSet{}, fmt.Errorf("%s: %w", file.Path, err)
@@ -431,37 +458,27 @@ func verifyAcquiredHeaders(outDir string, pinned pin, expected headerExpectation
 		}
 	}
 
-	switch {
-	case expected.manifest != nil || expected.identity != "":
-		files, identity, err := headeridentity.Verify(dir, expected.manifest, expected.identity)
-		if err != nil {
-			return acquiredHeaderSet{}, err
-		}
-		result.files = files
-		result.identity = identity
-	case split:
+	if expected.manifest == nil && expected.identity == "" {
 		return acquiredHeaderSet{}, fmt.Errorf("split header set requires an expected identity; pass -expected-header-identity or -expected-header-manifest, or record upstreamHeaderIdentitySHA256 in the pin")
-	default:
-		files, err := headeridentity.Scan(dir)
-		if err != nil {
-			return acquiredHeaderSet{}, err
-		}
-		result.files = files
 	}
+	files, identity, err := headeridentity.Verify(dir, expected.manifest, expected.identity)
+	if err != nil {
+		return acquiredHeaderSet{}, err
+	}
+	result.files = files
+	result.identity = identity
 
-	if result.split {
-		manifest, err := headeridentity.Encode(result.files)
-		if err != nil {
-			return acquiredHeaderSet{}, err
-		}
-		result.manifestPath = filepath.Join(outDir, headeridentity.ManifestName)
-		if err := os.WriteFile(result.manifestPath, manifest, 0o644); err != nil {
-			return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", result.manifestPath, err)
-		}
-		compositePath := filepath.Join(outDir, headeridentity.CompositeName)
-		if err := os.WriteFile(compositePath, []byte(result.identity+"\n"), 0o644); err != nil {
-			return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", compositePath, err)
-		}
+	manifest, err := headeridentity.Encode(result.files)
+	if err != nil {
+		return acquiredHeaderSet{}, err
+	}
+	result.manifestPath = filepath.Join(outDir, headeridentity.ManifestName)
+	if err := os.WriteFile(result.manifestPath, manifest, 0o644); err != nil {
+		return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", result.manifestPath, err)
+	}
+	compositePath := filepath.Join(outDir, headeridentity.CompositeName)
+	if err := os.WriteFile(compositePath, []byte(result.identity+"\n"), 0o644); err != nil {
+		return acquiredHeaderSet{}, fmt.Errorf("write %s: %w", compositePath, err)
 	}
 	return result, nil
 }

@@ -164,8 +164,9 @@ module declares no requirements and contains only `embed` data.
 
 The `go -C internal/tools` commands in this section run the tool from the
 `internal/tools` module directory. Pass absolute paths for `-out`, `-pin`,
-`-root`, `-module`, `-library` and `LANCE_C_HEADER`; a relative value resolves
-under `internal/tools`, not the repository root.
+`-root`, `-module`, `-library`, `-header`, `-header-manifest` and
+`LANCE_C_HEADER`; a relative value resolves under `internal/tools`, not the
+repository root.
 
 When the pin is a published `lance-c` release, acquire the exact published
 bytes instead of rebuilding:
@@ -176,6 +177,7 @@ bytes instead of rebuilding:
 go -C internal/tools run ./fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
 NATIVE_LIB=$(find "$RELEASE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
 NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
+NATIVE_ABI_HEADER="$(./scripts/abi-checker-input.sh "$RELEASE_OUT/acquisition.txt")"
 ```
 
 The tool verifies the published per-asset checksum, the pinned header identity,
@@ -224,16 +226,17 @@ NATIVE_LIB=$(cd "$(dirname "$NATIVE_LIB")" && printf '%s/%s\n' "$(pwd -P)" "$(ba
 Windows needs its own native DLL build and runtime evidence. The Unix build and
 ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 
-Check the bindings against the installed header. A legacy install uses the
-single `include/lance/lance.h`; a split install passes the `include/lance`
-directory with the independently published manifest or identity:
+Check the bindings against the installed header. `scripts/abi-checker-input.sh`
+selects the recorded file for a legacy archive or the recorded directory for a
+split archive; the legacy file is still what `check-native-library.sh` and the
+generator consume:
 
 ```sh
-LANCE_C_HEADER="$NATIVE_HEADER" go -C internal/tools run ./check-abi-symbols
-# split install:
+LANCE_C_HEADER="$NATIVE_ABI_HEADER" go -C internal/tools run ./check-abi-symbols
+# split install: also pass the identity recorded by the acquisition tool
 go -C internal/tools run ./check-abi-symbols \
-  -header "$RELEASE_OUT/include/lance" \
-  -header-manifest "$HEADER_MANIFEST"
+  -header "$NATIVE_ABI_HEADER" \
+  -header-identity "$(sed -n 's/^header_identity_sha256=//p' "$RELEASE_OUT/acquisition.txt")"
 ```
 
 Run the maintained native-library checker:

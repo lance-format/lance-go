@@ -21,6 +21,7 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
+      - scripts/abi-checker-input.sh
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -36,6 +37,7 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
+      - scripts/abi-checker-input.sh
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -148,15 +150,17 @@ jobs:
           record="$out/acquisition.txt"
           library="$(sed -n 's/^library=//p' "$record")"
           header="$(sed -n 's/^header=//p' "$record")"
+          abi_header="$(./scripts/abi-checker-input.sh "$record")"
           library_sha="$(sed -n 's/^library_sha256=//p' "$record")"
           archive_sha="$(sed -n 's/^archive_sha256=//p' "$record")"
-          if [[ -z $library || -z $header || -z $library_sha || -z $archive_sha ]]; then
-            echo "acquisition record did not report the library, header, and hashes" >&2
+          if [[ -z $library || -z $header || -z $abi_header || -z $library_sha || -z $archive_sha ]]; then
+            echo "acquisition record did not report the library, header, ABI header input, and hashes" >&2
             exit 1
           fi
           {
             echo "library=$library"
             echo "header=$header"
+            echo "abi_header=$abi_header"
             echo "library_sha256=$library_sha"
             echo "archive_sha256=$archive_sha"
           } >> "$GITHUB_OUTPUT"
@@ -174,7 +178,7 @@ jobs:
 
       - name: Check ABI against published header
         env:
-          LANCE_C_HEADER: ${{ steps.native.outputs.header }}
+          LANCE_C_HEADER: ${{ steps.native.outputs.abi_header }}
         run: |
           set -euo pipefail
           go -C internal/tools run ./check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"

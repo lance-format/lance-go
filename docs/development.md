@@ -110,7 +110,10 @@ requires an independent composite identity from `-expected-header-identity`,
 `-expected-header-manifest`, or the optional `upstreamHeaderIdentitySHA256` pin
 constant. The identity is the SHA-256 of the sorted
 `include/lance/<name> <sha256>` manifest text, and the acquisition writes
-`HEADER-MANIFEST` plus `COMPOSITE-SHA256` for split archives.
+`HEADER-MANIFEST` plus `COMPOSITE-SHA256` for split archives. The acquisition
+record keeps `header=` as the legacy single file for file consumers and adds
+`abi_header=` as the path to pass to the ABI checker; `scripts/abi-checker-input.sh`
+selects it and falls back to `header=` for historical records.
 
 ## Pinned ABI and verification
 
