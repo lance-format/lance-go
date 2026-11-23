@@ -787,10 +787,10 @@ parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately. Every 0.1 release
-bundles an RTree-capable native library, so the example below runs on a current
-default bundle. Use an explicit RTree-capable `LANCE_LIB_PATH` library only when
-testing an older SDK or library. The README and the [native package
+The Go API and the native library are versioned separately. The current
+release bundles an RTree-capable native library, so the example below runs on
+the default bundle. Use an explicit RTree-capable `LANCE_LIB_PATH` library only
+when testing an older SDK or library. The README and the [native package
 record](native-packages.md) identify the exact native pin for the installed Go
 tag.
 
