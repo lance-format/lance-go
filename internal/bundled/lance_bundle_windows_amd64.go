@@ -7,12 +7,12 @@ package bundled
 import (
 	"github.com/lance-format/lance-go/internal/loader"
 
-	artifact "github.com/lance-format/lance-go/artifacts/windows-amd64"
+	artifact "go.lance.org/liblance/windows-amd64"
 )
 
 func init() {
 	loader.RegisterBundle(loader.Bundle{
-		Module:             "github.com/lance-format/lance-go/artifacts/windows-amd64",
+		Module:             "go.lance.org/liblance/windows-amd64",
 		Target:             artifact.Target,
 		LibraryName:        artifact.LibraryName,
 		Compressed:         artifact.Payload,

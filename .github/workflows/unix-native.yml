@@ -307,10 +307,10 @@ jobs:
           LANCE_HEADER: ${{ steps.native.outputs.header }}
           LANCE_ARCHIVE_SHA256: ${{ steps.native.outputs.archive_sha256 }}
           CANDIDATE_ROOT: ${{ runner.temp }}/candidate/${{ matrix.slug }}
-          MODULE_PATH: github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}
+          MODULE_PATH: go.lance.org/liblance/${{ matrix.slug }}
         run: |
           set -euo pipefail
-          expected_module_path="github.com/lance-format/lance-go/artifacts/${TARGET//\//-}"
+          expected_module_path="go.lance.org/liblance/${TARGET//\//-}"
           [[ $MODULE_PATH == "$expected_module_path" ]] || {
             echo "candidate module path $MODULE_PATH does not match $expected_module_path" >&2
             exit 1

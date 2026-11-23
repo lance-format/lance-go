@@ -1,19 +1,19 @@
 # Windows public consumers
 
 `run-windows.ps1` is the Windows acceptance harness for the published
-`artifacts/windows-<arch>` modules. It runs only for an exact official release
+`go.lance.org/liblance/windows-<arch>` modules. It runs only for an exact official release
 tag (tag push or manual dispatch naming the tag), never for a commit SHA or
 pseudo-version. It is deliberately separate from `run.sh`: Windows has a
 different cache contract, needs a PE check, and can report the module that the
 loader actually mapped.
 
-The Windows modules are published at `v0.1.0` (stable) and
-`v0.1.1-preview.1` (preview). The preview modules come from the official
-`lance-c v0.2.1-beta.1` release at
-`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`. Both payload sets decompress
-byte-for-byte to the matching official archive DLLs. Public-consumer
-acceptance for each release is recorded against its release tag; the preview.1
-six-target evidence remains historical.
+The current preview modules are `go.lance.org/liblance/windows-<arch>` at
+`v0.2.0-preview.1`, built from the official `lance-c v0.2.1-beta.3` release at
+`a800fd5f28636bfff34778e3ad6663f3cf099a38`. The historical Git artifact
+modules `artifacts/windows-<arch>` at `v0.1.0` and `v0.1.1-preview.1` remain
+published and are exercised by their own tag revisions. Each payload set
+decompresses byte-for-byte to the matching official archive DLL; public
+acceptance is recorded against its release tag.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for
@@ -24,8 +24,9 @@ post-tag checks or establish older Windows support.
 The following must exist on the public proxy for the tested root tag:
 
 - the root module version;
-- `artifacts/windows-amd64` or `artifacts/windows-arm64`, published from a
-  static-CRT build and adopted by the root `go.mod` and platform selector;
+- `go.lance.org/liblance/windows-amd64` or
+  `go.lance.org/liblance/windows-arm64`, published from a static-CRT build and
+  adopted by the root `go.mod` and platform selector;
 - the matching `internal/bundled` selector for the target architecture.
 
 A configured workflow is not acceptance. If the downloaded root `go.mod` does

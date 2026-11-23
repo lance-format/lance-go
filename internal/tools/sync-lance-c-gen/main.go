@@ -15,7 +15,7 @@ func main() {
 	flag.StringVar(&opts.HeaderPath, "header", "", "path to the matching lance.h")
 	flag.StringVar(&opts.Target, "target", "", "target as GOOS/GOARCH (linux/amd64, linux/arm64, darwin/arm64, windows/amd64, or windows/arm64)")
 	flag.StringVar(&opts.OutDir, "out", "", "new output directory to publish (must not exist)")
-	flag.StringVar(&opts.ModulePath, "module-path", "", "generated artifact module path (default: github.com/lance-format/lance-go/artifacts/<goos>-<goarch>)")
+	flag.StringVar(&opts.ModulePath, "module-path", "", "generated artifact module path (default: go.lance.org/liblance/<goos>-<goarch>)")
 	flag.StringVar(&opts.SelectorPackage, "selector-package", "bundled", "package name for the generated selector (copied into internal/bundled)")
 	flag.StringVar(&opts.UpstreamRepo, "upstream-repo", "", "lance-c repository recorded as provenance")
 	flag.StringVar(&opts.UpstreamCommit, "upstream-commit", "", "lance-c commit recorded as provenance")
@@ -28,7 +28,7 @@ func main() {
 		os.Exit(2)
 	}
 	if opts.Target != "" && opts.ModulePath == "" {
-		opts.ModulePath = "github.com/lance-format/lance-go/artifacts/" + strings.ReplaceAll(opts.Target, "/", "-")
+		opts.ModulePath = "go.lance.org/liblance/" + strings.ReplaceAll(opts.Target, "/", "-")
 	}
 
 	result, err := artifactgen.Generate(opts)

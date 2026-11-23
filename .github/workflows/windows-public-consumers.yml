@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Exact official release tag (for example v0.1.1-preview.1) to resolve from proxy.golang.org"
+        description: "Exact official release tag (for example v0.2.0-preview.1) to resolve from proxy.golang.org"
         required: true
         type: string
   push:
@@ -37,6 +37,7 @@ env:
   GOENV: "off"
   GOPROXY: https://proxy.golang.org
   GOSUMDB: sum.golang.org
+  ARTIFACT_MODULE_PREFIX: go.lance.org/liblance
 
 jobs:
   public-consumer:
@@ -134,7 +135,7 @@ jobs:
           if ($cgo -ne '0') { throw "CGO_ENABLED must be 0, got $cgo" }
           $evidence = $env:EVIDENCE_DIR
           New-Item -ItemType Directory -Force -Path $evidence | Out-Null
-          $artifact = 'github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}'
+          $artifact = 'go.lance.org/liblance/${{ matrix.slug }}'
           & go list -m -f 'artifact={{.Path}}@{{.Version}}' $artifact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $cache = Join-Path $env:LOCALAPPDATA 'lance-go'

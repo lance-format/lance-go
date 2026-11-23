@@ -5,18 +5,18 @@ This is the maintainer sequence for a release that includes a compiled
 contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
-Three Unix and two Windows companion modules are published at
-`v0.1.1-preview.1` from the official `lance-c v0.2.1-beta.1` release. The
-annotated tag object `091fb7c282c30890901e45d1727d62b755b2f58b` peels to
-`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`; the canonical header SHA-256 is
-`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`.
-All five active selectors and root requirements use those companion tags. The
-five release archives and checksums were verified, each companion payload
-decompresses byte-for-byte to the official archive library, and every module
-resolves through the public proxy and checksum database. Pre-publication
-candidate evidence belongs to the v0.1.1-preview.1 release PR; accepted
-exact-tag evidence belongs to the release record. The v0.1.0 stable modules and
-their evidence remain published and unchanged.
+The current companion modules are published as ordinary Go modules at
+`go.lance.org/liblance/<target>@v0.2.0-preview.1`, not as Git tags, from the
+official `lance-c v0.2.1-beta.3` release. The annotated C tag
+`cff1c32dc03ac144f798b37953e2aba651711924` peels to
+`a800fd5f28636bfff34778e3ad6663f3cf099a38`; the canonical header SHA-256 is
+`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`.
+All five active selectors and root requirements use those static module
+versions. The five release archives and checksums were verified, each companion
+payload decompresses byte-for-byte to the official archive library, and every
+module resolves through the public proxy and checksum database. Historical
+`v0.1.0` and `v0.1.1-preview.1` Git artifact modules/tags remain published and
+unchanged. Accepted exact-version evidence belongs to the release record.
 
 Intel macOS is retired for new releases; its published module and tags remain
 at their original revisions, but no current release requires or selects them.
@@ -31,33 +31,33 @@ for the claimed target. They must not claim completion of issue #1; the
 broader RTree/raw v2.2 official-core work remains outside this release.
 
 The maintained Unix workflow, `.github/workflows/unix-native.yml`, builds and
-tests three native runners and generates unpublished candidate modules under
-their real `artifacts/$SLUG` module paths. The workflow uploads those
-candidates as review evidence; it does not publish a production module, push
-a tag, or activate a selector. A build/test success is not acceptance:
-candidate verification must also pass. The separate public-consumer workflow
-verifies published module identity and cold runtime behavior. Use the current
-workflow and support status in
-[artifacts/README.md](artifacts/README.md); record results for the exact release
-candidate rather than copying an earlier status table.
+tests three native runners and generates unpublished candidate modules for
+their real static module paths. The workflow uploads those candidates as review
+evidence; it does not publish a production module, create a Git tag, or activate
+a selector. A build/test success is not acceptance: candidate verification must
+also pass. The separate public-consumer workflow verifies published module
+identity and cold runtime behavior. Static module publication is performed by
+`.github/workflows/publish-go-module-origin.yml`; use
+[scripts/go-module-origin/README.md](scripts/go-module-origin/README.md) for
+the exact identity and publication procedure. Record results for the exact
+release candidate rather than copying an earlier status table.
 
 ## Release units and order
 
 ```text
-root module          $ROOT_MODULE                         tag v...
-linux/amd64 module   $ROOT_MODULE/artifacts/linux-amd64   tag artifacts/linux-amd64/v...
+root module          $ROOT_MODULE                         tag v0.1.1
+linux/amd64 module   go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
 selector             internal/bundled/lance_bundle_linux_amd64.go
-root requirement     $ROOT_MODULE/artifacts/linux-amd64   $ARTIFACT_VERSION
+root requirement     go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
 ```
 
 Repeat the artifact/selector/requirement rows for each published target.
-The current companion versions and payload facts are recorded in
-[artifacts/README.md](artifacts/README.md). Publish in this order: verify the
-native source and header, build and validate the library, generate and verify
-the production artifact module, publish that module and resolve its exact
-version through the public proxy and checksum database, then activate the
-selector and root requirement, test, and only after an authorized readiness
-decision create the root tag and release.
+Artifact modules are immutable static module versions, not Git tags. Publish in
+this order: verify the native source and header, build and validate the library,
+generate and verify all artifact modules, publish the static modules and resolve
+their exact versions through the public proxy and checksum database, then
+activate the selectors and root requirements, test, and only after an authorized
+readiness decision create the root tag and release.
 
 A candidate module produced by the Unix workflow is unpublished evidence.
 Never point a selector or root requirement at a candidate commit or candidate
@@ -81,9 +81,12 @@ as the root version and native input. Do not derive it from an unversioned
 `main` checkout or publish it before the exact companion archives exist.
 Update together:
 
-- README Quickstart and application install command to the new root tag;
+- README Quickstart and application install command to the new root tag only
+  during `v0.1.1` release preparation; the adoption delta keeps the public
+  stable links on `v0.1.0`;
 - README release/native mapping, supported consumer table, and read-only
-  deployment example's exact companion module, version and library hash;
+  deployment example's exact static module, version and library hash only
+  during `v0.1.1` release preparation;
 - README RTree boundary, stating the Go tag and native requirement together;
 - [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
   boundaries. Keep exact current native mapping in the README, release record
@@ -95,8 +98,9 @@ Update together:
 - `scripts/verify-quickstart.sh` version, companion module/version, published
   module archive size, and expected library size and SHA-256. Keep the module
   archive size separate from the compressed native payload;
-- `artifacts/README.md` with the new companion versions, payload facts and
-  accepted exact-tag evidence.
+- `artifacts/README.md` with the historical Git artifact record unchanged and
+  a separate static-origin section for the new versions, payload facts and
+  accepted exact-version evidence.
 
 Keep [docs/PREVIEW.md](docs/PREVIEW.md) as the historical first-preview
 record. Do not rewrite its version facts; update only links whose documentation
@@ -143,38 +147,27 @@ do not label the binary with an older native release. Record the native
 repository, commit, optional tag, and header hash.
 
 Root and artifact versions are independent module versions. The root module
-path has no `/vN` suffix, so root tags must remain `v0` or `v1`. A companion
-module tag includes the module path suffix. The following is syntax only, not a
-chosen release version:
+path has no `/vN` suffix, so root tags must remain `v0` or `v1`. Artifact modules
+are static module versions at `go.lance.org/liblance/<target>`; they do not use
+Git tags. The following is syntax only, not a chosen release version:
 
 ```bash
 REPO_ROOT=$(pwd)
-ROOT_VERSION=v0.1.1-preview.1       # example
+ROOT_VERSION=v0.1.1                  # example root tag
 TARGET=linux/amd64                  # example
 SLUG=${TARGET//\//-}
-ARTIFACT_VERSION=v0.1.1-preview.1   # example
-# root tag:            v0.1.1-preview.1
-# companion tag:       artifacts/linux-amd64/v0.1.1-preview.1
+ARTIFACT_MODULE="go.lance.org/liblance/$SLUG"
+ARTIFACT_VERSION=v0.2.0-preview.1   # example static module version
 ```
 
-A companion module tag is always `<module-path-suffix>/<version>`. For a
-module published as `$ROOT_MODULE/artifacts/$SLUG`, that suffix is
-`artifacts/$SLUG`; the root tag has no prefix.
-
-A pseudo-version is resolved from a pushed commit, not created as a tag. Use
-the exact `Version` returned by `go mod download -json`; do not construct one
-from a timestamp or copy an old example. Read the currently selected companion
-module version from `go.mod`.
-
-A Go-only patch release may reuse the existing immutable companion module
+A Go-only patch release may reuse the existing immutable artifact module
 versions and checksums when the native bytes are unchanged. Any native byte
 change, including a new `lance-c` pin or a rebuilt library, requires new
-companion module versions; never replace the bytes behind a published companion
-tag.
+artifact module versions; never replace the bytes behind a published static
+module version.
 
 ```sh
 ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
-ARTIFACT_MODULE="$ROOT_MODULE/artifacts/$SLUG"
 ```
 
 The root module and the generated artifact module use Go 1.23.0. The artifact
@@ -296,10 +289,11 @@ On Linux, the default lane must run with `LANCE_LIB_PATH` unset, a fresh
 cache. See [`docs/development.md#testing`](docs/development.md#testing) for the existing command matrix
 rather than duplicating it here.
 
-## 3. Generate and verify the production artifact module
+## 3. Generate and verify the static artifact modules
 
-Generate the release artifact module under its final production path, outside
-the checkout:
+Generate the release artifact modules from the recorded libraries and headers,
+outside the checkout. The generator remains `scripts/sync-lance-c.sh`; the
+static-origin packager consumes its `module/` output for each target:
 
 ```sh
 : "${ARTIFACT_OUT:?new output directory outside the checkout}"
@@ -314,26 +308,21 @@ scripts/sync-lance-c.sh \
 The output contains a data-only `module/` (with `go.mod`, `artifact.go`, and the
 compressed payload) and a `selector/` file for `internal/bundled`.
 
-The maintained Unix workflow generates its candidate with the real
-`--module-path "$ARTIFACT_MODULE"` and uploads it with seven-day retention. The
-candidate is unpublished review evidence, not a published target, and its
-selector must not be activated. Before release, regenerate and verify the
-complete generated module from the recorded library and header, then
-publish that exact module.
-
-Inspect the generated module before publishing:
+For the beta.3 candidate set, the static-origin generator packages all five
+modules and writes the standard proxy files, discovery HTML, and identity
+manifest:
 
 ```sh
-cat "$ARTIFACT_OUT/module/go.mod"
-sed -n '1,40p' "$ARTIFACT_OUT/module/artifact.go"
-PAYLOAD=$(find "$ARTIFACT_OUT/module" -type f -name '*.zst' -print -quit)
-wc -c "$PAYLOAD"
-sha256sum "$PAYLOAD"
+scripts/go-module-origin/stage-candidates.sh "$DOWNLOADS" "$CANDIDATES"
+python3 scripts/go-module-origin/verify-candidate-identity.py \
+  scripts/go-module-origin/v0.2.0-preview.1.identity.json "$CANDIDATES"
+CANDIDATES_DIR="$CANDIDATES" OUT_DIR="$ORIGIN_OUT" scripts/build-go-module-origin.sh
+ORIGIN_DIR="$ORIGIN_OUT" scripts/test-go-module-origin.sh
 ```
 
-Check that the module path, target, library name, compressed and uncompressed
-sizes and hashes, native commit, and header hash match the build record. The
-commit and header hash are packaging claims: `lance-c` has no runtime version
+The generated module path, target, library name, compressed and uncompressed
+sizes and hashes, native commit, and header hash must match the build record.
+The commit and header hash are packaging claims: `lance-c` has no runtime version
 symbol, so the loader cannot prove them from the shared library.
 
 The maintained verifier checks the payload hash and size, decompresses it,
@@ -353,50 +342,33 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The artifact publication commit tracks the compressed archive. The current
-`linux/amd64` payload is 88,353,661 bytes compressed and 345,903,736 bytes
-uncompressed; exact hashes and counts are recorded in
-[artifacts/README.md](artifacts/README.md). The published Go module archive is
-88,365,133 bytes, a different value because it also contains module metadata;
-`scripts/verify-quickstart.sh` pins it separately. The raw library is never
-committed. GitHub rejects ordinary Git blobs over 100 MiB, and warns above
-50 MiB. Keep each tracked compressed payload below that hard limit. A future
-target whose compressed payload exceeds it needs a separate storage decision;
-do not silently switch formats or move the payload outside the module contract.
+The current `linux/amd64` payload is 88,580,128 bytes compressed and
+345,989,752 bytes uncompressed; exact hashes and counts are recorded in
+[artifacts/README.md](artifacts/README.md). The published module ZIP is
+87,897,705 bytes and `scripts/verify-quickstart.sh` pins it separately. The raw
+library is never committed. GitHub rejects ordinary Git blobs over 100 MiB, and
+warns above 50 MiB; static module publications do not add Git blobs, but the
+same payload size limits still apply to the origin. Do not silently switch
+formats or move the payload outside the module contract.
 
-The payload at the artifact publication commit must stay byte-identical to the
-published module archive. Preserve and record both sizes and both hashes.
-The root SDK tree retains only the three metadata files (`artifact.go`,
-`go.mod`, and `LICENSE`); it does not duplicate compressed payloads. These
-metadata snapshots are not standalone buildable or publishable modules.
+## 4. Publish the static modules and resolve their exact versions
 
-## 4. Publish the artifact and resolve its exact version
+Publish through the CI workflow
+`.github/workflows/publish-go-module-origin.yml` on authorized `main`, with the
+fixed first-release identity and `publish=true`. The staging job downloads the
+pinned same-repo candidate artifacts, verifies the identity manifest, regenerates
+the origin, checks the exact manifest SHA-256, and uploads the staging tree. The
+protected `go-module-origin` publish job receives that exact tree and publishes
+only manifest-validated bytes. The local publisher procedure is documented in
+[scripts/go-module-origin/README.md](scripts/go-module-origin/README.md).
 
-Commit the complete generated `artifacts/$SLUG` module on a dedicated artifact
-publication branch and push that branch. Keep the publication branch reachable;
-do not merge its payload into the root SDK tree. Adopt only its three metadata
-files, generated selector and root requirement. Record the full publication SHA
-as `ARTIFACT_COMMIT`. Publish the companion module
-with a nested tag, or resolve a pseudo-version from that pushed commit. For the
-tagged path:
+Artifact module versions are immutable. Publish `.info`, `.mod`, and `.zip`
+first, then the merged `@v/list`, and discovery last. Never create a Git tag for
+an artifact module and never move a published static version. The three
+pre-existing darwin-arm64 version objects are preserved by create-only logic.
 
-```sh
-: "${ARTIFACT_VERSION:?version chosen for this release}"
-: "${SLUG:?target slug}"
-: "${ARTIFACT_COMMIT:?verified pushed artifact commit}"
-git tag -a "artifacts/$SLUG/$ARTIFACT_VERSION" -m "artifacts/$SLUG $ARTIFACT_VERSION" "$ARTIFACT_COMMIT"
-git push origin "refs/tags/artifacts/$SLUG/$ARTIFACT_VERSION"
-```
-
-The tag and release commands in this guide are examples. Run them only as the
-authorized publication step, with the expanded values checked first. For a
-pseudo-version, skip the nested tag and resolve `$ARTIFACT_MODULE@$ARTIFACT_COMMIT`
-from the pushed commit, then use the returned `Version` as `ARTIFACT_VERSION`
-in the archive path and root requirement. The companion module tag must resolve
-to `ARTIFACT_COMMIT`; verify the remote tag after pushing it.
-
-Resolve the exact version through the public proxy and checksum database before
-touching the selector or root requirement:
+Resolve the exact versions through the public proxy and checksum database before
+touching the selectors or root requirements:
 
 ```sh
 PROBE_WORK=$(mktemp -d)
@@ -574,7 +546,7 @@ The evidence record must identify the exact objects:
 
 ```text
 root:             commit, tag, module path
-artifact:         commit, tag or pseudo-version, module path, go.sum entries
+artifact:         static module path and version, go.sum entries, proxy/sumdb identity
 native:           repository, commit, tag or explicit absence, header SHA-256
 library:          bytes, SHA-256, packaging source
 payload:          compressed and uncompressed bytes and SHA-256
@@ -585,20 +557,20 @@ gaps:             untested targets and storage paths
 ```
 
 The current `linux/amd64` bundle, native
-`ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca`, header
-`5d59978a8ab60bbd43f5817b3cd6f340b9489655b2dcca610ef99b2959c4852f`, payload
-`bf832cecfde20fdf9c534ebf58f0188298be860535542693102aa0bfd06b1f7d`, and
+`a800fd5f28636bfff34778e3ad6663f3cf099a38`, header
+`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`, payload
+`48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and
 uncompressed library
-`bea1f774ce9ff07ad8565ff3afafe1b49249d2dbb901e58d5bcce529f484cfa5` are the
-v0.1.1-preview.1 pin examples. The published module is
-`github.com/lance-format/lance-go/artifacts/linux-amd64@v0.1.1-preview.1`.
-The published companion versions, payload sizes, hashes, and accepted
-exact-tag consumer runs are listed in
-[artifacts/README.md](artifacts/README.md). The
-[v0.1.0 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)
-records that stable tag's post-tag evidence archive and both consumer runs;
-the v0.1.1-preview.1 preview still requires the tag-based gates above after
-its root tag is authorized.
+`011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are the
+v0.1.1 stable adoption examples. The published module is
+`go.lance.org/liblance/linux-amd64@v0.2.0-preview.1`.
+The published static versions, payload sizes, hashes, and accepted
+exact-version consumer runs are listed in
+[artifacts/README.md](artifacts/README.md) and the release evidence.
+The historical [v0.1.0 release](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)
+and v0.1.1-preview.1 Git artifact history remain published and unchanged;
+the v0.1.1 stable root tag still requires the gates above after the earlier
+v0.1.0 stable evidence.
 
 The [historical preview preparation notes](docs/PREVIEW.md) record the first
 preview's evidence and release gates. Keep them as history; put a new release's

@@ -12,7 +12,7 @@
 #   public proxy.
 # - published module: leave LANCE_GO_QUICKSTART_SOURCE_DIR unset.
 #   LANCE_GO_QUICKSTART_VERSION defaults to the root release being verified
-#   (currently v0.1.1-preview.1) and must be an exact release tag. Release
+#   (currently v0.1.1) and must be an exact release tag. Release
 #   verification uses tags only; it never resolves a commit SHA or
 #   pseudo-version.
 #
@@ -21,12 +21,12 @@
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go
-VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.1-preview.1}
-ARTIFACT_MODULE=$ROOT_MODULE/artifacts/linux-amd64
-ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.1.1-preview.1}
-COMPANION_BYTES=88365133
-LIBRARY_BYTES=345903736
-LIBRARY_SHA256=bea1f774ce9ff07ad8565ff3afafe1b49249d2dbb901e58d5bcce529f484cfa5
+VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.1.1}
+ARTIFACT_MODULE=go.lance.org/liblance/linux-amd64
+ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.2.0-preview.1}
+COMPANION_BYTES=87897705
+LIBRARY_BYTES=345989752
+LIBRARY_SHA256=011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece
 EXPECTED_OUTPUT='Created, reopened and scanned 3 rows: [10 20 30]'
 
 if [[ "$(go env GOOS)/$(go env GOARCH)" != linux/amd64 ]]; then
@@ -72,7 +72,8 @@ common_env=(
   -u LANCE_LIB_PATH -u GOPRIVATE -u GONOPROXY -u GONOSUMDB -u GONOSUMCHECK
   -u GOINSECURE -u GOFLAGS
   GOENV=off GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0 GOTELEMETRY=off
-  GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org
+  GOPROXY="${LANCE_GO_QUICKSTART_GOPROXY:-https://proxy.golang.org}" \
+  GOSUMDB="${LANCE_GO_QUICKSTART_GOSUMDB:-sum.golang.org}"
   GOMODCACHE="$modcache" GOCACHE="$buildcache"
 )
 if [[ -n $LOCAL_SOURCE_DIR ]]; then
@@ -145,7 +146,7 @@ fi
 assert_quickstart_output "$work/quickstart.out"
 
 mapfile -t companion_archives < <(
-  find "$modcache/cache/download/github.com/lance-format/lance-go/artifacts" \
+  find "$modcache/cache/download/go.lance.org/liblance" \
     -type f -name '*.zip' -print | LC_ALL=C sort
 )
 [[ ${#companion_archives[@]} -eq 1 ]] || {

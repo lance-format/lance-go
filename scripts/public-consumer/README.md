@@ -10,7 +10,9 @@ The hosted workflow is `.github/workflows/unix-public-consumers.yml`. It runs
 when a root `v*` release tag is pushed, or by manual dispatch that names that
 tag in `revision`; it never accepts a commit SHA or pseudo-version. The
 canonical root module is `github.com/lance-format/lance-go`; the requested tag
-must already be publicly resolvable by the Go module proxy. Exact-head CI
+must already be publicly resolvable by the Go module proxy, and the exact
+`go.lance.org/liblance/<target>` artifact module versions must already be
+publicly resolvable. Exact-head CI
 covers the equivalent checkout/local-source consumer behavior instead of
 resolving a PR head through the proxy.
 
@@ -19,13 +21,17 @@ resolving a PR head through the proxy.
 Run on the matching native host from the repository checkout:
 
 ```sh
-ROOT_REVISION=v0.1.1-preview.1 \
+ROOT_REVISION=v0.1.1 \
 SOURCE_COMMIT=<optional-full-sha> \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
 EVIDENCE_DIR=/tmp/public-consumer-evidence \
 bash scripts/public-consumer/run.sh
 ```
+
+For pre-publication/local integration only, set `PUBLIC_GOPROXY` and
+`PUBLIC_GOSUMDB` plus `ARTIFACT_MODULE_PREFIX=go.lance.org/liblance`; the
+production defaults are `proxy.golang.org`/`sum.golang.org`.
 
 `ROOT_REVISION` is passed to Go only through the environment. `SOURCE_COMMIT`
 is optional; when empty, the driver uses the checked-out `HEAD`. A supplied SHA

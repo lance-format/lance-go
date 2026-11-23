@@ -16,7 +16,7 @@
 # those gates pass does the script evaluate the actual DLL dependency closure.
 # When every dependency is an OS component, it packages the exact tested DLL
 # bytes as an unpublished companion candidate at
-# github.com/lance-format/lance-go/artifacts/windows-<arch>, verifies that module
+# go.lance.org/liblance/windows-<arch>, verifies that module
 # with the shared verifier, and runs an external-tag roundtrip. A redistributable
 # or unclassified dependency blocks candidate generation explicitly; hosted
 # System32 presence alone is not treated as OS-only availability.
@@ -1691,7 +1691,7 @@ try {
 	Write-ProductionEligibility -Eligible $true -CandidateStatus "pending_generation"
 
 	$script:Step = "production-candidate"
-	$modulePath = "github.com/lance-format/lance-go/artifacts/windows-$Architecture"
+	$modulePath = "go.lance.org/liblance/windows-$Architecture"
 	$candidateRoot = Join-Path $WorkDir "candidate"
 	$candidateOut = Join-Path $candidateRoot "windows-$Architecture"
 	$candidateModule = Join-Path $candidateOut "module"
