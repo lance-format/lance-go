@@ -140,7 +140,7 @@ func TestVerifyRejectsOptionalWithoutLookupGuard(t *testing.T) {
 		1)
 
 	_, _, err := parseGo(writeFFIFixture(t, source))
-	if err == nil || !strings.Contains(err.Error(), "not guarded by lib.Lookup") {
+	if err == nil || !strings.Contains(err.Error(), "not guarded by a successful lib.Lookup") {
 		t.Fatalf("parseGo error = %v, want an unguarded optional registration", err)
 	}
 }
@@ -164,5 +164,103 @@ func TestVerifyRejectsUncoveredOptionalField(t *testing.T) {
 	err = verify(&pin{}, model, header)
 	if err == nil || !strings.Contains(err.Error(), "without a lib.Lookup binding") {
 		t.Fatalf("verify error = %v, want an uncovered optional field", err)
+	}
+}
+
+// A group whose registrations were all deleted must still be checked. Coverage
+// built only from observed registrations would silently drop it.
+func TestVerifyRejectsOptionalGroupWithNoRegistrations(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`func bindOptional(lib symbolSource, b *bindings) {
+	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}
+	if addr, err := lib.Lookup("lance_additional"); err == nil {
+		purego.RegisterFunc(&b.opt.additionalCall, addr)
+	}
+}`,
+		`func bindOptional(lib symbolSource, b *bindings) {}`,
+		1)
+	_, model, err := parseGo(writeFFIFixture(t, source))
+	if err != nil {
+		t.Fatalf("parseGo: %v", err)
+	}
+	header, err := parseHeader([]byte(optionalHeader))
+	if err != nil {
+		t.Fatalf("parseHeader: %v", err)
+	}
+
+	err = verify(&pin{}, model, header)
+	if err == nil {
+		t.Fatal("verify accepted an optional group with no registrations")
+	}
+	for _, want := range []string{"optionalCall", "additionalCall", "without a lib.Lookup binding"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("verify error = %v, want %q", err, want)
+		}
+	}
+}
+
+func TestParseOptionalRejectsFailedLookupCondition(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`if addr, err := lib.Lookup("lance_optional"); err == nil {`,
+		`if addr, err := lib.Lookup("lance_optional"); err != nil {`,
+		1)
+
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "successful lib.Lookup") {
+		t.Fatalf("parseGo error = %v, want a failed lookup condition to be rejected", err)
+	}
+}
+
+func TestParseOptionalRejectsDifferentAddress(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`purego.RegisterFunc(&b.opt.optionalCall, addr)`,
+		`purego.RegisterFunc(&b.opt.optionalCall, 0)`,
+		1)
+
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "address other than addr") {
+		t.Fatalf("parseGo error = %v, want a different address argument to be rejected", err)
+	}
+}
+
+func TestParseOptionalRejectsExtraUnguardedRegistration(t *testing.T) {
+	source := optionalFixture + `
+func extraRegistration(b *bindings) {
+	purego.RegisterFunc(&b.opt.optionalCall, 0)
+}
+`
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "not guarded by a successful lib.Lookup") {
+		t.Fatalf("parseGo error = %v, want an extra unguarded registration to be rejected", err)
+	}
+}
+
+func TestParseOptionalRejectsDuplicateGuardedRegistration(t *testing.T) {
+	guard := `	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}`
+	source := strings.Replace(optionalFixture, guard, guard+"\n"+guard, 1)
+
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "bound more than once") {
+		t.Fatalf("parseGo error = %v, want a duplicate guarded registration to be rejected", err)
+	}
+}
+
+func TestOptionalCountsExcludeAbsentSignatures(t *testing.T) {
+	model := &bindingsModel{optional: []boundSymbol{{name: "lance_a"}, {name: "lance_b"}}}
+	header := map[string]cFunc{"lance_a": {name: "lance_a"}}
+
+	checked, absent := optionalCounts(model, header)
+	if checked != 1 || absent != 1 {
+		t.Fatalf("optionalCounts = %d checked, %d absent; want 1 and 1", checked, absent)
+	}
+	if note := optionalAbsentNote(absent); !strings.Contains(note, "1 optional binding absent") {
+		t.Fatalf("optionalAbsentNote(1) = %q", note)
+	}
+	if note := optionalAbsentNote(0); note != "" {
+		t.Fatalf("optionalAbsentNote(0) = %q, want empty", note)
 	}
 }

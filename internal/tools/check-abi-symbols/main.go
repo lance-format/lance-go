@@ -109,8 +109,9 @@ func run(root, headerPath string) error {
 		return err
 	}
 
-	fmt.Printf("check-abi-symbols: verified %d bindings and %d optional bindings against %s (lance-c %s %s, header sha256 %s)\n",
-		len(model.symbols), len(model.optional), headerPath, upstream.release, upstream.commit, upstream.headerSHA)
+	optionalChecked, optionalAbsent := optionalCounts(model, header)
+	fmt.Printf("check-abi-symbols: verified %d bindings and %d optional bindings%s against %s (lance-c %s %s, header sha256 %s)\n",
+		len(model.symbols), optionalChecked, optionalAbsentNote(optionalAbsent), headerPath, upstream.release, upstream.commit, upstream.headerSHA)
 	return nil
 }
 
@@ -268,6 +269,13 @@ func parseGo(root string) (*pin, *bindingsModel, error) {
 	return upstream, model, nil
 }
 
+// lookupGuard is one accepted guarded optional registration.
+type lookupGuard struct {
+	symbol string
+	field  string
+	call   *ast.CallExpr
+}
+
 // parseOptionalBindings finds the opportunistically resolved symbols in one
 // package ffi file. They have the shape
 //
@@ -275,11 +283,27 @@ func parseGo(root string) (*pin, *bindingsModel, error) {
 //		purego.RegisterFunc(&b.group.field, addr)
 //	}
 //
-// A registration outside such a guard, or a guard that registers a different
-// number of fields, is reported instead of silently skipped.
+// Every registration under the bindings value must be paired with its own
+// successful lookup and address variable; an unguarded or duplicate
+// registration, a failing lookup condition, or a different address argument is
+// reported instead of being ignored.
 func parseOptionalBindings(file *ast.File) ([]boundSymbol, error) {
+	registrations := map[*ast.CallExpr]string{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if field, ok := registerFuncField(call); ok {
+			registrations[call] = field
+		}
+		return true
+	})
+
 	var optional []boundSymbol
-	registered := map[string]bool{}
+	seenSymbols := map[string]bool{}
+	seenFields := map[string]bool{}
+	matched := map[*ast.CallExpr]bool{}
 	var parseErr error
 
 	ast.Inspect(file, func(n ast.Node) bool {
@@ -290,86 +314,126 @@ func parseOptionalBindings(file *ast.File) ([]boundSymbol, error) {
 		if !ok {
 			return true
 		}
-		name := lookupSymbolName(ifStmt.Init)
-		fields := registeredFields(ifStmt.Body)
-		if !strings.HasPrefix(name, "lance_") && len(fields) == 0 {
+		guard, guardErr := parseLookupGuard(ifStmt, registrations)
+		if guardErr != nil {
+			parseErr = guardErr
+			return false
+		}
+		if guard == nil {
 			return true
 		}
-		if !strings.HasPrefix(name, "lance_") {
-			parseErr = fmt.Errorf("optional registration of %s has no lib.Lookup guard", fields[0])
+		if seenSymbols[guard.symbol] {
+			parseErr = fmt.Errorf("optional symbol %s is bound more than once", guard.symbol)
 			return false
 		}
-		if len(fields) != 1 {
-			parseErr = fmt.Errorf("optional symbol %s registers %d fields, want 1", name, len(fields))
+		seenSymbols[guard.symbol] = true
+		if seenFields[guard.field] {
+			parseErr = fmt.Errorf("optional field %s is registered more than once", guard.field)
 			return false
 		}
-		if registered[fields[0]] {
-			parseErr = fmt.Errorf("optional field %s is registered more than once", fields[0])
-			return false
-		}
-		registered[fields[0]] = true
-		optional = append(optional, boundSymbol{name: name, field: fields[0]})
+		seenFields[guard.field] = true
+		matched[guard.call] = true
+		optional = append(optional, boundSymbol{name: guard.symbol, field: guard.field})
 		return true
 	})
 	if parseErr != nil {
 		return nil, parseErr
 	}
 
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	for call, field := range registrations {
+		if !matched[call] {
+			return nil, fmt.Errorf("optional registration of %s is not guarded by a successful lib.Lookup", field)
 		}
-		field, ok := registerFuncField(call)
-		if ok && !registered[field] {
-			parseErr = fmt.Errorf("optional registration of %s is not guarded by lib.Lookup", field)
-		}
-		return parseErr == nil
-	})
-	return optional, parseErr
+	}
+	return optional, nil
 }
 
-// lookupSymbolName returns the symbol argument of an if-init of the form
-// "addr, err := <lib>.Lookup("name")", or "" for any other statement.
-func lookupSymbolName(init ast.Stmt) string {
-	assign, ok := init.(*ast.AssignStmt)
+// parseLookupGuard recognizes one successful optional registration and returns
+// nil when ifStmt is not a lib.Lookup statement at all. A lib.Lookup statement
+// that does not guard exactly one registration of the looked-up address is an
+// error.
+func parseLookupGuard(ifStmt *ast.IfStmt, registrations map[*ast.CallExpr]string) (*lookupGuard, error) {
+	assign, ok := ifStmt.Init.(*ast.AssignStmt)
 	if !ok || assign.Tok != token.DEFINE || len(assign.Lhs) != 2 || len(assign.Rhs) != 1 {
-		return ""
+		return nil, nil
+	}
+	addrIdent, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil, nil
+	}
+	errIdent, ok := assign.Lhs[1].(*ast.Ident)
+	if !ok {
+		return nil, nil
 	}
 	call, ok := assign.Rhs[0].(*ast.CallExpr)
-	if !ok || len(call.Args) != 1 {
-		return ""
+	if !ok {
+		return nil, nil
 	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
-	if !ok || selector.Sel.Name != "Lookup" {
-		return ""
+	if !ok || selector.Sel.Name != "Lookup" || len(call.Args) != 1 {
+		return nil, nil
 	}
 	literal, ok := call.Args[0].(*ast.BasicLit)
 	if !ok || literal.Kind != token.STRING {
-		return ""
+		return nil, nil
 	}
-	name, err := strconv.Unquote(literal.Value)
-	if err != nil {
-		return ""
+	symbol, err := strconv.Unquote(literal.Value)
+	if err != nil || !strings.HasPrefix(symbol, "lance_") {
+		return nil, nil
 	}
-	return name
-}
+	if !isNilErrCondition(ifStmt.Cond, errIdent.Name) {
+		return nil, fmt.Errorf("optional symbol %s is not guarded by a successful lib.Lookup (want %s == nil)", symbol, errIdent.Name)
+	}
 
-// registeredFields returns the "group.field" targets of purego.RegisterFunc
-// calls in body.
-func registeredFields(body *ast.BlockStmt) []string {
-	var fields []string
-	ast.Inspect(body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
+	var found []*ast.CallExpr
+	ast.Inspect(ifStmt.Body, func(n ast.Node) bool {
+		register, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		if field, ok := registerFuncField(call); ok {
-			fields = append(fields, field)
+		if _, ok := registrations[register]; ok {
+			found = append(found, register)
 		}
 		return true
 	})
-	return fields
+	if len(found) != 1 {
+		return nil, fmt.Errorf("optional symbol %s registers %d fields, want 1", symbol, len(found))
+	}
+	registration := found[0]
+	if !callArgIsIdent(registration, 1, addrIdent.Name) {
+		return nil, fmt.Errorf("optional symbol %s registers %s from an address other than %s", symbol, registrations[registration], addrIdent.Name)
+	}
+	return &lookupGuard{symbol: symbol, field: registrations[registration], call: registration}, nil
+}
+
+// isNilErrCondition reports whether cond is "err == nil" in either order.
+func isNilErrCondition(cond ast.Expr, errName string) bool {
+	binary, ok := cond.(*ast.BinaryExpr)
+	if !ok || binary.Op != token.EQL {
+		return false
+	}
+	if isIdentNamed(binary.X, errName) && isNilExpr(binary.Y) {
+		return true
+	}
+	return isIdentNamed(binary.Y, errName) && isNilExpr(binary.X)
+}
+
+func isIdentNamed(expr ast.Expr, name string) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == name
+}
+
+func isNilExpr(expr ast.Expr) bool {
+	return isIdentNamed(expr, "nil")
+}
+
+// callArgIsIdent reports whether call.Args[index] is the named identifier.
+func callArgIsIdent(call *ast.CallExpr, index int, name string) bool {
+	if len(call.Args) <= index {
+		return false
+	}
+	ident, ok := call.Args[index].(*ast.Ident)
+	return ok && ident.Name == name
 }
 
 // registerFuncField returns "group.field" when call is
@@ -646,7 +710,9 @@ func verifySignature(name, field string, goFuncType *ast.FuncType, cFuncType cFu
 // They stay out of the required symbol list and out of the mandatory symbol
 // set, so a library that predates an optional ABI still loads. When the pinned
 // header declares one, its signature must match the Go field; a header that
-// predates it is allowed to omit it.
+// predates it is allowed to omit it. Every function field of a nested group
+// declared on bindings must have a registration, otherwise deleting the last
+// registration of a group would silently remove its fields from the check.
 func verifyOptional(model *bindingsModel, header map[string]cFunc) error {
 	required := make(map[string]bool, len(model.symbols))
 	for _, sym := range model.symbols {
@@ -690,19 +756,52 @@ func verifyOptional(model *bindingsModel, header map[string]cFunc) error {
 		}
 	}
 
-	for typeName, fields := range covered {
+	// Enumerate the nested groups declared on bindings instead of only the
+	// groups that happened to register something. Otherwise deleting every
+	// registration of a group would silently drop its fields from the check.
+	for groupField, typeName := range model.nested {
+		fields := model.groups[typeName]
+		if len(fields) == 0 {
+			continue
+		}
 		var uncovered []string
-		for field := range model.groups[typeName] {
-			if !fields[field] {
+		for field := range fields {
+			if !covered[typeName][field] {
 				uncovered = append(uncovered, field)
 			}
 		}
 		if len(uncovered) > 0 {
 			sort.Strings(uncovered)
-			return fmt.Errorf("optional group %s has function field(s) %s without a lib.Lookup binding", typeName, strings.Join(uncovered, ", "))
+			return fmt.Errorf("optional group %s (%s) has function field(s) %s without a lib.Lookup binding", groupField, typeName, strings.Join(uncovered, ", "))
 		}
 	}
 	return nil
+}
+
+// optionalCounts splits the probed symbols into those whose signature the
+// pinned header let us check and those absent from it.
+func optionalCounts(model *bindingsModel, header map[string]cFunc) (checked, absent int) {
+	for _, sym := range model.optional {
+		if _, ok := header[sym.name]; ok {
+			checked++
+			continue
+		}
+		absent++
+	}
+	return checked, absent
+}
+
+// optionalAbsentNote describes optional bindings whose signatures could not be
+// verified because the pinned header does not declare them.
+func optionalAbsentNote(absent int) string {
+	switch absent {
+	case 0:
+		return ""
+	case 1:
+		return " (1 optional binding absent from the header)"
+	default:
+		return fmt.Sprintf(" (%d optional bindings absent from the header)", absent)
+	}
 }
 
 func describeGoFunc(ft *ast.FuncType) ([]string, string, error) {
