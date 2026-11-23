@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -55,10 +56,16 @@ func TestNativeDirectoryNamespaceLifecycle(t *testing.T) {
 		t.Fatalf("NamespaceExists root: %v", err)
 	}
 	missingTable := []string{"missing_table"}
-	var namespaceErr *namespace.NamespaceError
+	var namespaceErr *namespace.Error
 	err = ns.TableExists(ctx, &namespace.TableExistsRequest{ID: &missingTable})
 	if !errors.As(err, &namespaceErr) || namespaceErr.Code != namespace.ErrorCodeTableNotFound {
 		t.Fatalf("TableExists missing = %v, want TableNotFound", err)
+	}
+	if !errors.Is(err, namespace.ErrNotFound) || !namespace.IsNotFound(err) {
+		t.Fatalf("TableExists missing = %v, want namespace not found", err)
+	}
+	if !strings.Contains(err.Error(), "namespace error TableNotFound") {
+		t.Fatalf("TableExists missing diagnostic = %q, want the namespace code name", err)
 	}
 
 	metrics, err := ns.OpsMetrics()
