@@ -1340,9 +1340,9 @@ contract logs provider errors or panics and continues with empty context; do
 not rely on provider failure to deny a request. Context cancellation is checked
 before synchronous native calls and does not interrupt an operation in flight.
 
-Models preserve absent, explicit-null and concrete values using pointers to
-`namespace.Nullable[T]`. Native namespace errors retain their separate error
-code space, including code zero (`Unsupported`). The standalone `namespace`
+Models preserve absent, explicit-null and concrete values with
+`namespace.Nullable[T]` by value. Native namespace errors retain their separate
+error code space, including code zero (`Unsupported`). The standalone `namespace`
 package activates the same platform bundle as the root package.
 
 ## Optional values
@@ -1363,9 +1363,14 @@ zero. Scalar zero values documented as defaults keep that meaning.
   sets a value including zero or an empty slice. A nil `*compaction.Options`
   selects the native from-dataset configuration; ordinary pointer fields still
   distinguish only absent from an explicit value.
-- `namespace` models use `*namespace.Nullable[T]`: a nil pointer omits the JSON
-  field, a non-nil `Nullable` with a nil `Value` sends an explicit JSON null,
-  and a non-nil `Value` sends a concrete value.
+- `namespace` models use `namespace.Nullable[T]` by value: `namespace.Absent[T]()`
+  omits the JSON field, `namespace.Null[T]()` sends an explicit JSON null, and
+  `namespace.Some(value)` sends a concrete value, including a zero value or an
+  empty slice or map. The zero `Nullable[T]` is the absent state. Decoding a
+  model that carries a `Nullable` field replaces the whole destination, so a
+  field the document omits is cleared even when it is an ordinary field; models
+  without a `Nullable` field keep `encoding/json`'s behavior of leaving omitted
+  fields untouched when a destination is reused.
 - The `file` package uses a nil `*file.ReaderOptions` or writer/session options
   pointer for native defaults. Pointer fields inside a non-nil options value
   keep the absent-versus-explicit distinction.

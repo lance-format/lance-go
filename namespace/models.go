@@ -1,7 +1,8 @@
 // Code generated from lance-namespace-reqwest-client 0.13.0 OpenAPI models; DO NOT EDIT.
 // The upstream schema is part of the Lance Namespace specification. Field tags and
 // optional semantics must match the native serde models exactly. The Nullable
-// helper and models_nullable.go are maintained manually after generation.
+// helper and models_nullable.go are maintained manually after generation, and every
+// Nullable field carries the omitzero tag option instead of omitempty.
 
 package namespace
 
@@ -11,11 +12,39 @@ import (
 	"reflect"
 )
 
-// Nullable represents a field that distinguishes an absent value (nil pointer),
-// an explicit JSON null (non-nil Nullable with a nil Value), and a concrete value.
-// It mirrors Rust's Option<Option<T>> with serde double_option.
+// Nullable represents a field that distinguishes an absent value, an explicit
+// JSON null, and a concrete value. It mirrors Rust's Option<Option<T>> with
+// serde double_option.
+//
+// The zero value is absent and is omitted when encoding. Present marks the
+// remaining two states: a nil Value encodes as JSON null and a non-nil Value
+// encodes as the value, including a zero value or an empty slice or map. Build
+// fields with Some, Null and Absent so Present and Value stay consistent.
 type Nullable[T any] struct {
-	Value *T
+	Present bool
+	Value   *T
+}
+
+// Some returns a present Nullable that encodes value, including a zero value or
+// an empty slice or map.
+func Some[T any](value T) Nullable[T] {
+	return Nullable[T]{Present: true, Value: &value}
+}
+
+// Null returns a present Nullable that encodes as an explicit JSON null.
+func Null[T any]() Nullable[T] {
+	return Nullable[T]{Present: true}
+}
+
+// Absent returns a Nullable that omits its field when encoding.
+func Absent[T any]() Nullable[T] {
+	return Nullable[T]{}
+}
+
+// IsZero reports whether the field is absent. encoding/json consults it through
+// the omitzero tag option, so an absent field stays absent on the wire.
+func (n Nullable[T]) IsZero() bool {
+	return !n.Present
 }
 
 // MarshalJSON preserves an explicit null instead of omitting the field.
@@ -39,9 +68,11 @@ func (n Nullable[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*n.Value)
 }
 
-// UnmarshalJSON records both JSON null and a concrete value as present.
+// UnmarshalJSON records both JSON null and a concrete value as present. The
+// receiver keeps its previous state when decoding fails.
 func (n *Nullable[T]) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		n.Present = true
 		n.Value = nil
 		return nil
 	}
@@ -49,16 +80,17 @@ func (n *Nullable[T]) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &value); err != nil {
 		return err
 	}
+	n.Present = true
 	n.Value = &value
 	return nil
 }
 
 // AddColumnsEntry mirrors the Lance Namespace `AddColumnsEntry` schema.
 type AddColumnsEntry struct {
-	Name          string                           `json:"name"`
-	Expression    *Nullable[string]                `json:"expression,omitempty"`
-	Computed      *Nullable[string]                `json:"computed,omitempty"`
-	VirtualColumn *Nullable[AddVirtualColumnEntry] `json:"virtual_column,omitempty"`
+	Name          string                          `json:"name"`
+	Expression    Nullable[string]                `json:"expression,omitzero"`
+	Computed      Nullable[string]                `json:"computed,omitzero"`
+	VirtualColumn Nullable[AddVirtualColumnEntry] `json:"virtual_column,omitzero"`
 }
 
 // AddVirtualColumnEntry mirrors the Lance Namespace `AddVirtualColumnEntry` schema.
@@ -69,10 +101,10 @@ type AddVirtualColumnEntry struct {
 	UDF              string                        `json:"udf"`
 	UDFName          string                        `json:"udf_name"`
 	UDFVersion       string                        `json:"udf_version"`
-	UDFBackend       *Nullable[string]             `json:"udf_backend,omitempty"`
-	AutoBackfill     *Nullable[bool]               `json:"auto_backfill,omitempty"`
-	Manifest         *Nullable[string]             `json:"manifest,omitempty"`
-	ManifestChecksum *Nullable[string]             `json:"manifest_checksum,omitempty"`
+	UDFBackend       Nullable[string]              `json:"udf_backend,omitzero"`
+	AutoBackfill     Nullable[bool]                `json:"auto_backfill,omitzero"`
+	Manifest         Nullable[string]              `json:"manifest,omitzero"`
+	ManifestChecksum Nullable[string]              `json:"manifest_checksum,omitzero"`
 	FieldMetadata    *map[string]string            `json:"field_metadata,omitempty"`
 }
 
@@ -87,11 +119,11 @@ type AddVirtualColumnOutputEntry struct {
 
 // AlterColumnsEntry mirrors the Lance Namespace `AlterColumnsEntry` schema.
 type AlterColumnsEntry struct {
-	Path          string                             `json:"path"`
-	DataType      *any                               `json:"data_type,omitempty"`
-	Rename        *Nullable[string]                  `json:"rename,omitempty"`
-	Nullable      *Nullable[bool]                    `json:"nullable,omitempty"`
-	VirtualColumn *Nullable[AlterVirtualColumnEntry] `json:"virtual_column,omitempty"`
+	Path          string                            `json:"path"`
+	DataType      *any                              `json:"data_type,omitempty"`
+	Rename        Nullable[string]                  `json:"rename,omitzero"`
+	Nullable      Nullable[bool]                    `json:"nullable,omitzero"`
+	VirtualColumn Nullable[AlterVirtualColumnEntry] `json:"virtual_column,omitzero"`
 }
 
 // AlterTableAddColumnsRequest mirrors the Lance Namespace `AlterTableAddColumnsRequest` schema.
@@ -131,19 +163,19 @@ type AlterTableBackfillColumnsRequest struct {
 	ID                                  *[]string          `json:"id,omitempty"`
 	Branch                              *string            `json:"branch,omitempty"`
 	Column                              string             `json:"column"`
-	Where                               *Nullable[string]  `json:"where,omitempty"`
-	Concurrency                         *Nullable[int32]   `json:"concurrency,omitempty"`
-	IntraApplierConcurrency             *Nullable[int32]   `json:"intra_applier_concurrency,omitempty"`
-	MinCheckpointSize                   *Nullable[int32]   `json:"min_checkpoint_size,omitempty"`
-	MaxCheckpointSize                   *Nullable[int32]   `json:"max_checkpoint_size,omitempty"`
-	BatchCheckpointFlushIntervalSeconds *Nullable[float64] `json:"batch_checkpoint_flush_interval_seconds,omitempty"`
-	ReadVersion                         *Nullable[int32]   `json:"read_version,omitempty"`
-	TaskSize                            *Nullable[int32]   `json:"task_size,omitempty"`
-	NumFrags                            *Nullable[int32]   `json:"num_frags,omitempty"`
-	CheckpointSize                      *Nullable[int32]   `json:"checkpoint_size,omitempty"`
-	CommitGranularity                   *Nullable[int32]   `json:"commit_granularity,omitempty"`
-	Cluster                             *Nullable[string]  `json:"cluster,omitempty"`
-	Manifest                            *Nullable[string]  `json:"manifest,omitempty"`
+	Where                               Nullable[string]   `json:"where,omitzero"`
+	Concurrency                         Nullable[int32]    `json:"concurrency,omitzero"`
+	IntraApplierConcurrency             Nullable[int32]    `json:"intra_applier_concurrency,omitzero"`
+	MinCheckpointSize                   Nullable[int32]    `json:"min_checkpoint_size,omitzero"`
+	MaxCheckpointSize                   Nullable[int32]    `json:"max_checkpoint_size,omitzero"`
+	BatchCheckpointFlushIntervalSeconds Nullable[float64]  `json:"batch_checkpoint_flush_interval_seconds,omitzero"`
+	ReadVersion                         Nullable[int32]    `json:"read_version,omitzero"`
+	TaskSize                            Nullable[int32]    `json:"task_size,omitzero"`
+	NumFrags                            Nullable[int32]    `json:"num_frags,omitzero"`
+	CheckpointSize                      Nullable[int32]    `json:"checkpoint_size,omitzero"`
+	CommitGranularity                   Nullable[int32]    `json:"commit_granularity,omitzero"`
+	Cluster                             Nullable[string]   `json:"cluster,omitzero"`
+	Manifest                            Nullable[string]   `json:"manifest,omitzero"`
 }
 
 // AlterTableBackfillColumnsResponse mirrors the Lance Namespace `AlterTableBackfillColumnsResponse` schema.
@@ -210,16 +242,16 @@ type AlterTransactionUnsetProperty struct {
 
 // AlterVirtualColumnEntry mirrors the Lance Namespace `AlterVirtualColumnEntry` schema.
 type AlterVirtualColumnEntry struct {
-	InputColumns     *Nullable[[]string] `json:"input_columns,omitempty"`
-	Image            *Nullable[string]   `json:"image,omitempty"`
-	UDF              *Nullable[string]   `json:"udf,omitempty"`
-	UDFName          *Nullable[string]   `json:"udf_name,omitempty"`
-	UDFVersion       *Nullable[string]   `json:"udf_version,omitempty"`
-	UDFBackend       *Nullable[string]   `json:"udf_backend,omitempty"`
-	AutoBackfill     *Nullable[bool]     `json:"auto_backfill,omitempty"`
-	Manifest         *Nullable[string]   `json:"manifest,omitempty"`
-	ManifestChecksum *Nullable[string]   `json:"manifest_checksum,omitempty"`
-	FieldMetadata    *map[string]string  `json:"field_metadata,omitempty"`
+	InputColumns     Nullable[[]string] `json:"input_columns,omitzero"`
+	Image            Nullable[string]   `json:"image,omitzero"`
+	UDF              Nullable[string]   `json:"udf,omitzero"`
+	UDFName          Nullable[string]   `json:"udf_name,omitzero"`
+	UDFVersion       Nullable[string]   `json:"udf_version,omitzero"`
+	UDFBackend       Nullable[string]   `json:"udf_backend,omitzero"`
+	AutoBackfill     Nullable[bool]     `json:"auto_backfill,omitzero"`
+	Manifest         Nullable[string]   `json:"manifest,omitzero"`
+	ManifestChecksum Nullable[string]   `json:"manifest_checksum,omitzero"`
+	FieldMetadata    *map[string]string `json:"field_metadata,omitempty"`
 }
 
 // AnalyzeTableQueryPlanRequest mirrors the Lance Namespace `AnalyzeTableQueryPlanRequest` schema.
@@ -357,22 +389,22 @@ type CountTableRowsResponse struct {
 
 // CreateMaterializedViewRequest mirrors the Lance Namespace `CreateMaterializedViewRequest` schema.
 type CreateMaterializedViewRequest struct {
-	Identity     *Identity                            `json:"identity,omitempty"`
-	Context      *map[string]string                   `json:"context,omitempty"`
-	ID           *[]string                            `json:"id,omitempty"`
-	Kind         CreateMaterializedViewKind           `json:"kind"`
-	SourceQuery  string                               `json:"source_query"`
-	OutputSchema string                               `json:"output_schema"`
-	UDTFSpec     *Nullable[MaterializedViewUdtfEntry] `json:"udtf_spec,omitempty"`
-	WithNoData   *bool                                `json:"with_no_data,omitempty"`
-	AutoRefresh  *Nullable[bool]                      `json:"auto_refresh,omitempty"`
+	Identity     *Identity                           `json:"identity,omitempty"`
+	Context      *map[string]string                  `json:"context,omitempty"`
+	ID           *[]string                           `json:"id,omitempty"`
+	Kind         CreateMaterializedViewKind          `json:"kind"`
+	SourceQuery  string                              `json:"source_query"`
+	OutputSchema string                              `json:"output_schema"`
+	UDTFSpec     Nullable[MaterializedViewUdtfEntry] `json:"udtf_spec,omitzero"`
+	WithNoData   *bool                               `json:"with_no_data,omitempty"`
+	AutoRefresh  Nullable[bool]                      `json:"auto_refresh,omitzero"`
 }
 
 // CreateMaterializedViewResponse mirrors the Lance Namespace `CreateMaterializedViewResponse` schema.
 type CreateMaterializedViewResponse struct {
 	Context *map[string]string `json:"context,omitempty"`
 	Version int64              `json:"version"`
-	JobID   *Nullable[string]  `json:"job_id,omitempty"`
+	JobID   Nullable[string]   `json:"job_id,omitzero"`
 }
 
 // CreateNamespaceRequest mirrors the Lance Namespace `CreateNamespaceRequest` schema.
@@ -1000,16 +1032,16 @@ type MaterializedViewUdtfEntry struct {
 	UDTFSHA                  string                   `json:"udtf_sha"`
 	UDTFName                 string                   `json:"udtf_name"`
 	UDTFVersion              string                   `json:"udtf_version"`
-	InputColumns             *Nullable[[]string]      `json:"input_columns,omitempty"`
-	PartitionBy              *Nullable[string]        `json:"partition_by,omitempty"`
-	PartitionByIndexedColumn *Nullable[string]        `json:"partition_by_indexed_column,omitempty"`
-	NumCpus                  *Nullable[float64]       `json:"num_cpus,omitempty"`
-	NumGpus                  *Nullable[float64]       `json:"num_gpus,omitempty"`
-	Memory                   *Nullable[int32]         `json:"memory,omitempty"`
-	ErrorHandling            *Nullable[any]           `json:"error_handling,omitempty"`
-	Batch                    *Nullable[bool]          `json:"batch,omitempty"`
-	Manifest                 *Nullable[string]        `json:"manifest,omitempty"`
-	ManifestChecksum         *Nullable[string]        `json:"manifest_checksum,omitempty"`
+	InputColumns             Nullable[[]string]       `json:"input_columns,omitzero"`
+	PartitionBy              Nullable[string]         `json:"partition_by,omitzero"`
+	PartitionByIndexedColumn Nullable[string]         `json:"partition_by_indexed_column,omitzero"`
+	NumCpus                  Nullable[float64]        `json:"num_cpus,omitzero"`
+	NumGpus                  Nullable[float64]        `json:"num_gpus,omitzero"`
+	Memory                   Nullable[int32]          `json:"memory,omitzero"`
+	ErrorHandling            Nullable[any]            `json:"error_handling,omitzero"`
+	Batch                    Nullable[bool]           `json:"batch,omitzero"`
+	Manifest                 Nullable[string]         `json:"manifest,omitzero"`
+	ManifestChecksum         Nullable[string]         `json:"manifest_checksum,omitzero"`
 }
 
 // MergeInsertIntoTableRequest mirrors the Lance Namespace `MergeInsertIntoTableRequest` schema.
@@ -1141,14 +1173,14 @@ type RefreshMaterializedViewRequest struct {
 	Identity                *Identity          `json:"identity,omitempty"`
 	Context                 *map[string]string `json:"context,omitempty"`
 	ID                      *[]string          `json:"id,omitempty"`
-	SrcVersion              *Nullable[int32]   `json:"src_version,omitempty"`
-	MaxRowsPerFragment      *Nullable[int32]   `json:"max_rows_per_fragment,omitempty"`
-	Concurrency             *Nullable[int32]   `json:"concurrency,omitempty"`
-	IntraApplierConcurrency *Nullable[int32]   `json:"intra_applier_concurrency,omitempty"`
-	SourceTaskSize          *Nullable[int32]   `json:"source_task_size,omitempty"`
-	Cluster                 *Nullable[string]  `json:"cluster,omitempty"`
-	OutputLimit             *Nullable[int32]   `json:"output_limit,omitempty"`
-	Manifest                *Nullable[string]  `json:"manifest,omitempty"`
+	SrcVersion              Nullable[int32]    `json:"src_version,omitzero"`
+	MaxRowsPerFragment      Nullable[int32]    `json:"max_rows_per_fragment,omitzero"`
+	Concurrency             Nullable[int32]    `json:"concurrency,omitzero"`
+	IntraApplierConcurrency Nullable[int32]    `json:"intra_applier_concurrency,omitzero"`
+	SourceTaskSize          Nullable[int32]    `json:"source_task_size,omitzero"`
+	Cluster                 Nullable[string]   `json:"cluster,omitzero"`
+	OutputLimit             Nullable[int32]    `json:"output_limit,omitzero"`
+	Manifest                Nullable[string]   `json:"manifest,omitzero"`
 }
 
 // RefreshMaterializedViewResponse mirrors the Lance Namespace `RefreshMaterializedViewResponse` schema.
@@ -1256,7 +1288,7 @@ type TagContents struct {
 type UpdateFieldMetadataEntry struct {
 	Path     string            `json:"path"`
 	Metadata map[string]string `json:"metadata"`
-	Replace  *Nullable[bool]   `json:"replace,omitempty"`
+	Replace  Nullable[bool]    `json:"replace,omitzero"`
 }
 
 // UpdateFieldMetadataRequest mirrors the Lance Namespace `UpdateFieldMetadataRequest` schema.

@@ -50,7 +50,7 @@ func TestNullableDistinguishesAbsentNullAndValue(t *testing.T) {
 	}
 
 	null := namespace.RefreshMaterializedViewRequest{
-		SrcVersion: &namespace.Nullable[int32]{},
+		SrcVersion: namespace.Null[int32](),
 	}
 	encoded, err = json.Marshal(null)
 	if err != nil {
@@ -60,9 +60,8 @@ func TestNullableDistinguishesAbsentNullAndValue(t *testing.T) {
 		t.Fatalf("null double option = %s", encoded)
 	}
 
-	value := int32(7)
 	present := namespace.RefreshMaterializedViewRequest{
-		SrcVersion: &namespace.Nullable[int32]{Value: &value},
+		SrcVersion: namespace.Some(int32(7)),
 	}
 	encoded, err = json.Marshal(present)
 	if err != nil {
@@ -78,7 +77,7 @@ func TestNullableUnmarshalKeepsExplicitNull(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"src_version":null}`), &request); err != nil {
 		t.Fatalf("unmarshal null: %v", err)
 	}
-	if request.SrcVersion == nil {
+	if request.SrcVersion.IsZero() {
 		t.Fatal("explicit null was treated as an absent field")
 	}
 	if request.SrcVersion.Value != nil {
@@ -88,15 +87,14 @@ func TestNullableUnmarshalKeepsExplicitNull(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"src_version":12}`), &request); err != nil {
 		t.Fatalf("unmarshal value: %v", err)
 	}
-	if request.SrcVersion == nil || request.SrcVersion.Value == nil || *request.SrcVersion.Value != 12 {
+	if request.SrcVersion.IsZero() || request.SrcVersion.Value == nil || *request.SrcVersion.Value != 12 {
 		t.Fatalf("present value = %#v", request.SrcVersion)
 	}
 }
 
 func TestNullableEmptyListMarshalsAsEmpty(t *testing.T) {
-	empty := []string{}
 	entry := namespace.AlterVirtualColumnEntry{
-		InputColumns: &namespace.Nullable[[]string]{Value: &empty},
+		InputColumns: namespace.Some([]string{}),
 	}
 	encoded, err := json.Marshal(entry)
 	if err != nil {
@@ -106,8 +104,7 @@ func TestNullableEmptyListMarshalsAsEmpty(t *testing.T) {
 		t.Fatalf("empty list = %s", encoded)
 	}
 
-	var nilSlice []string
-	entry.InputColumns.Value = &nilSlice
+	entry.InputColumns = namespace.Some([]string(nil))
 	encoded, err = json.Marshal(entry)
 	if err != nil {
 		t.Fatalf("marshal nil list: %v", err)
