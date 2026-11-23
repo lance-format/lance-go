@@ -40,6 +40,15 @@ func bindOptional(lib symbolSource, b *bindings) {
 }
 `
 
+const optionalBindFunction = `func bindOptional(lib symbolSource, b *bindings) {
+	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}
+	if addr, err := lib.Lookup("lance_additional"); err == nil {
+		purego.RegisterFunc(&b.opt.additionalCall, addr)
+	}
+}`
+
 const optionalHeader = `
 int32_t lance_required(LanceDataset* handle);
 int32_t lance_optional(LanceDataset* handle, uint32_t count);
@@ -371,4 +380,62 @@ func bindExtra(lib symbolSource, b *bindings) {
 	if err == nil || !strings.Contains(err.Error(), "registered more than once across package files") {
 		t.Fatalf("parseGo error = %v, want a cross-file duplicate field to be rejected", err)
 	}
+}
+
+// Grouped named fields such as "first, second optionalGroup" declare two
+// bindings instance paths; both must be collected and covered independently.
+func TestVerifyRequiresCoverageForGroupedBindingsFields(t *testing.T) {
+	grouped := strings.Replace(optionalFixture,
+		`type bindings struct {
+	required func(handle uintptr) int32
+	opt      optionalGroup
+}`,
+		`type bindings struct {
+	required func(handle uintptr) int32
+	first, second optionalGroup
+}`,
+		1)
+
+	header, err := parseHeader([]byte(optionalHeader))
+	if err != nil {
+		t.Fatalf("parseHeader: %v", err)
+	}
+
+	t.Run("no registrations collects both names", func(t *testing.T) {
+		source := strings.Replace(grouped, optionalBindFunction,
+			`func bindOptional(lib symbolSource, b *bindings) {}`, 1)
+		_, model, err := parseGo(writeFFIFixture(t, source))
+		if err != nil {
+			t.Fatalf("parseGo: %v", err)
+		}
+		err = verify(&pin{}, model, header)
+		if err == nil {
+			t.Fatal("verify accepted grouped optional fields with no registrations")
+		}
+		for _, want := range []string{"first.optionalCall", "second.optionalCall", "second.additionalCall"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("verify error = %v, want %q", err, want)
+			}
+		}
+	})
+
+	t.Run("missing member rejected", func(t *testing.T) {
+		source := strings.ReplaceAll(grouped, "b.opt.", "b.first.")
+		_, model, err := parseGo(writeFFIFixture(t, source))
+		if err != nil {
+			t.Fatalf("parseGo: %v", err)
+		}
+		err = verify(&pin{}, model, header)
+		if err == nil {
+			t.Fatal("verify accepted a missing grouped optional member")
+		}
+		for _, want := range []string{"second.optionalCall", "second.additionalCall"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("verify error = %v, want %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), "first.optionalCall") {
+			t.Fatalf("first should be covered, error = %v", err)
+		}
+	})
 }

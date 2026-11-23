@@ -186,14 +186,19 @@ func parseGo(root string) (*pin, *bindingsModel, error) {
 					}
 					continue
 				}
-				if name != "bindings" || len(field.Names) != 1 {
+				if name != "bindings" {
 					continue
 				}
 				nestedType, ok := field.Type.(*ast.Ident)
 				if !ok {
 					continue
 				}
-				model.nested[field.Names[0].Name] = nestedType.Name
+				// A grouped declaration such as "first, second optionalGroup"
+				// declares every name, and each is a separate instance path
+				// that must be covered.
+				for _, fieldName := range field.Names {
+					model.nested[fieldName.Name] = nestedType.Name
+				}
 			}
 			if len(funcFields) > 0 {
 				model.groups[name] = funcFields
