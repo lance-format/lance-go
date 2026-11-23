@@ -3,12 +3,12 @@ package file
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 	sharesession "github.com/lance-format/lance-go/internal/session"
 )
 
@@ -72,8 +72,7 @@ func acquireLanceSession(op, uri string, session *lance.Session) (*ffi.Session, 
 // idempotent. Readers, writers, streams, and blob writers already opened
 // remain usable after Close.
 type Session struct {
-	mu      sync.RWMutex
-	closed  bool
+	res     *lifetime.Resource
 	native  *ffi.FileSession
 	baseURI string
 }
@@ -109,33 +108,29 @@ func OpenSession(ctx context.Context, baseURI string, opts *SessionOptions) (*Se
 	if err != nil {
 		return nil, wrapError("open file session", baseURI, err)
 	}
-	return &Session{native: native, baseURI: baseURI}, nil
+	fileSession := newFileSession(native, baseURI)
+	return fileSession, nil
+}
+
+func newFileSession(native *ffi.FileSession, baseURI string) *Session {
+	fileSession := &Session{native: native, baseURI: baseURI}
+	fileSession.res = lifetime.New(native.Close)
+	return fileSession
 }
 
 func (s *Session) acquire(op string) (*ffi.FileSession, func(), error) {
-	s.mu.RLock()
-	if s.closed {
-		s.mu.RUnlock()
+	if s.res == nil || !s.res.Acquire() {
 		return nil, nil, closedError(op, s.baseURI)
 	}
-	return s.native, s.mu.RUnlock, nil
+	return s.native, s.res.Release, nil
 }
 
 // Close releases the session allocation and waits for in-flight calls.
 func (s *Session) Close() error {
-	if s == nil {
+	if s == nil || s.res == nil {
 		return nil
 	}
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return nil
-	}
-	s.closed = true
-	native := s.native
-	s.native = nil
-	s.mu.Unlock()
-	native.Close()
+	s.res.Close()
 	return nil
 }
 
@@ -179,7 +174,7 @@ func (s *Session) OpenReader(ctx context.Context, relativePath string, opts *Rea
 	if err != nil {
 		return nil, wrapError("session open reader", relativePath, err)
 	}
-	return &Reader{native: reader, uri: relativePath}, nil
+	return newReader(reader, relativePath), nil
 }
 
 // OpenWriter opens relativePath as a raw Writer. A nil schema creates a lazy
@@ -208,7 +203,7 @@ func (s *Session) OpenWriter(ctx context.Context, relativePath string, schema *a
 	if err != nil {
 		return nil, wrapError("session open writer", relativePath, err)
 	}
-	return &Writer{native: writer, uri: relativePath}, nil
+	return newWriter(writer, relativePath), nil
 }
 
 // Contains reports whether relativePath exists.

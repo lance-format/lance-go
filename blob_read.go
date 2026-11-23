@@ -78,7 +78,9 @@ func (d *Dataset) ReadBlobs(ctx context.Context, column string, selector BlobRow
 		stream.Close()
 		return nil, err
 	}
-	return newBlobRecordReader(ctx, stream), nil
+	return newBlobRecordReader(ctx, stream, func(err error) error {
+		return wrapError("read blobs", d.uri, err)
+	}), nil
 }
 
 // ReadBlobRanges plans per-row blob-range reads and returns an incremental
@@ -117,7 +119,9 @@ func (d *Dataset) ReadBlobRanges(ctx context.Context, column string, selector Bl
 		stream.Close()
 		return nil, err
 	}
-	return newBlobRecordReader(ctx, stream), nil
+	return newBlobRecordReader(ctx, stream, func(err error) error {
+		return wrapError("read blob ranges", d.uri, err)
+	}), nil
 }
 
 func toFFIBlobReadOptions(options *BlobReadOptions) *ffi.BlobReadOptions {
@@ -136,13 +140,17 @@ type blobRecordReader struct {
 	schema *arrow.Schema
 	refs   atomic.Int64
 
+	// wrap classifies stream failures for the public API. It is set by the
+	// dataset operation that planned the stream.
+	wrap func(error) error
+
 	mu      sync.Mutex
 	current arrow.RecordBatch
 	err     error
 	done    bool
 }
 
-func newBlobRecordReader(ctx context.Context, stream *ffi.StreamReader) *blobRecordReader {
+func newBlobRecordReader(ctx context.Context, stream *ffi.StreamReader, wrap func(error) error) *blobRecordReader {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -150,6 +158,7 @@ func newBlobRecordReader(ctx context.Context, stream *ffi.StreamReader) *blobRec
 		ctx:    ctx,
 		stream: stream,
 		schema: stream.Schema(),
+		wrap:   wrap,
 	}
 	reader.refs.Store(1)
 	return reader
@@ -196,7 +205,7 @@ func (r *blobRecordReader) Next() bool {
 	}
 	batch, ok, err := r.stream.Next()
 	if err != nil {
-		r.err = err
+		r.err = r.wrap(err)
 		r.done = true
 		return false
 	}

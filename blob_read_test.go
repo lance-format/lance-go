@@ -383,7 +383,5 @@ func TestReadBlobsReportsPayloadFailureAfterPlanning(t *testing.T) {
 	}
 	for reader.Next() {
 	}
-	if err := reader.Err(); err == nil {
-		t.Fatal("planned read succeeded after payload files were removed")
-	}
+	requireClassifiedError(t, reader.Err(), lance.CodeIO, lance.ErrIO, "Arrow stream get_next")
 }

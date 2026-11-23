@@ -15,8 +15,10 @@
 // It checks that every bound symbol exists, that Go and C agree on arity and
 // on value/pointer classification, that every function field in the bindings
 // struct has a symbol entry, and that the header bytes match the pinned
-// SHA-256. It cannot detect a same-size integer type confusion beyond the
-// signed and unsigned integer classes it models.
+// SHA-256. Declaration attributes such as LANCE_API, LANCE_NODISCARD and
+// LANCE_DEPRECATED(message) are removed before the return type is classified.
+// It cannot detect a same-size integer type confusion beyond the signed and
+// unsigned integer classes it models.
 package main
 
 import (
@@ -269,7 +271,7 @@ func parseHeader(src []byte) (map[string]cFunc, error) {
 		name := text[loc[2]:loc[3]]
 		nameStart := loc[2]
 		lineStart := strings.LastIndexByte(text[:nameStart], '\n') + 1
-		prefix := strings.TrimSpace(text[lineStart:nameStart])
+		prefix := stripDeclarationAttributes(strings.TrimSpace(text[lineStart:nameStart]))
 
 		// Only top-level declarations have a plain return type before the
 		// name. Skip typedefs, preprocessor lines and text inside another
@@ -299,6 +301,81 @@ func parseHeader(src []byte) (map[string]cFunc, error) {
 		return nil, fmt.Errorf("no lance_* function declarations found")
 	}
 	return funcs, nil
+}
+
+// stripDeclarationAttributes removes the compile-time annotations lance-c
+// places before a return type, so the remaining text is the type this tool
+// classifies. LANCE_DEPRECATED carries an argument list that may contain
+// parentheses and commas inside a quoted message.
+//
+// Headers without annotations, including the pinned v0.2.1-beta.3 header, pass
+// through unchanged. An unknown or malformed attribute is left in place so the
+// ABI check fails loudly instead of silently skipping the declaration.
+func stripDeclarationAttributes(prefix string) string {
+	for {
+		prefix = strings.TrimLeft(prefix, " \t\r\n")
+		switch {
+		case hasAttributePrefix(prefix, "LANCE_API"):
+			prefix = prefix[len("LANCE_API"):]
+		case hasAttributePrefix(prefix, "LANCE_NODISCARD"):
+			prefix = prefix[len("LANCE_NODISCARD"):]
+		case hasAttributePrefix(prefix, "LANCE_DEPRECATED"):
+			rest, ok := skipAttributeArguments(prefix[len("LANCE_DEPRECATED"):])
+			if !ok {
+				return prefix
+			}
+			prefix = rest
+		default:
+			return prefix
+		}
+	}
+}
+
+// hasAttributePrefix reports whether s starts with the attribute name followed
+// by a boundary, so a longer identifier such as LANCE_APIX is not stripped.
+func hasAttributePrefix(s, attribute string) bool {
+	if !strings.HasPrefix(s, attribute) {
+		return false
+	}
+	return len(s) == len(attribute) || !isIdentByte(s[len(attribute)])
+}
+
+// skipAttributeArguments consumes an attribute's parenthesized argument list
+// and returns the text after it. Parentheses and commas inside a quoted or
+// character literal do not close the list, so a deprecation message such as
+// "Use lance_dataset_prepare_fts_match_query() instead" is kept together.
+func skipAttributeArguments(s string) (string, bool) {
+	s = strings.TrimLeft(s, " \t\r\n")
+	if s == "" || s[0] != '(' {
+		return "", false
+	}
+
+	depth := 0
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote != 0 {
+			switch c {
+			case '\\':
+				i++
+			case quote:
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '"', '\'':
+			quote = c
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return s[i+1:], true
+			}
+		}
+	}
+	return "", false
 }
 
 func stripComments(src string) string {
@@ -550,4 +627,8 @@ func isIdent(s string) bool {
 		return false
 	}
 	return true
+}
+
+func isIdentByte(c byte) bool {
+	return c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
 }

@@ -17,13 +17,17 @@ type recordReader struct {
 	schema *arrow.Schema
 	refs   atomic.Int64
 
+	// wrap classifies stream failures for the public API. It is set by the
+	// reader operation that planned the stream.
+	wrap func(error) error
+
 	mu      sync.Mutex
 	current arrow.RecordBatch
 	err     error
 	done    bool
 }
 
-func newRecordReader(ctx context.Context, stream *ffi.StreamReader) *recordReader {
+func newRecordReader(ctx context.Context, stream *ffi.StreamReader, wrap func(error) error) *recordReader {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -31,6 +35,7 @@ func newRecordReader(ctx context.Context, stream *ffi.StreamReader) *recordReade
 		ctx:    ctx,
 		stream: stream,
 		schema: stream.Schema(),
+		wrap:   wrap,
 	}
 	reader.refs.Store(1)
 	return reader
@@ -77,7 +82,7 @@ func (r *recordReader) Next() bool {
 	}
 	batch, ok, err := r.stream.Next()
 	if err != nil {
-		r.err = err
+		r.err = r.wrap(err)
 		r.done = true
 		return false
 	}
