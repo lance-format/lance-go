@@ -375,12 +375,13 @@ func newStorageOptionsAccessorWithPresence(b *bindings, initial map[string]strin
 		}
 		valueList, err = newCStringList(optionValues)
 		if err != nil {
+			keyList.release()
 			return nil, err
 		}
 		raw.Count = uint64(len(keys))
 		if len(keyList.ptrs) > 0 {
-			raw.Keys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
-			raw.Values = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
+			raw.Keys = keyList.data()
+			raw.Values = valueList.data()
 		}
 	}
 
@@ -392,10 +393,10 @@ func newStorageOptionsAccessorWithPresence(b *bindings, initial map[string]strin
 	runtime.LockOSThread()
 	handle := b.storageAccessorNew(initialPtr, provider)
 	if keyList != nil {
-		keyList.keepAlive()
+		keyList.release()
 	}
 	if valueList != nil {
-		valueList.keepAlive()
+		valueList.release()
 	}
 	if handle == 0 {
 		nativeErr := b.takeError()

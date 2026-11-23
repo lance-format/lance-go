@@ -157,7 +157,7 @@ type nativeWriteProgress struct {
 
 type nativeWriteOptionsSpec struct {
 	WriteOptions                  *writeOptions
-	TransactionProperties         uintptr
+	TransactionProperties         *transactionProperties
 	HasEnableV2ManifestPaths      int32
 	EnableV2ManifestPaths         bool
 	InitialBases                  *basePathListHeader
@@ -277,15 +277,11 @@ func cStringListHeaderFor(list *cStringList) *stringListHeader {
 	if list == nil {
 		return nil
 	}
-	var items **byte
-	if len(list.ptrs) > 0 {
-		items = (**byte)(unsafe.Pointer(&list.ptrs[0]))
-	}
 	count := len(list.ptrs)
-	if count > 0 && list.ptrs[count-1] == 0 {
+	if count > 0 && list.ptrs[count-1] == nil {
 		count--
 	}
-	return &stringListHeader{Items: items, Count: uint64(count)}
+	return &stringListHeader{Items: list.data(), Count: uint64(count)}
 }
 
 type nativeWriteOptionsInputs struct {
@@ -301,28 +297,30 @@ type nativeWriteOptionsInputs struct {
 	baseStoreList     *baseStoreParamsList
 	baseStoreHeader   *baseStoreParamsListHeader
 	fileWriter        *fileWriterOptions
-	fileWriterKeep    fileWriterOptionsKeepAlive
+	fileWriterKeep    fileWriterOptionsRelease
 	properties        *transactionProperties
 	propertiesKeep    func()
 	commitLock        *CommitLock
 	progressCtx       uint64
 }
 
-func (i *nativeWriteOptionsInputs) keepAlive() {
+// release finishes a native call that consumed these inputs: it unpins the
+// string lists and keeps the remaining Go inputs reachable until this point.
+func (i *nativeWriteOptionsInputs) release() {
 	runtime.KeepAlive(&i.raw)
 	runtime.KeepAlive(&i.writeOptions)
 	if i.versionList != nil {
-		i.versionList.keepAlive()
+		i.versionList.release()
 	}
 	if i.initialBases != nil {
 		i.initialBases.keepAlive()
 	}
 	i.targetBases.keepAlive()
 	if i.targetNames != nil {
-		i.targetNames.keepAlive()
+		i.targetNames.release()
 	}
 	i.baseStoreList.keepAlive()
-	i.fileWriterKeep.keepAlive()
+	i.fileWriterKeep.release()
 	if i.propertiesKeep != nil {
 		i.propertiesKeep()
 	}
@@ -331,6 +329,12 @@ func (i *nativeWriteOptionsInputs) keepAlive() {
 
 func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsInputs, error) {
 	inputs := &nativeWriteOptionsInputs{}
+	// fail releases any pinned string lists built so far; the caller owns the
+	// release only when this function returns successfully.
+	fail := func(err error) (*nativeWriteOptionsInputs, error) {
+		inputs.release()
+		return nil, err
+	}
 	writeOpts := WriteOptions{}
 	if spec.WriteOptions != nil {
 		writeOpts = *spec.WriteOptions
@@ -350,11 +354,11 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 		}
 		rawProperties, keepAlive, err := newTransactionProperties(properties)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		inputs.properties = rawProperties
 		inputs.propertiesKeep = keepAlive
-		inputs.raw.TransactionProperties = uintptr(unsafe.Pointer(rawProperties))
+		inputs.raw.TransactionProperties = rawProperties
 	}
 
 	if spec.EnableV2ManifestPaths != nil {
@@ -365,7 +369,7 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 	if spec.InitialBases != nil {
 		list, err := newBasePathList(spec.InitialBases)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		inputs.initialBases = list
 		inputs.initialHeader = &basePathListHeader{Items: list.ptr(), Count: uint64(len(list.raw))}
@@ -381,7 +385,7 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 	if spec.TargetBaseNamesOrPaths != nil {
 		list, err := newCStringList(spec.TargetBaseNamesOrPaths)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		inputs.targetNames = list
 		inputs.targetNamesHeader = cStringListHeaderFor(list)
@@ -396,7 +400,7 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 	if spec.BaseStoreParams != nil {
 		list, err := newBaseStoreParamsList(spec.BaseStoreParams)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		inputs.baseStoreList = list
 		inputs.baseStoreHeader = list.header()
@@ -414,7 +418,7 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 	if spec.FileWriterOptions != nil {
 		rawFileWriter, keepAlive, err := buildFileWriterOptions(spec.FileWriterOptions)
 		if err != nil {
-			return nil, err
+			return fail(err)
 		}
 		inputs.fileWriter = rawFileWriter
 		inputs.fileWriterKeep = keepAlive
@@ -424,21 +428,21 @@ func buildNativeWriteOptions(spec NativeWriteOptionsSpec) (*nativeWriteOptionsIn
 	if spec.Session != nil {
 		handleValue := spec.Session.nativeHandle()
 		if handleValue == 0 {
-			return nil, ErrClosed
+			return fail(ErrClosed)
 		}
 		inputs.raw.Session = handleValue
 	}
 	if spec.StorageOptionsAccessor != nil {
 		handleValue := spec.StorageOptionsAccessor.Handle()
 		if handleValue == 0 {
-			return nil, ErrClosed
+			return fail(ErrClosed)
 		}
 		inputs.raw.StorageOptionsAccessor = handleValue
 	}
 	if spec.CommitLock != nil {
 		handleValue := spec.CommitLock.Handle()
 		if handleValue == 0 {
-			return nil, ErrClosed
+			return fail(ErrClosed)
 		}
 		inputs.raw.CommitLock = handleValue
 		inputs.commitLock = spec.CommitLock
@@ -534,14 +538,14 @@ func NewNativeWriteOptions(spec NativeWriteOptionsSpec) (*NativeWriteOptions, er
 		if inputs.progressCtx != 0 {
 			handle.Take(inputs.progressCtx)
 		}
-		inputs.keepAlive()
+		inputs.release()
 		if nativeErr != nil {
 			return nil, nativeErr
 		}
 		return nil, fmt.Errorf("ffi: lance_native_write_options_new returned NULL without setting an error")
 	}
 	runtime.UnlockOSThread()
-	inputs.keepAlive()
+	inputs.release()
 	options := &NativeWriteOptions{b: b}
 	options.handle.Store(handleValue)
 	return options, nil

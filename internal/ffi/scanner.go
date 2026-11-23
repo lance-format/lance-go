@@ -163,12 +163,12 @@ type statsState struct {
 }
 
 type projectionColumn struct {
-	OutputName uintptr
-	Expression uintptr
+	OutputName *byte
+	Expression *byte
 }
 
 type columnOrdering struct {
-	ColumnName uintptr
+	ColumnName *byte
 	Direction  int32
 	NullOrder  int32
 }
@@ -291,22 +291,18 @@ func NewScanner(ds *Dataset, opts ScannerOptions, initialize func(*Scanner) erro
 	if err != nil {
 		return nil, err
 	}
+	defer columnList.release()
 	var filterList *cStringList
-	var filterPtr uintptr
 	if opts.Filter != nil {
 		filterList, err = newCStringList([]string{*opts.Filter})
 		if err != nil {
 			return nil, err
 		}
-		filterPtr = filterList.ptrs[0]
+		defer filterList.release()
 	}
 
 	runtime.LockOSThread()
-	scannerHandle := b.scannerNew(handleValue, columnList.ptrs, filterPtr)
-	columnList.keepAlive()
-	if filterList != nil {
-		filterList.keepAlive()
-	}
+	scannerHandle := b.scannerNew(handleValue, columnList.ptrs, filterList.first())
 	if scannerHandle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()
@@ -525,7 +521,7 @@ func (s *Scanner) configure(opts ScannerOptions) error {
 		if err != nil {
 			return fmt.Errorf("ffi: materialization early-except columns: %w", err)
 		}
-		defer list.keepAlive()
+		defer list.release()
 		if err := s.setter("lance_scanner_set_materialization_style", func(handle uintptr) int32 {
 			return s.b.scannerSetMaterializationStyle(handle, *opts.MaterializationStyle, list.ptrs, uint64(len(opts.MaterializationEarly)))
 		}); err != nil {
@@ -747,7 +743,7 @@ func (s *Scanner) setProjection(columns []ProjectionColumn) error {
 	err = s.setter("lance_scanner_set_projection", func(handle uintptr) int32 {
 		return s.b.scannerSetProjection(handle, raw, uint64(len(raw)))
 	})
-	list.keepAlive()
+	list.release()
 	return err
 }
 
@@ -777,7 +773,7 @@ func (s *Scanner) setOrderBy(orderings []ColumnOrdering) error {
 	err = s.setter("lance_scanner_set_order_by", func(handle uintptr) int32 {
 		return s.b.scannerSetOrderBy(handle, raw, uint64(len(raw)))
 	})
-	list.keepAlive()
+	list.release()
 	return err
 }
 

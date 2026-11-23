@@ -25,15 +25,15 @@ func newOptionalU64(value *uint64) optionalU64 {
 
 // stringMap mirrors LanceStringMap.
 type stringMap struct {
-	keys   *uintptr
-	values *uintptr
+	keys   **byte
+	values **byte
 	count  uint64
 }
 
 // precomputedShuffleBuffers mirrors LancePrecomputedShuffleBuffers.
 type precomputedShuffleBuffers struct {
 	path    *byte
-	buffers *uintptr
+	buffers **byte
 	count   uint64
 }
 
@@ -167,11 +167,12 @@ func buildStringMap(options map[string]string) (*stringMap, []*cStringList, erro
 	}
 	valueList, err := newCStringList(values)
 	if err != nil {
+		keyList.release()
 		return nil, nil, err
 	}
 	return &stringMap{
-		keys:   &keyList.ptrs[0],
-		values: &valueList.ptrs[0],
+		keys:   keyList.data(),
+		values: valueList.data(),
 		count:  uint64(len(keys)),
 	}, []*cStringList{keyList, valueList}, nil
 }
@@ -238,7 +239,9 @@ func buildVectorIndexOptions(opts *VectorIndexOptions) (*vectorIndexOptions, fun
 	var arrays []*cdata.ArrowArray
 	var schemas []*cdata.ArrowSchema
 	cleanup = func() {
-		runtime.KeepAlive(keep)
+		for _, list := range keep {
+			list.release()
+		}
 		for _, arr := range arrays {
 			cdata.ReleaseArray(arr)
 		}
@@ -275,7 +278,7 @@ func buildVectorIndexOptions(opts *VectorIndexOptions) (*vectorIndexOptions, fun
 				return fail(err)
 			}
 			keep = append(keep, bufferList)
-			raw.buffers = &bufferList.ptrs[0]
+			raw.buffers = bufferList.data()
 		}
 		out.precomputedShuffleBuffers = raw
 	}
@@ -374,10 +377,10 @@ func (d *Dataset) CreateVectorIndexWithOptionsAndProgress(column, name string, o
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	err = d.runIndexBuild("lance_dataset_create_vector_index_with_options_and_progress", progress, func(callback, ctx uintptr) int32 {
-		return d.b.datasetCreateVectorIndexWithOptionsAndProgress(handle, column, cStringPointer(nameList), raw, callback, ctx, replace)
+		return d.b.datasetCreateVectorIndexWithOptionsAndProgress(handle, column, nameList.first(), raw, callback, ctx, replace)
 	})
-	nameList.keepAlive()
 	return err
 }
 
@@ -392,19 +395,18 @@ func (d *Dataset) CreateVectorIndex(column, name string, opts *VectorIndexOption
 		return err
 	}
 	defer cleanup()
-
 	nameList, err := newOptionalCString(name)
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	runtime.LockOSThread()
-	rc := d.b.datasetCreateVectorIndexWithOptions(handle, column, cStringPointer(nameList), raw, replace)
+	rc := d.b.datasetCreateVectorIndexWithOptions(handle, column, nameList.first(), raw, replace)
 	var nativeErr *Error
 	if rc != 0 {
 		nativeErr = d.b.takeError()
 	}
 	runtime.UnlockOSThread()
-	nameList.keepAlive()
 	if rc != 0 {
 		if nativeErr != nil {
 			return nativeErr
@@ -425,23 +427,23 @@ func (d *Dataset) CreateScalarIndex(column, name string, indexType int32, params
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	paramsList, err := optionalCStringList(params)
 	if err != nil {
 		return err
 	}
+	defer paramsList.release()
 	var raw *scalarIndexOptions
 	if opts != nil && opts.Train != nil {
 		raw = &scalarIndexOptions{hasTrain: true, train: *opts.Train}
 	}
 	runtime.LockOSThread()
-	rc := d.b.datasetCreateScalarIndexWithOptions(handle, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), raw, replace)
+	rc := d.b.datasetCreateScalarIndexWithOptions(handle, column, nameList.first(), indexType, paramsList.first(), raw, replace)
 	var nativeErr *Error
 	if rc != 0 {
 		nativeErr = d.b.takeError()
 	}
 	runtime.UnlockOSThread()
-	nameList.keepAlive()
-	paramsList.keepAlive()
 	if rc != 0 {
 		if nativeErr != nil {
 			return nativeErr
@@ -462,15 +464,15 @@ func (d *Dataset) CreateScalarIndexWithProgress(column, name string, indexType i
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	paramsList, err := optionalCStringList(params)
 	if err != nil {
 		return err
 	}
+	defer paramsList.release()
 	err = d.runIndexBuild("lance_dataset_create_scalar_index_with_progress", progress, func(callback, ctx uintptr) int32 {
-		return d.b.datasetCreateScalarIndexWithProgress(handle, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), callback, ctx, replace)
+		return d.b.datasetCreateScalarIndexWithProgress(handle, column, nameList.first(), indexType, paramsList.first(), callback, ctx, replace)
 	})
-	nameList.keepAlive()
-	paramsList.keepAlive()
 	return err
 }
 
@@ -485,19 +487,19 @@ func (d *Dataset) CreateScalarIndexWithOptionsAndProgress(column, name string, i
 	if err != nil {
 		return err
 	}
+	defer nameList.release()
 	paramsList, err := optionalCStringList(params)
 	if err != nil {
 		return err
 	}
+	defer paramsList.release()
 	var raw *scalarIndexOptions
 	if opts != nil && opts.Train != nil {
 		raw = &scalarIndexOptions{hasTrain: true, train: *opts.Train}
 	}
 	err = d.runIndexBuild("lance_dataset_create_scalar_index_with_options_and_progress", progress, func(callback, ctx uintptr) int32 {
-		return d.b.datasetCreateScalarIndexWithOptionsAndProgress(handle, column, cStringPointer(nameList), indexType, cStringPointer(paramsList), raw, callback, ctx, replace)
+		return d.b.datasetCreateScalarIndexWithOptionsAndProgress(handle, column, nameList.first(), indexType, paramsList.first(), raw, callback, ctx, replace)
 	})
-	nameList.keepAlive()
-	paramsList.keepAlive()
 	return err
 }
 
@@ -686,11 +688,4 @@ func newOptionalCString(value string) (*cStringList, error) {
 		return nil, nil
 	}
 	return newCStringList([]string{value})
-}
-
-func cStringPointer(list *cStringList) uintptr {
-	if list == nil || len(list.ptrs) == 0 {
-		return 0
-	}
-	return list.ptrs[0]
 }

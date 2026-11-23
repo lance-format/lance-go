@@ -1008,14 +1008,14 @@ func NewTransaction(readVersion uint64, operation *Operation, opts TransactionOp
 	if handle == 0 {
 		return nil, ErrClosed
 	}
-	raw, keepAlives, err := makeTransactionOptions(opts)
+	raw, releases, err := makeTransactionOptions(opts)
 	if err != nil {
 		return nil, err
 	}
 	runtime.LockOSThread()
 	out := operation.b.transactionNew(readVersion, handle, raw)
-	for _, keep := range keepAlives {
-		keep()
+	for _, release := range releases {
+		release()
 	}
 	if out == 0 {
 		nativeErr := operation.b.takeError()
@@ -1031,22 +1031,28 @@ func NewTransaction(readVersion uint64, operation *Operation, opts TransactionOp
 
 func makeTransactionOptions(opts TransactionOptions) (*transactionOptions, []func(), error) {
 	raw := &transactionOptions{}
-	var keepAlives []func()
+	var releases []func()
+	fail := func(err error) (*transactionOptions, []func(), error) {
+		for _, release := range releases {
+			release()
+		}
+		return nil, nil, err
+	}
 	if opts.UUID != nil {
 		list, err := newCStringList([]string{*opts.UUID})
 		if err != nil {
-			return nil, nil, err
+			return fail(err)
 		}
-		raw.UUID = list.ptrs[0]
-		keepAlives = append(keepAlives, list.keepAlive)
+		raw.UUID = list.first()
+		releases = append(releases, list.release)
 	}
 	if opts.Tag != nil {
 		list, err := newCStringList([]string{*opts.Tag})
 		if err != nil {
-			return nil, nil, err
+			return fail(err)
 		}
-		raw.Tag = list.ptrs[0]
-		keepAlives = append(keepAlives, list.keepAlive)
+		raw.Tag = list.first()
+		releases = append(releases, list.release)
 	}
 	if opts.HasProperties {
 		raw.HasTransactionProperties = true
@@ -1061,20 +1067,21 @@ func makeTransactionOptions(opts TransactionOptions) (*transactionOptions, []fun
 		}
 		keyList, err := newCStringList(keys)
 		if err != nil {
-			return nil, nil, err
+			return fail(err)
 		}
+		releases = append(releases, keyList.release)
 		valueList, err := newCStringList(values)
 		if err != nil {
-			return nil, nil, err
+			return fail(err)
 		}
+		releases = append(releases, valueList.release)
 		if len(keys) > 0 {
-			raw.PropertyKeys = uintptr(unsafe.Pointer(&keyList.ptrs[0]))
-			raw.PropertyValues = uintptr(unsafe.Pointer(&valueList.ptrs[0]))
+			raw.PropertyKeys = keyList.data()
+			raw.PropertyValues = valueList.data()
 		}
 		raw.PropertyCount = uint64(len(keys))
-		keepAlives = append(keepAlives, keyList.keepAlive, valueList.keepAlive)
 	}
-	return raw, keepAlives, nil
+	return raw, releases, nil
 }
 
 func newOperation(_ *bindings, call func(*bindings) uintptr) (*Operation, error) {
@@ -1159,7 +1166,7 @@ type commitOptions struct {
 	TimeoutNanos             uint32
 	Detached                 bool
 	SkipAutoCleanup          bool
-	DataStorageVersion       uintptr
+	DataStorageVersion       *byte
 }
 
 // Commit publishes one transaction through CommitBuilder::execute.
@@ -1232,8 +1239,8 @@ func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOp
 	} else {
 		rc = tx.b.transactionCommit(uri, handle, raw, storageList.ptrs, session, &out)
 	}
-	storageList.keepAlive()
-	versionList.keepAlive()
+	storageList.release()
+	versionList.release()
 	runtime.KeepAlive(raw)
 	if rc != 0 {
 		nativeErr := tx.b.takeError()
@@ -1333,8 +1340,8 @@ func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *S
 	} else {
 		rc = b.transactionCommitBatch(uri, handles, uint64(len(handles)), raw, storageList.ptrs, session, &outDataset, &outTransaction)
 	}
-	storageList.keepAlive()
-	versionList.keepAlive()
+	storageList.release()
+	versionList.release()
 	runtime.KeepAlive(raw)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -1398,10 +1405,11 @@ func buildCommitOptions(opts CommitOptions) (*commitOptions, *cStringList, *cStr
 			return nil, nil, nil, err
 		}
 		versionList = list
-		raw.DataStorageVersion = list.ptrs[0]
+		raw.DataStorageVersion = list.first()
 	}
 	storageList, err := storageOptionList(opts.StorageOptions)
 	if err != nil {
+		versionList.release()
 		return nil, nil, nil, err
 	}
 	return raw, storageList, versionList, nil
@@ -1428,7 +1436,7 @@ type WriteUncommittedOptions struct {
 
 type uncommittedWriteOptions struct {
 	Write                 writeOptions
-	TransactionProperties uintptr
+	TransactionProperties **byte
 }
 
 // WriteUncommitted writes reader as uncommitted Lance data files.
@@ -1485,6 +1493,7 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
 	versionList := &cStringList{}
 	if writeOpts.Params.DataStorageVersion != "" {
 		versionList, err = newCStringList([]string{writeOpts.Params.DataStorageVersion})
@@ -1492,6 +1501,7 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 			return nil, err
 		}
 	}
+	defer versionList.release()
 
 	var raw uncommittedWriteOptions
 	raw.Write.Params.MaxRowsPerFile = writeOpts.Params.MaxRowsPerFile
@@ -1525,15 +1535,19 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 			values[i] = opts.TransactionProperties[key]
 		}
 		if len(keys) == 0 {
-			propertyList = &cStringList{ptrs: []uintptr{0}}
+			propertyList, err = newPresentCStringList(nil)
+			if err != nil {
+				return nil, err
+			}
 		} else {
 			propertyList, err = newCStringPairs(keys, values)
 			if err != nil {
 				return nil, err
 			}
 		}
-		raw.TransactionProperties = uintptr(unsafe.Pointer(&propertyList.ptrs[0]))
+		raw.TransactionProperties = propertyList.data()
 	}
+	defer propertyList.release()
 
 	var rawSchema cdata.ArrowSchema
 	if err := cdata.ExportSchema(schema, &rawSchema); err != nil {
@@ -1575,9 +1589,6 @@ func writeUncommitted(uri string, reader array.RecordReader, opts WriteUncommitt
 		rc = b.datasetWriteUncommittedStream(uri, &rawSchema, &rawStream, int32(writeOpts.Mode), &raw, storageList.ptrs, session, &out)
 	}
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
-	propertyList.keepAlive()
 	runtime.KeepAlive(&raw)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -1599,42 +1610,38 @@ func newCStringPairs(keys, values []string) (*cStringList, error) {
 		return nil, fmt.Errorf("ffi: key/value length mismatch")
 	}
 	list := &cStringList{
-		ptrs:  make([]uintptr, len(keys)*2+1),
-		bufs:  make([][]byte, 0, len(keys)*2),
-		owned: true,
+		ptrs: make([]*byte, len(keys)*2+1),
+		bufs: make([][]byte, len(keys)*2),
 	}
 	for i := range keys {
 		keyBuf, err := cStringBuffer(keys[i])
 		if err != nil {
+			list.release()
 			return nil, err
 		}
 		valueBuf, err := cStringBuffer(values[i])
 		if err != nil {
+			list.release()
 			return nil, err
 		}
-		list.bufs = append(list.bufs, keyBuf, valueBuf)
-		list.ptrs[i*2] = uintptr(unsafe.Pointer(&keyBuf[0]))
-		list.ptrs[i*2+1] = uintptr(unsafe.Pointer(&valueBuf[0]))
+		list.bufs[i*2] = keyBuf
+		list.bufs[i*2+1] = valueBuf
+		list.pin.Pin(&list.bufs[i*2][0])
+		list.pin.Pin(&list.bufs[i*2+1][0])
+		list.ptrs[i*2] = &list.bufs[i*2][0]
+		list.ptrs[i*2+1] = &list.bufs[i*2+1][0]
 	}
+	list.pin.Pin(&list.ptrs[0])
 	return list, nil
-}
-
-func cStringBuffer(value string) ([]byte, error) {
-	if err := validateCString(value); err != nil {
-		return nil, err
-	}
-	buf := make([]byte, len(value)+1)
-	copy(buf, value)
-	return buf, nil
 }
 
 // Transaction raw structs.
 
 type transactionOptions struct {
-	UUID                     uintptr
-	Tag                      uintptr
+	UUID                     *byte
+	Tag                      *byte
 	HasTransactionProperties bool
-	PropertyKeys             uintptr
-	PropertyValues           uintptr
+	PropertyKeys             **byte
+	PropertyValues           **byte
 	PropertyCount            uint64
 }

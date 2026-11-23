@@ -374,6 +374,7 @@ func (n *Namespace) WriteDataset(tableIDJSON string, reader array.RecordReader, 
 	if err != nil {
 		return nil, err
 	}
+	defer versionList.release()
 	var rawSchema cdata.ArrowSchema
 	if err := cdata.ExportSchema(reader.Schema(), &rawSchema); err != nil {
 		return nil, err
@@ -412,7 +413,6 @@ func (n *Namespace) WriteDataset(tableIDJSON string, reader array.RecordReader, 
 	streamConsumed = true
 	runtime.KeepAlive(tableIDJSON)
 	runtime.KeepAlive(reader)
-	versionList.keepAlive()
 	runtime.KeepAlive(&rawOptions)
 	runtime.KeepAlive(storageJSON)
 	runtime.KeepAlive(branchBuf)
@@ -471,8 +471,8 @@ func (n *Namespace) CommitNamespaceURI(tableIDJSON, uri string, tx *Transaction,
 		sessionHandle,
 		&out,
 	)
-	storageList.keepAlive()
-	versionList.keepAlive()
+	storageList.release()
+	versionList.release()
 	runtime.KeepAlive(tableIDJSON)
 	runtime.KeepAlive(uri)
 	runtime.KeepAlive(raw)

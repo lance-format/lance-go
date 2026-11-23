@@ -198,9 +198,9 @@ func (d *Dataset) CreateBranch(name string, ref Ref, options *BranchOptions) (*D
 	}
 	defer b.refClose(nativeRef)
 
-	var storageOptions []uintptr
+	var storageOptions []*byte
 	if storageList != nil {
-		defer storageList.keepAlive()
+		defer storageList.release()
 		storageOptions = storageList.ptrs
 	}
 	created := b.datasetBranchCreate(handle, name, nativeRef, storageOptions)
@@ -261,9 +261,9 @@ func (d *Dataset) ReplaceBranchMetadata(name string, metadata map[string]string)
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	var values []uintptr
+	var values []*byte
 	if list != nil {
-		defer list.keepAlive()
+		defer list.release()
 		values = list.ptrs
 	}
 	if rc := b.datasetBranchReplaceMetadata(handle, name, values); rc != 0 {

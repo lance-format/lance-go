@@ -3,7 +3,6 @@ package ffi
 import (
 	"runtime"
 	"sort"
-	"unsafe"
 )
 
 // transactionProperties mirrors LanceTransactionProperties.
@@ -22,8 +21,9 @@ type transactionProperties struct {
 // A nil properties map returns a nil pointer, which native entry points read
 // as None. A non-nil map returns a present struct with keys sorted for
 // deterministic wire order; an empty map keeps NULL key and value arrays with
-// Count zero. keepAlive must run after the native call: the struct holds
-// pointers to arrays of integer addresses that do not keep copied strings live.
+// Count zero. The returned release function must run after the native call:
+// the struct holds pinned string pointers that must be unpinned only once the
+// call returns.
 func newTransactionProperties(properties map[string]string) (*transactionProperties, func(), error) {
 	if properties == nil {
 		return nil, func() {}, nil
@@ -44,17 +44,18 @@ func newTransactionProperties(properties map[string]string) (*transactionPropert
 	}
 	valueList, err := newCStringList(values)
 	if err != nil {
+		keyList.release()
 		return nil, nil, err
 	}
 
 	raw := &transactionProperties{Count: uint64(len(keys))}
 	if len(keys) > 0 {
-		raw.Keys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
-		raw.Values = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
+		raw.Keys = keyList.data()
+		raw.Values = valueList.data()
 	}
 	return raw, func() {
-		keyList.keepAlive()
-		valueList.keepAlive()
+		keyList.release()
+		valueList.release()
 		runtime.KeepAlive(raw)
 	}, nil
 }

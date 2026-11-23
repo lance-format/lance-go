@@ -14,7 +14,7 @@ func TestFileReaderColumnPointers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer keep.keepAlive()
+			defer keep.release()
 			runtime.GC()
 			if (raw.HasColumns != 0) != (columns != nil) || raw.ColumnCount != uint64(len(columns)) {
 				t.Fatalf("projection presence/count = %d/%d, input = %#v", raw.HasColumns, raw.ColumnCount, columns)

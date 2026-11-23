@@ -38,7 +38,7 @@ func OpenFileWriter(uri string, schema *arrow.Schema, options *FileWriterOptions
 
 	runtime.LockOSThread()
 	handle := b.fileWriterOpen(uri, rawSchema, rawOptions, storage.Handle(), SessionHandle(session))
-	keep.keepAlive()
+	keep.release()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

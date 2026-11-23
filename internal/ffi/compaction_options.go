@@ -68,12 +68,14 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 		if err != nil {
 			return nil, err
 		}
+		defer dataStorageVersion.release()
 	}
 
 	properties, keepProperties, err := newTransactionProperties(options.TransactionProperties)
 	if err != nil {
 		return nil, err
 	}
+	defer keepProperties()
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -205,7 +207,6 @@ func buildCompactionOptions(b *bindings, options *compaction.Options) (*compacti
 	}
 	if options.TransactionProperties != nil {
 		rc := b.compactionOptionsSetTransactionProperties(handle, properties)
-		keepProperties()
 		if rc != 0 {
 			return fail("lance_compaction_options_v2_set_transaction_properties")
 		}

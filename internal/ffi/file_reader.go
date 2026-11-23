@@ -41,7 +41,7 @@ func openFileReader(b *bindings, uri string, storage *StorageOptionsAccessor, op
 
 	runtime.LockOSThread()
 	handle := b.fileReaderOpen(uri, storage.Handle(), rawOptions, SessionHandle(session), rawScheduler)
-	keep.keepAlive()
+	keep.release()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

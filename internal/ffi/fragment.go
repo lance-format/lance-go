@@ -378,7 +378,7 @@ func (f *Fragment) Take(indices []uint32, columns []string) ([]arrow.RecordBatch
 	runtime.LockOSThread()
 	rc := f.b.fragmentTake(handleValue, indexPtr, uint64(len(indices)), columnList.ptrs, &stream)
 	runtime.KeepAlive(indexPtr)
-	columnList.keepAlive()
+	columnList.release()
 	if rc != 0 {
 		nativeErr := f.b.takeError()
 		runtime.UnlockOSThread()
@@ -401,7 +401,7 @@ func fragmentColumnList(columns []string) (*cStringList, error) {
 	}
 	// An explicit empty projection needs a non-NULL pointer whose first entry
 	// is NULL so native take does not treat it as the full schema.
-	return &cStringList{ptrs: []uintptr{0}}, nil
+	return newPresentCStringList(nil)
 }
 
 // CountRows counts fragment rows, optionally applying a native SQL filter.
@@ -411,7 +411,6 @@ func (f *Fragment) CountRows(filter *string) (uint64, error) {
 	if handleValue == 0 {
 		return 0, ErrClosed
 	}
-	var filterPtr uintptr
 	var filterList *cStringList
 	if filter != nil {
 		list, err := newCStringList([]string{*filter})
@@ -419,14 +418,13 @@ func (f *Fragment) CountRows(filter *string) (uint64, error) {
 			return 0, err
 		}
 		filterList = list
-		filterPtr = list.ptrs[0]
 	}
 
 	var rows uint64
 	runtime.LockOSThread()
-	rc := f.b.fragmentCountRows(handleValue, filterPtr, &rows)
+	rc := f.b.fragmentCountRows(handleValue, filterList.first(), &rows)
 	if filterList != nil {
-		filterList.keepAlive()
+		filterList.release()
 	}
 	if rc != 0 {
 		nativeErr := f.b.takeError()

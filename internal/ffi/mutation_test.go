@@ -160,9 +160,9 @@ func TestUpdateCallsNativeAndReturnsCount(t *testing.T) {
 	b := &bindings{}
 	dataset := &Dataset{b: b}
 	dataset.handle.Store(7)
-	b.datasetUpdate = func(handle uintptr, predicate uintptr, columns []uintptr, values []uintptr, numUpdates uint64, out *uint64) int32 {
-		if handle != 7 || predicate == 0 || numUpdates != 2 || len(columns) < 2 || len(values) < 2 {
-			t.Fatalf("update call = handle %d predicate %d updates %d", handle, predicate, numUpdates)
+	b.datasetUpdate = func(handle uintptr, predicate *byte, columns []*byte, values []*byte, numUpdates uint64, out *uint64) int32 {
+		if handle != 7 || predicate == nil || numUpdates != 2 || len(columns) < 2 || len(values) < 2 {
+			t.Fatalf("update call = handle %d predicate %v updates %d", handle, predicate, numUpdates)
 		}
 		*out = 2
 		return int32(CodeOK)
@@ -185,8 +185,8 @@ func TestMergeInsertConsumesStreamAndMapsResult(t *testing.T) {
 	dataset := &Dataset{b: b}
 	dataset.handle.Store(7)
 	source := newTrackedReader(t)
-	b.datasetMergeInsert = func(handle uintptr, onColumns []uintptr, numOnColumns uint64, stream *cdata.ArrowArrayStream, params *mergeInsertParams, out *mergeInsertResult) int32 {
-		if handle != 7 || numOnColumns != 1 || len(onColumns) < 1 || onColumns[0] == 0 {
+	b.datasetMergeInsert = func(handle uintptr, onColumns []*byte, numOnColumns uint64, stream *cdata.ArrowArrayStream, params *mergeInsertParams, out *mergeInsertResult) int32 {
+		if handle != 7 || numOnColumns != 1 || len(onColumns) < 1 || onColumns[0] == nil {
 			t.Fatalf("merge insert call = handle %d keys %d", handle, numOnColumns)
 		}
 		if params.WhenMatched != 2 || params.WhenMatchedExpr == nil {
@@ -245,7 +245,7 @@ func TestMergeInsertNativeErrorDoesNotDoubleRelease(t *testing.T) {
 	dataset := &Dataset{b: b}
 	dataset.handle.Store(7)
 	source := newTrackedReader(t)
-	b.datasetMergeInsert = func(_ uintptr, _ []uintptr, _ uint64, stream *cdata.ArrowArrayStream, _ *mergeInsertParams, _ *mergeInsertResult) int32 {
+	b.datasetMergeInsert = func(_ uintptr, _ []*byte, _ uint64, stream *cdata.ArrowArrayStream, _ *mergeInsertParams, _ *mergeInsertResult) int32 {
 		cdata.ReleaseStream(stream)
 		return int32(CodeInvalidArgument)
 	}

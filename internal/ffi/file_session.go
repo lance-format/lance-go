@@ -98,7 +98,7 @@ func (s *FileSession) OpenReader(relativePath string, options *FileReaderOptions
 
 	runtime.LockOSThread()
 	nativeHandle := s.b.fileSessionOpenReader(handle, relativePath, rawOptions)
-	keep.keepAlive()
+	keep.release()
 	if nativeHandle == 0 {
 		nativeErr := s.b.takeError()
 		runtime.UnlockOSThread()
@@ -133,7 +133,7 @@ func (s *FileSession) OpenWriter(relativePath string, schema *arrow.Schema, opti
 
 	runtime.LockOSThread()
 	nativeHandle := s.b.fileSessionOpenWriter(handle, relativePath, rawSchema, rawOptions)
-	keep.keepAlive()
+	keep.release()
 	if nativeHandle == 0 {
 		nativeErr := s.b.takeError()
 		runtime.UnlockOSThread()
@@ -192,7 +192,7 @@ func (s *FileSession) List(relativePath string) ([]string, error) {
 
 	runtime.LockOSThread()
 	nativeHandle := s.b.fileSessionList(handle, pathPtr)
-	pathList.keepAlive()
+	pathList.release()
 	if nativeHandle == 0 {
 		nativeErr := s.b.takeError()
 		runtime.UnlockOSThread()
@@ -233,7 +233,7 @@ func (s *FileSession) ListWithDelimiter(relativePath string) (DelimitedList, err
 
 	runtime.LockOSThread()
 	nativeHandle := s.b.fileSessionListWithDelimiter(handle, pathPtr)
-	pathList.keepAlive()
+	pathList.release()
 	if nativeHandle == 0 {
 		nativeErr := s.b.takeError()
 		runtime.UnlockOSThread()

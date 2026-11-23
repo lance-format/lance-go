@@ -119,6 +119,7 @@ func buildWriteParameters(opts WriteOptions) (writeOptions, *cStringList, error)
 	}
 	if opts.AutoCleanup != nil {
 		if opts.AutoCleanup.OlderThanNanos < -999999999 || opts.AutoCleanup.OlderThanNanos > 999999999 {
+			versionList.release()
 			return writeOptions{}, nil, fmt.Errorf("ffi: auto-cleanup nanoseconds must be in [-999999999, 999999999]")
 		}
 		cleanup := &autoCleanupParams{
@@ -196,10 +197,12 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
 	rawOptions, versionList, err := buildWriteParameters(opts)
 	if err != nil {
 		return nil, err
 	}
+	defer versionList.release()
 
 	var rawSchema cdata.ArrowSchema
 	if err := cdata.ExportSchema(schema, &rawSchema); err != nil {
@@ -237,8 +240,6 @@ func writeDataset(b *bindings, uri string, reader array.RecordReader, opts Write
 		rc = b.datasetWriteWithOptions(uri, &rawSchema, &rawStream, int32(opts.Mode), &rawOptions, storageList.ptrs, &handle)
 	}
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
 	runtime.KeepAlive(&rawOptions)
 	if rc != 0 {
 		nativeErr := b.takeError()

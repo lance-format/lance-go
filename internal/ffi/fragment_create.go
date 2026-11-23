@@ -39,7 +39,7 @@ type fragmentCreateOptions struct {
 	Schema      uintptr
 	Mode        int32
 	Write       *writeOptions
-	StorageOpts *uintptr
+	StorageOpts **byte
 	Session     uintptr
 }
 
@@ -76,8 +76,8 @@ func createFragment(b *bindings, uri string, fragmentID uint64, reader array.Rec
 	var handle uintptr
 	rc := b.fragmentCreate(uri, fragmentID, &rawOptions, &rawStream, &handle)
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
+	versionList.release()
+	storageList.release()
 	runtime.KeepAlive(&rawOptions)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -128,8 +128,8 @@ func writeFragments(b *bindings, uri string, reader array.RecordReader, options 
 	var count uint64
 	rc := b.fragmentCreateMany(uri, &rawOptions, &rawStream, &outFragments, &count)
 	streamConsumed = true
-	versionList.keepAlive()
-	storageList.keepAlive()
+	versionList.release()
+	storageList.release()
 	runtime.KeepAlive(&rawOptions)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -259,9 +259,10 @@ func prepareFragmentCreateOptions(uri string, reader array.RecordReader, options
 
 	storageList, err := storageOptionList(options.StorageOptions)
 	if err != nil {
+		versionList.release()
 		return fragmentCreateOptions{}, nil, nil, err
 	}
-	rawOptions.StorageOpts = storageList.ptr()
+	rawOptions.StorageOpts = storageList.data()
 	return rawOptions, storageList, versionList, nil
 }
 

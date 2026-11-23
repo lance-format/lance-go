@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sort"
 	"sync/atomic"
-	"unsafe"
 )
 
 // CacheSpecKind selects one field group in a native session cache spec.
@@ -31,8 +30,8 @@ type CacheSpec struct {
 type sessionCacheSpec struct {
 	Kind         int32
 	SizeBytes    uint64
-	BackendURI   uintptr
-	BackendKind  uintptr
+	BackendURI   *byte
+	BackendKind  *byte
 	OptionKeys   **byte
 	OptionValues **byte
 	OptionCount  uint64
@@ -100,13 +99,14 @@ func newSessionWithCacheSpecs(b *bindings, indexCache, metadataCache CacheSpec) 
 	}
 	metadataRaw, metadataKeep, err := buildSessionCacheSpec(metadataCache)
 	if err != nil {
+		indexKeep.release()
 		return nil, err
 	}
 
 	runtime.LockOSThread()
 	handle := b.sessionNewWithCacheSpecs(&indexRaw, &metadataRaw)
-	indexKeep.keepAlive()
-	metadataKeep.keepAlive()
+	indexKeep.release()
+	metadataKeep.release()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()
@@ -122,20 +122,27 @@ func newSessionWithCacheSpecs(b *bindings, indexCache, metadataCache CacheSpec) 
 	return s, nil
 }
 
-type cacheSpecKeepAlive struct {
+type cacheSpecRelease struct {
 	values []*cStringList
 }
 
-func (k cacheSpecKeepAlive) keepAlive() {
-	for _, value := range k.values {
-		value.keepAlive()
+func (r cacheSpecRelease) release() {
+	for _, value := range r.values {
+		value.release()
 	}
 }
 
-func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecKeepAlive, error) {
-	var raw sessionCacheSpec
+func buildSessionCacheSpec(spec CacheSpec) (raw sessionCacheSpec, keep cacheSpecRelease, err error) {
 	raw.Kind = int32(spec.Kind)
-	var keep cacheSpecKeepAlive
+	// The caller releases keep only after the native constructor returns.
+	// Release on the error paths here so a failed build never drops pinned
+	// buffers.
+	failed := true
+	defer func() {
+		if failed {
+			keep.release()
+		}
+	}()
 
 	switch spec.Kind {
 	case CacheSpecDefault:
@@ -149,7 +156,7 @@ func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecKeepAlive
 		if err != nil {
 			return sessionCacheSpec{}, keep, err
 		}
-		raw.BackendURI = list.ptrs[0]
+		raw.BackendURI = list.first()
 		keep.values = append(keep.values, list)
 	case CacheSpecConfig:
 		if spec.BackendKind == "" {
@@ -159,7 +166,7 @@ func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecKeepAlive
 		if err != nil {
 			return sessionCacheSpec{}, keep, err
 		}
-		raw.BackendKind = kindList.ptrs[0]
+		raw.BackendKind = kindList.first()
 		keep.values = append(keep.values, kindList)
 
 		if len(spec.Options) > 0 {
@@ -184,14 +191,15 @@ func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecKeepAlive
 			if err != nil {
 				return sessionCacheSpec{}, keep, err
 			}
-			raw.OptionKeys = (**byte)(unsafe.Pointer(&keyList.ptrs[0]))
-			raw.OptionValues = (**byte)(unsafe.Pointer(&valueList.ptrs[0]))
+			raw.OptionKeys = keyList.data()
+			raw.OptionValues = valueList.data()
 			raw.OptionCount = uint64(len(keys))
 			keep.values = append(keep.values, keyList, valueList)
 		}
 	default:
 		return sessionCacheSpec{}, keep, fmt.Errorf("ffi: unknown cache spec kind %d", spec.Kind)
 	}
+	failed = false
 	return raw, keep, nil
 }
 
