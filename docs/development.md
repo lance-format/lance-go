@@ -199,6 +199,21 @@ See [`internal/benchmarks/soak/README.md`](../internal/benchmarks/soak/README.md
 for build and run commands, the measurement contract and the limits of RSS
 evidence.
 
+### Microbenchmarks
+
+Standard Go benchmarks cover the Arrow C Data import and export paths, handle
+registration, the warm in-process loader fast path and `Scanner.Records`
+streaming. They use the Go 1.23 minimum and normal public inputs:
+
+```console
+CGO_ENABLED=0 go test -run '^$' -bench . -benchmem ./...
+```
+
+Benchmarks that need the native library skip unless it is available through the
+bundled library or `LANCE_LIB_PATH`. The loader benchmark measures repeated
+in-process `Load` calls after the first open; cache extraction and digest
+verification are a separate phase and are not included.
+
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
 workflow builds the pinned DLL with a static CRT on windows/amd64 and

@@ -28,8 +28,11 @@
 // A [Session] shares index and metadata caches across datasets and raw files.
 // Close the caller's Session after opening those objects; opened objects keep
 // the cache state they retained. A [StorageOptionsAccessor] similarly owns
-// reusable storage options. Closing it does not invalidate native datasets or
-// stores that retained their own reference.
+// reusable storage options. Its Close implements io.Closer, reports no failure,
+// and does not invalidate native datasets or stores that retained their own
+// reference. A provider value stays caller-owned: the SDK never calls a
+// provider Close method and keeps the provider reachable until native releases
+// the final owner.
 //
 // [Session], [CacheStats], [StorageOptionsAccessor], [StorageOptionsProvider]
 // and [ForceStorageOptionsProvider] are declared in this package, so go doc and

@@ -2,6 +2,7 @@ package ffi
 
 import (
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -1326,18 +1327,26 @@ func (b *bindings) symbols() []symbol {
 }
 
 var (
-	mu    sync.Mutex
-	bound *bindings
+	mu sync.Mutex
+
+	// bound publishes a fully initialized binding table. Warm calls read it
+	// without mu; failures are never stored, so a later call retries.
+	bound atomic.Pointer[bindings]
 )
 
 // load returns the process-wide bindings, resolving symbols on first use.
-// Failed attempts are not cached; a later call retries.
+// After a successful bind, later calls take a lock-free fast path. Failed
+// attempts are not cached; a later call retries.
 func load() (*bindings, error) {
+	if b := bound.Load(); b != nil {
+		return b, nil
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
 
-	if bound != nil {
-		return bound, nil
+	if b := bound.Load(); b != nil {
+		return b, nil
 	}
 
 	lib, err := loader.Load()
@@ -1348,7 +1357,7 @@ func load() (*bindings, error) {
 	if err != nil {
 		return nil, err
 	}
-	bound = b
+	bound.Store(b)
 	return b, nil
 }
 

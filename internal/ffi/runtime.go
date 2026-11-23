@@ -40,13 +40,10 @@ type RuntimeState struct {
 // InspectRuntime observes the loader and binding state without discovering,
 // extracting, loading, binding, retrying, or otherwise changing it.
 func InspectRuntime() RuntimeState {
-	mu.Lock()
-	defer mu.Unlock()
-
 	library := loader.Observe()
 	return RuntimeState{
 		Loaded:   library.Loaded,
-		FFIReady: bound != nil && library.Loaded,
+		FFIReady: bound.Load() != nil && library.Loaded,
 		Library:  library,
 		Expected: Pinned(),
 	}

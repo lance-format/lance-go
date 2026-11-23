@@ -3,6 +3,7 @@ package ffi
 import (
 	"errors"
 	"runtime"
+	"slices"
 	"testing"
 )
 
@@ -69,6 +70,116 @@ func TestTakeErrorIgnoresMessageWhenCodeIsOK(t *testing.T) {
 
 	if err := b.takeError(); err != nil {
 		t.Fatalf("takeError returned %v for LANCE_OK", err)
+	}
+}
+
+func TestTakeErrorOrFallsBackWhenTheNativeLayerSetNoError(t *testing.T) {
+	b := &bindings{
+		lastErrorCode: func() int32 { return int32(CodeOK) },
+		lastErrorMessage: func() *byte {
+			t.Error("lance_last_error_message called for LANCE_OK")
+			return nil
+		},
+		freeString: func(*byte) {
+			t.Error("lance_free_string called for LANCE_OK")
+		},
+	}
+
+	err := b.takeErrorOr("lance_dataset_open returned NULL")
+	if err == nil {
+		t.Fatal("takeErrorOr returned nil without a native error")
+	}
+	if got, want := err.Error(), "ffi: lance_dataset_open returned NULL without setting an error"; got != want {
+		t.Fatalf("takeErrorOr = %q, want %q", got, want)
+	}
+}
+
+func TestTakeErrorOrReturnsTheNativeError(t *testing.T) {
+	buf := append([]byte("disk full"), 0)
+	b := &bindings{
+		lastErrorCode:    func() int32 { return int32(CodeIO) },
+		lastErrorMessage: func() *byte { return &buf[0] },
+		freeString:       func(*byte) {},
+	}
+	defer runtime.KeepAlive(buf)
+
+	err := b.takeErrorOr("lance_dataset_open failed")
+	var nativeErr *Error
+	if !errors.As(err, &nativeErr) {
+		t.Fatalf("takeErrorOr returned %T, want *Error", err)
+	}
+	if nativeErr.Code != CodeIO || nativeErr.Message != "disk full" {
+		t.Fatalf("takeErrorOr returned %v, want the native error", nativeErr)
+	}
+}
+
+func TestCallPinnedCapturesTheErrorAfterTheCall(t *testing.T) {
+	buf := append([]byte("boom"), 0)
+	var calls []string
+	b := &bindings{
+		lastErrorCode: func() int32 {
+			calls = append(calls, "code")
+			return int32(CodeIO)
+		},
+		lastErrorMessage: func() *byte {
+			calls = append(calls, "message")
+			return &buf[0]
+		},
+		freeString: func(*byte) {
+			calls = append(calls, "free")
+		},
+	}
+	defer runtime.KeepAlive(buf)
+
+	value, err := callPinned(b, func() uint64 {
+		calls = append(calls, "call")
+		return 42
+	})
+	if value != 0 {
+		t.Fatalf("value = %d, want the zero value when the native call fails", value)
+	}
+	var nativeErr *Error
+	if !errors.As(err, &nativeErr) || nativeErr.Code != CodeIO || nativeErr.Message != "boom" {
+		t.Fatalf("callPinned returned %v, want the native error", err)
+	}
+	if want := []string{"call", "code", "message", "free"}; !slices.Equal(calls, want) {
+		t.Fatalf("native calls = %v, want %v", calls, want)
+	}
+}
+
+func TestCallPinnedReturnsTheValueWithoutANativeError(t *testing.T) {
+	b := &bindings{
+		lastErrorCode: func() int32 { return int32(CodeOK) },
+		lastErrorMessage: func() *byte {
+			t.Error("lance_last_error_message called for LANCE_OK")
+			return nil
+		},
+		freeString: func(*byte) {
+			t.Error("lance_free_string called for LANCE_OK")
+		},
+	}
+
+	value, err := callPinned(b, func() uint64 { return 42 })
+	if err != nil {
+		t.Fatalf("callPinned returned %v", err)
+	}
+	if value != 42 {
+		t.Fatalf("value = %d, want 42", value)
+	}
+}
+
+// TestCallPinnedKeepsSuccessfulCallsAllocationFree protects the hot path: the
+// closure, its captures and the returned value must all stay on the stack.
+func TestCallPinnedKeepsSuccessfulCallsAllocationFree(t *testing.T) {
+	b := &bindings{lastErrorCode: func() int32 { return int32(CodeOK) }}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		if _, err := callPinned(b, func() uint64 { return 42 }); err != nil {
+			t.Fatalf("callPinned returned %v", err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("callPinned allocated %v times on a successful call", allocs)
 	}
 }
 
@@ -169,5 +280,26 @@ func TestOpenDatasetNullHandleWithoutError(t *testing.T) {
 	var native *Error
 	if errors.As(err, &native) {
 		t.Fatalf("synthetic NULL-handle error must not masquerade as a native *Error: %v", err)
+	}
+}
+
+// TestLoadReturnsPublishedBindingsWithoutRebinding pins the fast path: once
+// the binding table is published, load returns it without loading the native
+// library or rebinding symbols again. A load that rebound here would fail
+// because this environment has no library.
+func TestLoadReturnsPublishedBindingsWithoutRebinding(t *testing.T) {
+	previous := bound.Load()
+	published := &bindings{}
+	bound.Store(published)
+	t.Cleanup(func() {
+		bound.Store(previous)
+	})
+
+	got, err := load()
+	if err != nil {
+		t.Fatalf("load after publish: %v", err)
+	}
+	if got != published {
+		t.Fatalf("load returned a new binding table instead of the published one")
 	}
 }

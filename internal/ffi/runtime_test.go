@@ -3,14 +3,10 @@ package ffi
 import "testing"
 
 func TestInspectRuntimeSeparatesLoadedAndBoundState(t *testing.T) {
-	mu.Lock()
-	previous := bound
-	bound = nil
-	mu.Unlock()
+	previous := bound.Load()
+	bound.Store(nil)
 	t.Cleanup(func() {
-		mu.Lock()
-		bound = previous
-		mu.Unlock()
+		bound.Store(previous)
 	})
 
 	state := InspectRuntime()
@@ -24,9 +20,7 @@ func TestInspectRuntimeSeparatesLoadedAndBoundState(t *testing.T) {
 		t.Fatalf("Loaded = %v, Library.Loaded = %v", state.Loaded, state.Library.Loaded)
 	}
 
-	mu.Lock()
-	bound = &bindings{}
-	mu.Unlock()
+	bound.Store(&bindings{})
 
 	state = InspectRuntime()
 	if state.FFIReady && !state.Loaded {

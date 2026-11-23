@@ -2,6 +2,7 @@ package ffi
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 )
 
@@ -93,6 +94,47 @@ func (b *bindings) takeError() *Error {
 		b.freeString(ptr)
 	}
 	return &Error{Code: Code(code), Message: message}
+}
+
+// takeErrorOr consumes the pending error on the calling OS thread and returns
+// it. When a native entry point reported failure without setting one, it
+// returns a fallback that names what failed, for example
+//
+//	b.takeErrorOr("lance_dataset_open returned NULL")
+//
+// reports "ffi: lance_dataset_open returned NULL without setting an error".
+//
+// takeErrorOr has the same requirements as takeError: the caller must hold the
+// OS-thread lock taken for the failing native call, and the pending error must
+// not have been consumed or overwritten since. The fallback is only a last
+// resort and never replaces an error the native layer set.
+func (b *bindings) takeErrorOr(description string) error {
+	if err := b.takeError(); err != nil {
+		return err
+	}
+	return fmt.Errorf("ffi: %s without setting an error", description)
+}
+
+// callPinned runs call with the calling goroutine locked to its OS thread and
+// returns the thread-local error the native entry point set. The lock covers
+// both the call and the error capture, so the two cannot be split across OS
+// threads.
+//
+// callPinned does not clear a stale error before call and consumes the pending
+// error even when the native entry point reports success. Use it only for
+// entry points whose failure signal is the thread-local error alone; entry
+// points that also report a status return or a NULL handle keep their explicit
+// sentinel check, because consuming the error unconditionally could attribute
+// a stale error to a successful call.
+func callPinned[T any](b *bindings, call func() T) (T, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	value := call()
+	if err := b.takeError(); err != nil {
+		var zero T
+		return zero, err
+	}
+	return value, nil
 }
 
 // goString copies a NUL-terminated C string into Go memory. The copy is
