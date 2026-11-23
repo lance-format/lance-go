@@ -15,7 +15,11 @@
 // It checks that every bound symbol exists, that Go and C agree on arity and
 // on value/pointer classification, that every function field in the bindings
 // struct has a symbol entry, and that the header bytes match the pinned
-// SHA-256. Declaration attributes such as LANCE_API, LANCE_NODISCARD and
+// SHA-256. For a split release it accepts the include/lance directory, verifies
+// every public *.h file against an expected HEADER-MANIFEST or composite
+// identity, and parses the union of all headers. Type-only headers remain part
+// of the identity even when they contain no lance_* function declarations.
+// Declaration attributes such as LANCE_API, LANCE_NODISCARD and
 // LANCE_DEPRECATED(message) are removed before the return type is classified.
 // It cannot detect a same-size integer type confusion beyond the signed and
 // unsigned integer classes it models.
@@ -37,11 +41,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/lance-format/lance-go/internal/tools/headeridentity"
 	"github.com/lance-format/lance-go/internal/tools/reporoot"
 )
 
 func main() {
-	headerPath := flag.String("header", os.Getenv("LANCE_C_HEADER"), "path to include/lance/lance.h from the pinned lance-c commit (absolute path; relative values resolve from the internal/tools module directory; default: $LANCE_C_HEADER)")
+	headerPath := flag.String("header", os.Getenv("LANCE_C_HEADER"), "path to include/lance/lance.h or the include/lance directory from the pinned lance-c commit (absolute path; relative values resolve from the internal/tools module directory; default: $LANCE_C_HEADER)")
+	headerManifest := flag.String("header-manifest", "", "expected HEADER-MANIFEST for a directory header set (absolute path; relative values resolve from the internal/tools module directory)")
+	headerIdentity := flag.String("header-identity", "", "expected composite SHA-256 of a directory header set; defaults to upstreamHeaderIdentitySHA256 when the pin records one")
 	root := flag.String("root", "", "lance-go repository root (absolute path; relative values resolve from the internal/tools module directory; default: discovered from the current directory)")
 	flag.Parse()
 
@@ -54,17 +61,24 @@ func main() {
 		*root = discovered
 	}
 
-	if err := run(*root, *headerPath); err != nil {
+	if err := run(*root, headerInput{path: *headerPath, manifestPath: *headerManifest, identity: *headerIdentity}); err != nil {
 		fmt.Fprintf(os.Stderr, "check-abi-symbols: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 type pin struct {
-	repo      string
-	release   string
-	commit    string
-	headerSHA string
+	repo              string
+	release           string
+	commit            string
+	headerSHA         string
+	headerIdentitySHA string
+}
+
+type headerInput struct {
+	path         string
+	manifestPath string
+	identity     string
 }
 
 type boundSymbol struct {
@@ -83,7 +97,7 @@ type cFunc struct {
 	params []string
 }
 
-func run(root, headerPath string) error {
+func run(root string, input headerInput) error {
 	upstream, model, err := parseGo(root)
 	if err != nil {
 		return err
@@ -98,16 +112,38 @@ func run(root, headerPath string) error {
 	}
 
 	headerHint := fmt.Sprintf("git -C /path/to/lance-c show %s:include/lance/lance.h > lance.h", upstream.commit)
-	if headerPath == "" {
+	if input.path == "" {
 		return fmt.Errorf("no header supplied; export the pinned header and pass it with -header or LANCE_C_HEADER:\n  %s", headerHint)
 	}
+	info, err := os.Stat(input.path)
+	if err != nil {
+		return fmt.Errorf("inspect header input %s: %w", input.path, err)
+	}
 
-	data, err := os.ReadFile(headerPath)
+	if info.IsDir() {
+		header, identity, count, err := checkHeaderDirectory(input, upstream)
+		if err != nil {
+			return err
+		}
+		if err := verify(upstream, model, header); err != nil {
+			return err
+		}
+		fmt.Printf("check-abi-symbols: verified %d bindings against %d headers in %s (lance-c %s %s, header identity sha256 %s)\n",
+			len(model.symbols), count, input.path, upstream.release, upstream.commit, identity)
+		return nil
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("header input %s is not a regular file or directory", input.path)
+	}
+	if input.manifestPath != "" || input.identity != "" {
+		return fmt.Errorf("-header-manifest and -header-identity require -header to name an include/lance directory")
+	}
+
+	data, err := os.ReadFile(input.path)
 	if err != nil {
 		return fmt.Errorf("read header: %w", err)
 	}
-	sum := sha256.Sum256(data)
-	actualSHA := hex.EncodeToString(sum[:])
+	actualSHA := sha256Hex(data)
 	if actualSHA != upstream.headerSHA {
 		return fmt.Errorf("header sha256 is %s, want %s for lance-c %s (%s); export the pinned revision:\n  %s\nUpdate upstreamHeaderSHA256 only when re-pinning intentionally",
 			actualSHA, upstream.headerSHA, upstream.release, upstream.commit, headerHint)
@@ -115,15 +151,73 @@ func run(root, headerPath string) error {
 
 	header, err := parseHeader(data)
 	if err != nil {
-		return fmt.Errorf("parse %s: %w", headerPath, err)
+		return fmt.Errorf("parse %s: %w", input.path, err)
 	}
 	if err := verify(upstream, model, header); err != nil {
 		return err
 	}
 
 	fmt.Printf("check-abi-symbols: verified %d bindings against %s (lance-c %s %s, header sha256 %s)\n",
-		len(model.symbols), headerPath, upstream.release, upstream.commit, upstream.headerSHA)
+		len(model.symbols), input.path, upstream.release, upstream.commit, upstream.headerSHA)
 	return nil
+}
+
+// checkHeaderDirectory verifies a split include/lance directory against an
+// independently supplied manifest or composite identity and parses the union
+// of its headers. Type-only headers may contribute zero declarations, but a
+// malformed declaration or a duplicate across files is still an error.
+func checkHeaderDirectory(input headerInput, upstream *pin) (map[string]cFunc, string, int, error) {
+	expectedIdentity := input.identity
+	if expectedIdentity == "" {
+		expectedIdentity = upstream.headerIdentitySHA
+	}
+	var expectedManifest []byte
+	if input.manifestPath != "" {
+		data, err := os.ReadFile(input.manifestPath)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("read expected header manifest %s: %w", input.manifestPath, err)
+		}
+		if _, err := headeridentity.Parse(data); err != nil {
+			return nil, "", 0, fmt.Errorf("expected header manifest %s: %w", input.manifestPath, err)
+		}
+		manifestIdentity := sha256Hex(data)
+		if expectedIdentity != "" && expectedIdentity != manifestIdentity {
+			return nil, "", 0, fmt.Errorf("expected header manifest %s has sha256 %s, but the supplied identity is %s", input.manifestPath, manifestIdentity, expectedIdentity)
+		}
+		expectedIdentity = manifestIdentity
+		expectedManifest = data
+	}
+	if expectedIdentity == "" {
+		return nil, "", 0, fmt.Errorf("directory header set requires an expected identity; pass -header-identity or -header-manifest, or record upstreamHeaderIdentitySHA256 in the pin")
+	}
+
+	files, identity, err := headeridentity.Verify(input.path, expectedManifest, expectedIdentity)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	union := make(map[string]cFunc)
+	sources := make(map[string]string)
+	for _, file := range files {
+		data, err := os.ReadFile(filepath.Join(input.path, filepath.Base(file.Path)))
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("read %s: %w", file.Path, err)
+		}
+		declarations, err := parseHeaderAllowEmpty(data)
+		if err != nil {
+			return nil, "", 0, fmt.Errorf("parse %s: %w", file.Path, err)
+		}
+		for name, declaration := range declarations {
+			if previous, ok := sources[name]; ok {
+				return nil, "", 0, fmt.Errorf("duplicate declaration of %s in %s and %s", name, previous, file.Path)
+			}
+			sources[name] = file.Path
+			union[name] = declaration
+		}
+	}
+	if len(union) == 0 {
+		return nil, "", 0, fmt.Errorf("no lance_* function declarations found in the header set")
+	}
+	return union, identity, len(files), nil
 }
 
 func parseGo(root string) (*pin, *bindingsModel, error) {
@@ -252,6 +346,10 @@ func parseGo(root string) (*pin, *bindingsModel, error) {
 	upstream.release = constants["upstreamRelease"]
 	upstream.commit = constants["upstreamCommit"]
 	upstream.headerSHA = constants["upstreamHeaderSHA256"]
+	upstream.headerIdentitySHA = constants["upstreamHeaderIdentitySHA256"]
+	if upstream.headerIdentitySHA != "" && !headeridentity.ValidDigest(upstream.headerIdentitySHA) {
+		return nil, nil, fmt.Errorf("upstreamHeaderIdentitySHA256 %q is not a lowercase SHA-256", upstream.headerIdentitySHA)
+	}
 
 	if len(model.symbols) == 0 {
 		return nil, nil, fmt.Errorf("no []symbol{{...}} binding list found in %s", dir)
@@ -264,6 +362,21 @@ var commentLine = regexp.MustCompile(`//[^\n]*`)
 var lanceFunc = regexp.MustCompile(`\b(lance_[A-Za-z0-9_]+)[ \t\r\n]*\(`)
 
 func parseHeader(src []byte) (map[string]cFunc, error) {
+	funcs, err := parseHeaderAllowEmpty(src)
+	if err != nil {
+		return nil, err
+	}
+	if len(funcs) == 0 {
+		return nil, fmt.Errorf("no lance_* function declarations found")
+	}
+	return funcs, nil
+}
+
+// parseHeaderAllowEmpty is parseHeader without the requirement that a file
+// contributes at least one lance_* declaration. It exists for type-only
+// headers such as fwd.h, which are part of the identity but contain no
+// function declarations. Real parse errors still fail.
+func parseHeaderAllowEmpty(src []byte) (map[string]cFunc, error) {
 	text := stripComments(string(src))
 	funcs := map[string]cFunc{}
 
@@ -296,11 +409,12 @@ func parseHeader(src []byte) (map[string]cFunc, error) {
 		}
 		funcs[name] = cFunc{name: name, result: prefix, params: params}
 	}
-
-	if len(funcs) == 0 {
-		return nil, fmt.Errorf("no lance_* function declarations found")
-	}
 	return funcs, nil
+}
+
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // stripDeclarationAttributes removes the compile-time annotations lance-c

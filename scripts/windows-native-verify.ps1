@@ -4,12 +4,14 @@
 # lane, and on amd64 a CGO 1 -race lane when the selected toolchain and host
 # compiler support it.
 #
-# The DLL, its import library, and the header come from the official lance-c
-# release archive pinned in internal/ffi/upstream.go. The shared acquisition
-# tool verifies the published per-asset checksum, the pinned header hash, and
-# the PE machine before this script copies the published bytes into the staging
-# tree. This script never builds lance-c from source and never falls back to a
-# source build; a missing or mismatched asset fails the run.
+# The DLL, its import library, and the header set come from the official
+# lance-c release archive pinned in internal/ffi/upstream.go. The shared
+# acquisition tool verifies the published per-asset checksum, the pinned header
+# identity, and the PE machine. Its record keeps header= for file consumers and
+# adds abi_header=, which selects the validated single file or split directory
+# for the ABI checker; this script stages and uses both. It never builds lance-c
+# from source and never falls back to a source build; a missing or mismatched
+# asset fails the run.
 #
 # PE provenance, export/header agreement, delay-load and import closure, the
 # native C consumer, and the Go lanes all run on the staged DLL. Only after
@@ -1026,16 +1028,38 @@ try {
 	$sourceDll = $acquisition["library"]
 	$sourceImportLib = $acquisition["import_library"]
 	$sourceHeader = $acquisition["header"]
+	$sourceAbiHeader = ""
+	if ($acquisition.ContainsKey("abi_header")) {
+		$sourceAbiHeader = $acquisition["abi_header"]
+	}
+	if ([string]::IsNullOrWhiteSpace($sourceAbiHeader)) {
+		$sourceAbiHeader = $sourceHeader
+	}
 	foreach ($path in @($sourceDll, $sourceImportLib, $sourceHeader)) {
 		if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
 			throw "acquired native input is missing: $path"
 		}
 	}
+	if (-not (Test-Path -LiteralPath $sourceAbiHeader)) {
+		throw "acquired ABI header input is missing: $sourceAbiHeader"
+	}
 	Copy-Item -LiteralPath $sourceDll -Destination (Join-Path $StageDir "bin\lance_c.dll") -Force
 	Copy-Item -LiteralPath $sourceImportLib -Destination (Join-Path $StageDir "lib\lance_c.dll.lib") -Force
 	$stageIncludeLance = Join-Path $StageDir "include\lance"
 	New-Item -ItemType Directory -Force -Path $stageIncludeLance | Out-Null
-	Copy-Item -LiteralPath $sourceHeader -Destination (Join-Path $stageIncludeLance "lance.h") -Force
+	if (Test-Path -LiteralPath $sourceAbiHeader -PathType Container) {
+		$sourceHeaders = @(Get-ChildItem -LiteralPath $sourceAbiHeader -Filter "*.h" -File)
+		if ($sourceHeaders.Count -eq 0) {
+			throw "acquired ABI header directory has no *.h files: $sourceAbiHeader"
+		}
+		foreach ($source in $sourceHeaders) {
+			Copy-Item -LiteralPath $source.FullName -Destination (Join-Path $stageIncludeLance $source.Name) -Force
+		}
+		$stagedAbiHeader = $stageIncludeLance
+	} else {
+		Copy-Item -LiteralPath $sourceAbiHeader -Destination (Join-Path $stageIncludeLance "lance.h") -Force
+		$stagedAbiHeader = Join-Path $stageIncludeLance "lance.h"
+	}
 	$stagedDll = Join-Path $StageDir "bin\lance_c.dll"
 	$stagedHeader = Join-Path $StageDir "include\lance\lance.h"
 	$importLib = Join-Path $StageDir "lib\lance_c.dll.lib"
@@ -1166,7 +1190,11 @@ try {
 		throw "dumpbin /exports found no named exports in $stagedDll"
 	}
 
-	$headerText = Get-Content -Raw -LiteralPath $stagedHeader
+	$headerFiles = @(Get-ChildItem -LiteralPath $stageIncludeLance -Filter "*.h" -File | Sort-Object Name)
+	if ($headerFiles.Count -eq 0) {
+		throw "staged ABI header directory has no *.h files: $stageIncludeLance"
+	}
+	$headerText = ($headerFiles | ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 	$headerText = [regex]::Replace($headerText, "(?s)/\*.*?\*/", "")
 	$headerText = [regex]::Replace($headerText, "//[^\n]*", "")
 	$headerPattern = "(?m)^[ \t]*(?!typedef\b|struct\b|enum\b|union\b|#)(?:[A-Za-z_][A-Za-z0-9_]*[ \t*]+)+?(lance_[A-Za-z0-9_]+)[ \t]*\("
@@ -1410,7 +1438,7 @@ try {
 	Write-Log "import closure: $script:CrtImportClosure"
 
 	$script:Step = "abi-checker"
-	$env:LANCE_C_HEADER = $stagedHeader
+	$env:LANCE_C_HEADER = $stagedAbiHeader
 	$abiLog = Join-Path $EvidenceDir "abi-check.log"
 	Push-Location $RepoRoot
 	try {

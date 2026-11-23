@@ -96,12 +96,24 @@ takes a long time.
 
 CI and release packaging do not use this path. They acquire the official release
 archive for `upstreamRelease` through `internal/tools/fetch-lance-c-release`,
-which verifies the published per-asset checksum, the pinned header hash, and the
-target machine. It also compares the acquired library with the
+which verifies the published per-asset checksum, the pinned header identity, and
+the target machine. It also compares the acquired library with the
 `UncompressedSHA256` that the adopted artifact module declares; after a pin bump
 that check stays inactive until the new modules are published. Build from source
 when you are changing `lance-c`, or when the pin has no matching release
 archive.
+
+A legacy archive ships only `include/lance/lance.h`, which is verified against
+`upstreamHeaderSHA256`. A split archive ships every public
+`include/lance/*.h`; the tool extracts all of them, excludes `lance.hpp`, and
+requires an independent composite identity from `-expected-header-identity`,
+`-expected-header-manifest`, or the optional `upstreamHeaderIdentitySHA256` pin
+constant. The identity is the SHA-256 of the sorted
+`include/lance/<name> <sha256>` manifest text, and the acquisition writes
+`HEADER-MANIFEST` plus `COMPOSITE-SHA256` for split archives. The acquisition
+record keeps `header=` as the legacy single file for file consumers and adds
+`abi_header=` as the path to pass to the ABI checker; `scripts/abi-checker-input.sh`
+selects it and falls back to `header=` for historical records.
 
 ## Pinned ABI and verification
 
@@ -130,11 +142,17 @@ versions, and adopted in the selectors and root requirements together. Follow
 [RELEASING.md](../RELEASING.md) for the exact source, package, publication and
 verification sequence.
 
-The checker refuses a header whose SHA-256 differs from the pin, then verifies
-that every bound symbol is declared, that C and Go agree on arity, and that
-parameters and return values are pointer or integer classes that `purego` maps
-compatibly. It does not model struct layout or distinguish same-width integer
-types beyond their signedness and integer width.
+For a single legacy header, the checker refuses bytes whose SHA-256 differs from
+`upstreamHeaderSHA256`. For a split release, pass the `include/lance` directory
+with `-header` and supply `-header-manifest` or `-header-identity` (the pin's
+optional `upstreamHeaderIdentitySHA256` is another source). The directory check
+reports missing, changed and unexpected headers before parsing the union of all
+files. Type-only headers such as `fwd.h` may contain no `lance_*` function
+declarations but remain part of the manifest. The checker then verifies that every bound
+symbol is declared, that C and Go agree on arity, and that parameters and return
+values are pointer or integer classes that `purego` maps compatibly. It does not
+model struct layout or distinguish same-width integer types beyond their
+signedness and integer width.
 
 ## Native error contract
 

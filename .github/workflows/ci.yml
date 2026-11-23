@@ -154,17 +154,17 @@ jobs:
             -out "$out" | tee "$RUNNER_TEMP/lance-c-acquisition.txt"
           record="$out/acquisition.txt"
           library="$(sed -n 's/^library=//p' "$record")"
-          header="$(sed -n 's/^header=//p' "$record")"
-          if [[ -z $library || -z $header ]]; then
-            echo "acquisition record did not report the library and header" >&2
+          abi_header="$(./scripts/abi-checker-input.sh "$record")"
+          if [[ -z $library || -z $abi_header ]]; then
+            echo "acquisition record did not report the library and ABI header input" >&2
             exit 1
           fi
           echo "path=$library" >> "$GITHUB_OUTPUT"
-          echo "header=$header" >> "$GITHUB_OUTPUT"
+          echo "abi_header=$abi_header" >> "$GITHUB_OUTPUT"
 
       - name: Check ABI against published header
         env:
-          LANCE_C_HEADER: ${{ steps.lance-c.outputs.header }}
+          LANCE_C_HEADER: ${{ steps.lance-c.outputs.abi_header }}
         run: |
           set -euo pipefail
           go -C internal/tools run ./check-abi-symbols
