@@ -11,10 +11,11 @@ import (
 )
 
 // TestRecordBatchRoundTripSupportedTypes walks representative valid Arrow
-// record batches through the C data interface and back. Each case checks the
-// schema, row count, values and nulls, and that both sides release their own
-// references: the checked allocator returns to zero and the exporter handle is
-// gone.
+// record batches through the C data interface and back. Each case exports and
+// imports the schema independently, then uses the imported schema to import
+// the batch. It checks schema, row count, values and nulls, and that both sides
+// release their own references: the checked allocator returns to zero and the
+// exporter handles are gone.
 func TestRecordBatchRoundTripSupportedTypes(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -79,7 +80,6 @@ func TestRecordBatchRoundTripSupportedTypes(t *testing.T) {
 				point.Append(true)
 				x.AppendNull()
 				point.Append(false)
-				x.Append(9)
 			},
 		},
 		{
@@ -120,7 +120,19 @@ func TestRecordBatchRoundTripSupportedTypes(t *testing.T) {
 			if err := ExportRecordBatch(batch, &exported); err != nil {
 				t.Fatalf("ExportRecordBatch: %v", err)
 			}
-			imported, err := ImportRecordBatch(&exported, tc.schema)
+			var exportedSchema ArrowSchema
+			if err := ExportSchema(tc.schema, &exportedSchema); err != nil {
+				ReleaseArray(&exported)
+				t.Fatalf("ExportSchema: %v", err)
+			}
+			schema, err := ImportSchema(&exportedSchema)
+			ReleaseSchema(&exportedSchema)
+			if err != nil {
+				ReleaseArray(&exported)
+				t.Fatalf("ImportSchema: %v", err)
+			}
+
+			imported, err := ImportRecordBatch(&exported, schema)
 			if err != nil {
 				t.Fatalf("ImportRecordBatch: %v", err)
 			}

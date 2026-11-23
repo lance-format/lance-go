@@ -65,7 +65,6 @@ func newBenchmarkRecordBatch(b *testing.B) (arrow.RecordBatch, *arrow.Schema) {
 func BenchmarkExportRecordBatch(b *testing.B) {
 	batch, _ := newBenchmarkRecordBatch(b)
 	b.ReportAllocs()
-	b.ReportMetric(benchmarkBatchRows, "rows/op")
 
 	for b.Loop() {
 		var exported ArrowArray
@@ -77,6 +76,7 @@ func BenchmarkExportRecordBatch(b *testing.B) {
 			b.Fatal("exported record batch was not released")
 		}
 	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
 }
 
 // BenchmarkImportRecordBatch measures importing a C record batch produced from
@@ -86,7 +86,6 @@ func BenchmarkExportRecordBatch(b *testing.B) {
 func BenchmarkImportRecordBatch(b *testing.B) {
 	batch, schema := newBenchmarkRecordBatch(b)
 	b.ReportAllocs()
-	b.ReportMetric(benchmarkBatchRows, "rows/op")
 
 	for b.Loop() {
 		b.StopTimer()
@@ -106,6 +105,7 @@ func BenchmarkImportRecordBatch(b *testing.B) {
 			b.Fatalf("imported rows = %d, want %d", rows, benchmarkBatchRows)
 		}
 	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
 }
 
 // BenchmarkCopyBorrowedRecordBatch measures the copy path used when a borrowed
@@ -115,7 +115,6 @@ func BenchmarkImportRecordBatch(b *testing.B) {
 func BenchmarkCopyBorrowedRecordBatch(b *testing.B) {
 	batch, schema := newBenchmarkRecordBatch(b)
 	b.ReportAllocs()
-	b.ReportMetric(benchmarkBatchRows, "rows/op")
 
 	for b.Loop() {
 		b.StopTimer()
@@ -143,4 +142,5 @@ func BenchmarkCopyBorrowedRecordBatch(b *testing.B) {
 			b.Fatalf("copied rows = %d, want %d", rows, benchmarkBatchRows)
 		}
 	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
 }
