@@ -49,5 +49,9 @@ jobs:
           bash -n scripts/test-go-module-origin.sh
           bash -n scripts/test-publish-go-module-origin.sh
           bash -n scripts/go-module-origin/publisher-fixture-test.sh
+          bash -n scripts/go-module-origin/fixture-protocol-test.sh
+          bash -n scripts/go-module-origin/stage-fixture-test.sh
+          python3 -m py_compile scripts/go-module-origin/verify-candidate-identity.py
           scripts/go-module-origin/publisher-fixture-test.sh
           scripts/go-module-origin/fixture-protocol-test.sh
+          scripts/go-module-origin/stage-fixture-test.sh

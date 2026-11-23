@@ -27,9 +27,12 @@ until a reviewed identity file replaces them.
 
 ## Local generation
 
-Normalize artifact downloads into `candidates/<target>/module`, then:
+Normalize the exact hosted extraction trees with `stage-candidates.sh` (Unix artifacts have `module/` at the artifact root; Windows artifacts have `<target>/module/`), then:
 
 ```sh
+scripts/go-module-origin/stage-candidates.sh /path/to/downloads /path/to/candidates
+python3 scripts/go-module-origin/verify-candidate-identity.py \
+  scripts/go-module-origin/v0.2.0-preview.1.identity.json /path/to/candidates
 CANDIDATES_DIR=/path/to/candidates \
 OUT_DIR=$HOME/Code/experiments/lance-go-module-origin/v0.2.0-preview.1 \
 scripts/build-go-module-origin.sh

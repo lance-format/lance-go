@@ -104,22 +104,12 @@ jobs:
           github-token: ${{ github.token }}
 
       - name: Normalize candidate directory
+        env:
+          DOWNLOADS: ${{ runner.temp }}/downloads
+          CANDIDATES: ${{ runner.temp }}/candidates
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/candidates"
-          for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
-            mkdir -p "$RUNNER_TEMP/candidates/$target"
-          done
-          cp -a "$RUNNER_TEMP/downloads/unix-linux-amd64/module" "$RUNNER_TEMP/candidates/linux-amd64/module"
-          cp -a "$RUNNER_TEMP/downloads/unix-linux-arm64/module" "$RUNNER_TEMP/candidates/linux-arm64/module"
-          cp -a "$RUNNER_TEMP/downloads/unix-darwin-arm64/module" "$RUNNER_TEMP/candidates/darwin-arm64/module"
-          cp -a "$RUNNER_TEMP/downloads/windows-amd64/windows-amd64/module" "$RUNNER_TEMP/candidates/windows-amd64/module"
-          cp -a "$RUNNER_TEMP/downloads/windows-arm64/windows-arm64/module" "$RUNNER_TEMP/candidates/windows-arm64/module"
-          for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
-            test -f "$RUNNER_TEMP/candidates/$target/artifact.go"
-            test -f "$RUNNER_TEMP/candidates/$target/go.mod"
-            test "$(find "$RUNNER_TEMP/candidates/$target" -maxdepth 1 -name '*.zst' | wc -l)" -eq 1
-          done
+          scripts/go-module-origin/stage-candidates.sh "$DOWNLOADS" "$CANDIDATES"
 
       - name: Verify candidate identity
         env:
@@ -127,26 +117,7 @@ jobs:
           CANDIDATES: ${{ runner.temp }}/candidates
         run: |
           set -euo pipefail
-          python3 - "$IDENTITY" "$CANDIDATES" <<'PY'
-          import hashlib, json, pathlib, sys
-          identity = json.load(open(sys.argv[1], encoding="utf-8"))
-          root = pathlib.Path(sys.argv[2])
-          assert identity["version"] == "v0.2.0-preview.1"
-          assert identity["time"] == "2026-11-23T06:10:00Z"
-          assert identity["source_commit"] == "f0f1e987f298e4b41c4cf60e6a455c2249e0a5eb"
-          for target, expected in identity["targets"].items():
-              module = root / target
-              payload = next(module.glob("*.zst"))
-              for name, key in [
-                  ("artifact.go", "candidate_artifact_go_sha256"),
-                  ("go.mod", "candidate_go_mod_sha256"),
-              ]:
-                  got = hashlib.sha256((module / name).read_bytes()).hexdigest()
-                  assert got == expected[key], (target, name, got, expected[key])
-              got = hashlib.sha256(payload.read_bytes()).hexdigest()
-              assert got == expected["candidate_payload_sha256"], (target, "payload", got)
-          print("candidate identity: ok")
-          PY
+          python3 scripts/go-module-origin/verify-candidate-identity.py "$IDENTITY" "$CANDIDATES"
 
       - name: Generate origin
         env:
