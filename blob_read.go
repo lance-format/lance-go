@@ -54,7 +54,8 @@ type BlobRangeRequest struct {
 // reader. The schema is row_address: UInt64 (non-null), data: LargeBinary
 // (nullable). A null blob produces a null data value; an empty blob produces a
 // non-null empty value. Batches own their buffers and stay valid after the
-// reader is released and after the dataset is closed.
+// reader is released and after the dataset is closed. BlobRecords iterates the
+// same read with a for loop and owns the stream.
 //
 // The context is checked before planning and between batches. Native planning
 // and payload I/O cannot be interrupted once a call is in flight.
@@ -86,6 +87,7 @@ func (d *Dataset) ReadBlobs(ctx context.Context, column string, selector BlobRow
 // row_address: UInt64 (non-null), offset: UInt64 (non-null), length: UInt64
 // (non-null), data: LargeBinary (nullable). request_index preserves the
 // zero-based input position for duplicate and unordered requests.
+// BlobRangeRecords iterates the same read with a for loop and owns the stream.
 //
 // The context is checked before planning and between batches. Native planning
 // and payload I/O cannot be interrupted once a call is in flight.

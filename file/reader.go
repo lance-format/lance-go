@@ -226,7 +226,8 @@ func (r *Reader) ReadGlobalBuffer(ctx context.Context, index uint32) ([]byte, er
 }
 
 // ReadAll streams all rows. The returned reader is independent of this Reader
-// and remains valid after Close.
+// and remains valid after Close. Records iterates the same rows with a for
+// loop and owns the stream.
 func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordReader, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
@@ -248,7 +249,8 @@ func (r *Reader) ReadAll(ctx context.Context, opts ReadOptions) (array.RecordRea
 	return newRecordReader(ctx, stream), nil
 }
 
-// ReadRange streams numRows rows starting at offset.
+// ReadRange streams numRows rows starting at offset. RecordsRange iterates
+// the same rows with a for loop and owns the stream.
 func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts ReadOptions) (array.RecordReader, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
@@ -275,7 +277,8 @@ func (r *Reader) ReadRange(ctx context.Context, offset, numRows uint64, opts Rea
 
 // ReadIndices streams rows at strictly increasing, unique row indices.
 // An empty slice reads no rows. Invalid ordering is rejected by the native
-// reader, either here or while advancing the returned stream.
+// reader, either here or while advancing the returned stream. RecordsIndices
+// iterates the same rows with a for loop and owns the stream.
 func (r *Reader) ReadIndices(ctx context.Context, indices []uint32, opts ReadOptions) (array.RecordReader, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err

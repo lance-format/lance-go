@@ -9,6 +9,27 @@ per-target library checksums. Versions follow Semantic Versioning; within
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.0] - Unreleased
+
+`v0.3.0` is the next minor release. It keeps the
+`github.com/lance-format/lance-go` module path and the published
+`array.RecordReader`-returning methods, and adds the record iterators below.
+Adopting them is optional.
+
+### Added
+
+- `file.Reader.Records`, `file.Reader.RecordsRange` and
+  `file.Reader.RecordsIndices` return `iter.Seq2[arrow.RecordBatch, error]`
+  over the same rows as `ReadAll`, `ReadRange` and `ReadIndices`. The stream
+  opens when iteration starts and is released when iteration ends, including
+  an early break, an error and a cancelled context, so callers no longer write
+  the `Release`/`Next`/`Err` loop. The parent `Reader` stays usable and each
+  yielded batch stays borrowed until iteration advances.
+- `Dataset.BlobRecords` and `Dataset.BlobRangeRecords` iterate the reads of
+  `ReadBlobs` and `ReadBlobRanges` with the stream lifecycle and borrowing
+  rules of the file iterators. Creating the sequence plans nothing; the parent
+  `Dataset` stays usable and the caller releases no stream.
+
 ## [v0.2.0] - Unreleased
 
 `v0.2.0` is the next minor release. It bundles `lance-c v0.2.1-beta.3` through

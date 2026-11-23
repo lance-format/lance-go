@@ -400,7 +400,9 @@ it executes.
 A scanner is single-use. Each batch yielded by `Records` is borrowed until
 iteration advances: call `Retain` before keeping it and later call `Release`.
 Ending iteration, including an early break, closes the scanner. Alternatively,
-`ToArrowReader` returns a reader whose final `Release` closes the scanner.
+`ToArrowReader` returns a reader whose final `Release` closes the scanner. The
+`file.Reader` record iterators and the dataset blob iterators borrow batches the
+same way and release their streams on any exit.
 Batches returned by `Take` and `TakeRows` are owned by the caller and must each
 be released.
 
@@ -655,23 +657,24 @@ if err != nil {
 }
 fmt.Println(info.NumRows, info.NumColumns)
 
-rr, err := r.ReadAll(ctx, file.ReadOptions{})
-if err != nil {
-    log.Fatal(err)
-}
-defer rr.Release()
-for rr.Next() {
-    batch := rr.RecordBatch()
-    _ = batch // borrowed until the next Next call
-}
-if err := rr.Err(); err != nil {
-    log.Fatal(err)
+for batch, err := range r.Records(ctx, file.ReadOptions{}) {
+    if err != nil {
+        log.Fatal(err)
+    }
+    _ = batch // borrowed until iteration advances
 }
 ```
 
-`Reader` reads all rows, a row range, or explicit row indices; each returns an
-`array.RecordReader`. Batches are borrowed until the next `Next` call; call
-`Retain` before keeping one. `Reader.ReadGlobalBuffer(0)` returns the serialized
+`Reader` reads all rows, a row range, or explicit row indices. Each `ReadAll`,
+`ReadRange` and `ReadIndices` returns an `array.RecordReader` for Arrow
+interop. The matching `Records`, `RecordsRange` and `RecordsIndices` iterators
+open the stream when iteration starts and release it when iteration ends,
+including an early break and an error, so the caller releases no stream and the
+`Reader` stays usable. For an `array.RecordReader` you already hold,
+`array.IterFromReader` gives the same loop shape, but the caller keeps its own
+reference and must release it. Batches are borrowed until iteration advances;
+call `Retain` before keeping one, including the batch current at a break.
+`Reader.ReadGlobalBuffer(0)` returns the serialized
 schema and user buffers start at index 1. `Writer` accepts Arrow batches and
 can add schema metadata and global buffers. `Session` provides local
 `contains`, `list`, `list_with_delimiter`, byte-range read, upload, download,
@@ -767,6 +770,11 @@ their buffers and survive reader release and dataset close; release batches
 kept across `Next` calls. The context is checked before planning and between
 batches, but a native planning or payload call already in flight cannot be
 interrupted.
+
+`BlobRecords` and `BlobRangeRecords` iterate the same planned reads: the plan
+starts when iteration starts, every exit releases the stream, the dataset stays
+usable, and the caller releases no stream. Batches still own their buffers but
+stay borrowed until iteration advances; call `Retain` before keeping one.
 
 `WithBlobHandling` controls scanner output for blob columns. The default
 descriptor mode keeps other binary columns inline; `BlobHandlingAllBinary`
@@ -1298,8 +1306,9 @@ back to the root sentinel.
 ## Context cancellation
 
 Methods that accept a `context.Context` check it before acquiring a native
-handle or starting native work. Iterative APIs such as scanner records also
-check between batches. Cancellation is cooperative: once a synchronous native
+handle or starting native work. Iterative APIs such as scanner records and the
+reader and blob iterators also check between batches. Cancellation is
+cooperative: once a synchronous native
 write, index build, compaction, optimization, cleanup or namespace request has
 started, it cannot be interrupted.
 
