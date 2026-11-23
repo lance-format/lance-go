@@ -16,6 +16,17 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
 
 ### Added
 
+- `file.Reader.Records`, `file.Reader.RecordsRange` and
+  `file.Reader.RecordsIndices` return `iter.Seq2[arrow.RecordBatch, error]`
+  over the same rows as `ReadAll`, `ReadRange` and `ReadIndices`. The stream
+  opens when iteration starts and is released when iteration ends, including
+  an early break, an error and a cancelled context, so callers no longer write
+  the `Release`/`Next`/`Err` loop. The parent `Reader` stays usable and each
+  yielded batch stays borrowed until iteration advances.
+- `Dataset.BlobRecords` and `Dataset.BlobRangeRecords` iterate the reads of
+  `ReadBlobs` and `ReadBlobRanges` with the stream lifecycle and borrowing
+  rules of the file iterators. Creating the sequence plans nothing; the parent
+  `Dataset` stays usable and the caller releases no stream.
 - `namespace.ErrorCode.String()` returns the native Lance Namespace name for
   every pinned code, and `namespace.Error` prints that name with the operation
   and code space, for example
@@ -88,6 +99,10 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   `ErrInvalidArgument` for a nil provider, and
   `file.NewStorageOptionsFromAccessor` does the same for a nil accessor. A
   non-nil zero accessor is returned unchanged and behaves as already closed.
+- The reader returned by `Scanner.ToArrowReader` releases safely while a
+  `Next` call is blocked: the final `Release` wakes that call and releases a
+  batch that arrives after release. At end of stream, a `WithScanStatistics`
+  callback may call `Next` on the same reader and receives `false`.
 - Direct namespace calls classify column-not-found as not found. The pinned
   native implementation reports `TableColumnNotFound` (12) in the not-found
   group, and `lance-c` maps it to `LANCE_ERR_NOT_FOUND`. `namespace.IsNotFound`
