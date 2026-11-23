@@ -369,10 +369,10 @@ type bindings struct {
 	fileReaderClose                    func(reader uintptr)
 	fileMetadataGetInfo                func(metadata uintptr, out *fileMetadataInfo) int32
 	fileMetadataGetSchema              func(metadata uintptr, out *cdata.ArrowSchema) int32
-	fileMetadataGetGlobalBuffers       func(metadata uintptr, outBuffers **fileBufferDescriptor, outCount *uint64) int32
-	fileMetadataGetColumns             func(metadata uintptr, outColumns **fileColumnMetadata, outCount *uint64) int32
+	fileMetadataGetGlobalBuffers       func(metadata uintptr, outBuffers *uintptr, outCount *uint64) int32
+	fileMetadataGetColumns             func(metadata uintptr, outColumns *uintptr, outCount *uint64) int32
 	fileMetadataClose                  func(metadata uintptr)
-	fileStatisticsGetColumns           func(statistics uintptr, outColumns **fileColumnStatistics, outCount *uint64) int32
+	fileStatisticsGetColumns           func(statistics uintptr, outColumns *uintptr, outCount *uint64) int32
 	fileStatisticsClose                func(statistics uintptr)
 	fileWriterOpen                     func(uri string, schema *cdata.ArrowSchema, options *fileWriterOptions, storageOptions uintptr, session uintptr) uintptr
 	fileWriterWriteBatch               func(writer uintptr, batch uintptr) int32
