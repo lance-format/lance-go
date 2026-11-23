@@ -110,9 +110,9 @@ or when the pin has no matching release archive.
 - the exact commit (`upstreamCommit`),
 - the SHA-256 of `include/lance/lance.h` at that commit.
 
-`lance-c` has no version symbol in the pinned ABI, so a loaded library cannot
-be identified at runtime. Provenance is checked at build
-time instead:
+The Go package does not bind lance-c's `lance_c_version`, so the SDK does not
+report or check a loaded library's version at runtime. Provenance is checked
+at build time instead:
 
 ```console
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
@@ -195,6 +195,12 @@ env -u LANCE_LIB_PATH XDG_CACHE_HOME="$(mktemp -d)" \
   -run '^TestRTreeRejectedByLegacyNative$' -count=1 -v .
 ```
 
+`TestFragmentTakeExplicitEmptyProjection` covers the fragment projection
+compatibility contract from lance-c v0.2.1-beta.1: an explicit empty column
+list returns a zero-column batch with the requested row count, while a nil
+column list still selects the full schema. It runs in the default suite against
+the bundled library.
+
 `internal/benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
 long-running repeated use of the public API. CI compiles the package and runs
 its tests, but does not execute the long benchmark.
@@ -226,11 +232,14 @@ The race lane also enables Go's pointer checks; native Rust internals are outsid
 Go's race detector.
 
 The CI workflow runs on pull requests and pushes to `main`. It also runs
-[`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh), which executes
-the version-pinned quickstart from an empty directory, checks its literal
-output and selected companion, then reruns the example with the exact companion
-library extracted and a read-only runtime cache. That check uses the published
-modules and does not build Rust or `lance-c`. The default Go lane
+[`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh) in local-source
+mode with `LANCE_GO_QUICKSTART_SOURCE_DIR`, which builds a consumer module that
+replaces the root module with the checkout, checks the roundtrip output and
+selected companion, then reruns the example with the exact companion library
+extracted and a read-only runtime cache. The same job runs the bundled RTree and
+raw Blob v2 regressions from the checkout. Neither step resolves the root
+revision through the public proxy; the companion tag still comes from the public
+proxy and checksum database. The default Go lane
 runs `TestCreateReopenMetadataAndScan` with `LANCE_LIB_PATH` unset and a fresh
 `XDG_CACHE_HOME`, requires it to pass rather than skip, and checks the unpacked
 cache entry's SHA-256. That cache entry can only be created by the registered
