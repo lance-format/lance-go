@@ -72,66 +72,69 @@ func TestNullableHelperEncoding(t *testing.T) {
 	}
 }
 
+type nullableModelEncodingCase struct {
+	name  string
+	model any
+	want  string
+}
+
+var nullableModelEncodingCases = []nullableModelEncodingCase{
+	{"absent", namespace.RefreshMaterializedViewRequest{}, `{}`},
+	{
+		"explicit null",
+		namespace.RefreshMaterializedViewRequest{SrcVersion: namespace.Null[int32]()},
+		`{"src_version":null}`,
+	},
+	{
+		"zero int32",
+		namespace.RefreshMaterializedViewRequest{SrcVersion: namespace.Some(int32(0))},
+		`{"src_version":0}`,
+	},
+	{
+		"empty string",
+		namespace.RefreshMaterializedViewRequest{Manifest: namespace.Some("")},
+		`{"manifest":""}`,
+	},
+	{
+		"zero float64",
+		namespace.MaterializedViewUdtfEntry{NumCpus: namespace.Some(0.0)},
+		`{"kind":"","udtf":"","udtf_sha":"","udtf_name":"","udtf_version":"","num_cpus":0}`,
+	},
+	{
+		"false",
+		namespace.AlterColumnsEntry{Path: "c", Nullable: namespace.Some(false)},
+		`{"path":"c","nullable":false}`,
+	},
+	{
+		"empty list",
+		namespace.AlterVirtualColumnEntry{InputColumns: namespace.Some([]string{})},
+		`{"input_columns":[]}`,
+	},
+	{
+		"nil list",
+		namespace.AlterVirtualColumnEntry{InputColumns: namespace.Some([]string(nil))},
+		`{"input_columns":[]}`,
+	},
+	{
+		"zero nested model",
+		namespace.AlterColumnsEntry{
+			Path:          "c",
+			VirtualColumn: namespace.Some(namespace.AlterVirtualColumnEntry{}),
+		},
+		`{"path":"c","virtual_column":{}}`,
+	},
+	{
+		"null nested model",
+		namespace.AlterColumnsEntry{
+			Path:          "c",
+			VirtualColumn: namespace.Null[namespace.AlterVirtualColumnEntry](),
+		},
+		`{"path":"c","virtual_column":null}`,
+	},
+}
+
 func TestNullableModelEncoding(t *testing.T) {
-	cases := []struct {
-		name  string
-		model any
-		want  string
-	}{
-		{"absent", namespace.RefreshMaterializedViewRequest{}, `{}`},
-		{
-			"explicit null",
-			namespace.RefreshMaterializedViewRequest{SrcVersion: namespace.Null[int32]()},
-			`{"src_version":null}`,
-		},
-		{
-			"zero int32",
-			namespace.RefreshMaterializedViewRequest{SrcVersion: namespace.Some(int32(0))},
-			`{"src_version":0}`,
-		},
-		{
-			"empty string",
-			namespace.RefreshMaterializedViewRequest{Manifest: namespace.Some("")},
-			`{"manifest":""}`,
-		},
-		{
-			"zero float64",
-			namespace.MaterializedViewUdtfEntry{NumCpus: namespace.Some(0.0)},
-			`{"kind":"","udtf":"","udtf_sha":"","udtf_name":"","udtf_version":"","num_cpus":0}`,
-		},
-		{
-			"false",
-			namespace.AlterColumnsEntry{Path: "c", Nullable: namespace.Some(false)},
-			`{"path":"c","nullable":false}`,
-		},
-		{
-			"empty list",
-			namespace.AlterVirtualColumnEntry{InputColumns: namespace.Some([]string{})},
-			`{"input_columns":[]}`,
-		},
-		{
-			"nil list",
-			namespace.AlterVirtualColumnEntry{InputColumns: namespace.Some([]string(nil))},
-			`{"input_columns":[]}`,
-		},
-		{
-			"zero nested model",
-			namespace.AlterColumnsEntry{
-				Path:          "c",
-				VirtualColumn: namespace.Some(namespace.AlterVirtualColumnEntry{}),
-			},
-			`{"path":"c","virtual_column":{}}`,
-		},
-		{
-			"null nested model",
-			namespace.AlterColumnsEntry{
-				Path:          "c",
-				VirtualColumn: namespace.Null[namespace.AlterVirtualColumnEntry](),
-			},
-			`{"path":"c","virtual_column":null}`,
-		},
-	}
-	for _, testCase := range cases {
+	for _, testCase := range nullableModelEncodingCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			encoded, err := json.Marshal(testCase.model)
 			if err != nil {
@@ -144,20 +147,23 @@ func TestNullableModelEncoding(t *testing.T) {
 	}
 }
 
+type nullableModelDecodingCase struct {
+	name    string
+	input   string
+	present bool
+	want    string
+}
+
+var refreshMaterializedViewDecodingCases = []nullableModelDecodingCase{
+	{"absent", `{}`, false, `{}`},
+	{"explicit null", `{"src_version":null}`, true, `{"src_version":null}`},
+	{"zero", `{"src_version":0}`, true, `{"src_version":0}`},
+	{"positive", `{"src_version":12}`, true, `{"src_version":12}`},
+	{"negative", `{"src_version":-3}`, true, `{"src_version":-3}`},
+}
+
 func TestRefreshMaterializedViewRequestDecoding(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   string
-		present bool
-		want    string
-	}{
-		{"absent", `{}`, false, `{}`},
-		{"explicit null", `{"src_version":null}`, true, `{"src_version":null}`},
-		{"zero", `{"src_version":0}`, true, `{"src_version":0}`},
-		{"positive", `{"src_version":12}`, true, `{"src_version":12}`},
-		{"negative", `{"src_version":-3}`, true, `{"src_version":-3}`},
-	}
-	for _, testCase := range cases {
+	for _, testCase := range refreshMaterializedViewDecodingCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			var request namespace.RefreshMaterializedViewRequest
 			if err := json.Unmarshal([]byte(testCase.input), &request); err != nil {
@@ -177,19 +183,15 @@ func TestRefreshMaterializedViewRequestDecoding(t *testing.T) {
 	}
 }
 
+var alterVirtualColumnEntryDecodingCases = []nullableModelDecodingCase{
+	{"absent", `{}`, false, `{}`},
+	{"explicit null", `{"input_columns":null}`, true, `{"input_columns":null}`},
+	{"empty list", `{"input_columns":[]}`, true, `{"input_columns":[]}`},
+	{"one element", `{"input_columns":["a"]}`, true, `{"input_columns":["a"]}`},
+}
+
 func TestAlterVirtualColumnEntryDecoding(t *testing.T) {
-	cases := []struct {
-		name    string
-		input   string
-		present bool
-		want    string
-	}{
-		{"absent", `{}`, false, `{}`},
-		{"explicit null", `{"input_columns":null}`, true, `{"input_columns":null}`},
-		{"empty list", `{"input_columns":[]}`, true, `{"input_columns":[]}`},
-		{"one element", `{"input_columns":["a"]}`, true, `{"input_columns":["a"]}`},
-	}
-	for _, testCase := range cases {
+	for _, testCase := range alterVirtualColumnEntryDecodingCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			var entry namespace.AlterVirtualColumnEntry
 			if err := json.Unmarshal([]byte(testCase.input), &entry); err != nil {
@@ -298,12 +300,11 @@ func TestReusedDestinationsResetScope(t *testing.T) {
 	}
 }
 
-// TestNullableModelsResetReusedDestinations runs the reuse contract over every
-// model that carries a Nullable field: every Nullable field is present after
-// decoding an object that names each one, and absent after decoding an empty
-// object into the same destination.
-func TestNullableModelsResetReusedDestinations(t *testing.T) {
-	models := []any{
+// nullableModels returns every model that carries a Nullable field. Each call
+// returns fresh pointers so a test or fuzz case never observes another one's
+// decoded state.
+func nullableModels() []any {
+	return []any{
 		&namespace.AddColumnsEntry{},
 		&namespace.AddVirtualColumnEntry{},
 		&namespace.AlterColumnsEntry{},
@@ -315,6 +316,14 @@ func TestNullableModelsResetReusedDestinations(t *testing.T) {
 		&namespace.RefreshMaterializedViewRequest{},
 		&namespace.UpdateFieldMetadataEntry{},
 	}
+}
+
+// TestNullableModelsResetReusedDestinations runs the reuse contract over every
+// model that carries a Nullable field: every Nullable field is present after
+// decoding an object that names each one, and absent after decoding an empty
+// object into the same destination.
+func TestNullableModelsResetReusedDestinations(t *testing.T) {
+	models := nullableModels()
 
 	var modelNames []string
 	for _, model := range models {
