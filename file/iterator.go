@@ -35,6 +35,10 @@ func (r *Reader) RecordsRange(ctx context.Context, offset, numRows uint64, opts 
 // indices. It matches ReadIndices with the stream lifecycle and borrowing
 // rules of Records; an ordering the native reader rejects is yielded as an
 // iteration error.
+//
+// Each traversal reads indices when it opens its stream, so a change made
+// between traversals affects the next result; changing the slice while a
+// traversal opens its stream races with that read.
 func (r *Reader) RecordsIndices(ctx context.Context, indices []uint32, opts ReadOptions) iter.Seq2[arrow.RecordBatch, error] {
 	return records.Sequence(func() (array.RecordReader, error) {
 		return r.ReadIndices(ctx, indices, opts)

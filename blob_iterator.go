@@ -19,6 +19,11 @@ import (
 // including an early break, a cancelled context and a planning or stream
 // error, releases the stream. Each yielded batch owns its buffers but belongs
 // to the stream until iteration advances; call Retain to keep one.
+//
+// Each traversal reads rows and options when it opens its stream, including the
+// value IOBufferSize points to, so a change made between traversals affects the
+// next result; changing them while a traversal opens its stream races with that
+// read.
 func (d *Dataset) BlobRecords(ctx context.Context, column string, selector BlobRowSelector, rows []uint64, options *BlobReadOptions) iter.Seq2[arrow.RecordBatch, error] {
 	return records.Sequence(func() (array.RecordReader, error) {
 		return d.ReadBlobs(ctx, column, selector, rows, options)
@@ -28,6 +33,11 @@ func (d *Dataset) BlobRecords(ctx context.Context, column string, selector BlobR
 // BlobRangeRecords iterates over planned per-row blob-range reads. It matches
 // ReadBlobRanges with the stream lifecycle and borrowing rules of BlobRecords;
 // request_index preserves the zero-based input position of every request.
+//
+// Each traversal reads requests and options when it opens its stream, including
+// the value IOBufferSize points to, so a change made between traversals affects
+// the next result; changing them while a traversal opens its stream races with
+// that read.
 func (d *Dataset) BlobRangeRecords(ctx context.Context, column string, selector BlobRowSelector, requests []BlobRangeRequest, options *BlobReadOptions) iter.Seq2[arrow.RecordBatch, error] {
 	return records.Sequence(func() (array.RecordReader, error) {
 		return d.ReadBlobRanges(ctx, column, selector, requests, options)

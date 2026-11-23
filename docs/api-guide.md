@@ -674,6 +674,9 @@ including an early break and an error, so the caller releases no stream and the
 `array.IterFromReader` gives the same loop shape, but the caller keeps its own
 reference and must release it. Batches are borrowed until iteration advances;
 call `Retain` before keeping one, including the batch current at a break.
+`RecordsIndices` reads its index slice each time a traversal opens its stream,
+so a change between traversals affects the next result, and changing the slice
+during that read races.
 `Reader.ReadGlobalBuffer(0)` returns the serialized
 schema and user buffers start at index 1. `Writer` accepts Arrow batches and
 can add schema metadata and global buffers. `Session` provides local
@@ -774,7 +777,10 @@ interrupted.
 `BlobRecords` and `BlobRangeRecords` iterate the same planned reads: the plan
 starts when iteration starts, every exit releases the stream, the dataset stays
 usable, and the caller releases no stream. Batches still own their buffers but
-stay borrowed until iteration advances; call `Retain` before keeping one.
+stay borrowed until iteration advances; call `Retain` before keeping one. Each
+traversal reads its rows or requests and `BlobReadOptions`, including the value
+`IOBufferSize` points to, so a change between traversals affects the next
+result, and changing them during that read races.
 
 `WithBlobHandling` controls scanner output for blob columns. The default
 descriptor mode keeps other binary columns inline; `BlobHandlingAllBinary`

@@ -11,11 +11,6 @@ notes.
 
 ## [v0.3.0] - Unreleased
 
-`v0.3.0` is the next minor release. It keeps the
-`github.com/lance-format/lance-go` module path and the published
-`array.RecordReader`-returning methods, and adds the record iterators below.
-Adopting them is optional.
-
 ### Added
 
 - `file.Reader.Records`, `file.Reader.RecordsRange` and
