@@ -279,7 +279,9 @@ func ExampleDataset_Versions() {
 	}
 
 	uri := filepath.Join(dir, "data.lance")
-	created, err := lance.Create(ctx, uri, newReader([]int64{1, 2}))
+	first := newReader([]int64{1, 2})
+	created, err := lance.Create(ctx, uri, first)
+	first.Release()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -287,7 +289,9 @@ func ExampleDataset_Versions() {
 		log.Fatal(err)
 	}
 
-	dataset, err := lance.Append(ctx, uri, newReader([]int64{3, 4}))
+	second := newReader([]int64{3, 4})
+	dataset, err := lance.Append(ctx, uri, second)
+	second.Release()
 	if err != nil {
 		log.Fatal(err)
 	}
