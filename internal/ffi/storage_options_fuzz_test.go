@@ -41,6 +41,15 @@ func FuzzStorageOptionsMarshalling(f *testing.F) {
 		if len(snapshot.keyBufs) != len(keys) || len(snapshot.valueBufs) != len(keys) {
 			t.Fatalf("marshalled %d/%d key/value buffers, want %d", len(snapshot.keyBufs), len(snapshot.valueBufs), len(keys))
 		}
+		if len(snapshot.keyPtrs) != len(keys) || len(snapshot.valuePtrs) != len(keys) {
+			t.Fatalf("marshalled %d/%d key/value pointers, want %d", len(snapshot.keyPtrs), len(snapshot.valuePtrs), len(keys))
+		}
+		if snapshot.keysPtr() != &snapshot.keyPtrs[0] {
+			t.Fatal("keysPtr does not address the key pointer slice")
+		}
+		if snapshot.valuesPtr() != &snapshot.valuePtrs[0] {
+			t.Fatal("valuesPtr does not address the value pointer slice")
+		}
 		for i, key := range keys {
 			wantKey := append([]byte(key), 0)
 			if !bytes.Equal(snapshot.keyBufs[i], wantKey) {
@@ -56,9 +65,6 @@ func FuzzStorageOptionsMarshalling(f *testing.F) {
 			if snapshot.valuePtrs[i] != &snapshot.valueBufs[i][0] {
 				t.Fatalf("value pointer %d does not address its owned buffer", i)
 			}
-		}
-		if snapshot.keysPtr() == nil || snapshot.valuesPtr() == nil {
-			t.Fatal("nonempty snapshot has a nil pointer array")
 		}
 	})
 }
