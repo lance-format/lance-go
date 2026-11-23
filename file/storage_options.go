@@ -38,6 +38,9 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 	if values == nil {
 		values = map[string]string{}
 	}
+	if err := validateStorageOptions(values); err != nil {
+		return nil, err
+	}
 	owned, err := lance.NewStorageOptionsAccessor(values, nil)
 	if err != nil {
 		return nil, err
@@ -57,6 +60,9 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 func NewStorageOptionsWithProvider(initial map[string]string, provider lance.StorageOptionsProvider) (*StorageOptions, error) {
 	if provider == nil {
 		return nil, invalidError("storage options", "", "storage options provider must not be nil")
+	}
+	if err := validateStorageOptions(initial); err != nil {
+		return nil, err
 	}
 	owned, err := lance.NewStorageOptionsAccessor(initial, provider)
 	if err != nil {
@@ -79,6 +85,16 @@ func NewStorageOptionsFromAccessor(owned *lance.StorageOptionsAccessor) (*Storag
 		return nil, invalidError("storage options", "", "storage options accessor must not be nil")
 	}
 	return owned, nil
+}
+
+// validateStorageOptions keeps file constructor failures on their historical
+// top-level identity: *lance.Error with Op "storage options" and the native
+// invalid-argument classification.
+func validateStorageOptions(values map[string]string) error {
+	if err := ffi.ValidateStorageOptions(values); err != nil {
+		return wrapError("storage options", "", err)
+	}
+	return nil
 }
 
 // lockStorage pins the shared accessor for one native open call. The returned

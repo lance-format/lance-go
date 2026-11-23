@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -176,6 +177,51 @@ func TestRawFileStorageOptionsStaticPresence(t *testing.T) {
 	}
 }
 
+// TestRawFileStorageOptionsInvalidMapError keeps the v0.2.0 identity for real
+// constructor input: a direct *lance.Error with Op "storage options",
+// CodeInvalidArgument and the invalid-key message, not a wrapped inner error.
+func TestRawFileStorageOptionsInvalidMapError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{"static", func() error {
+			_, err := file.NewStorageOptions(map[string]string{"": "x"})
+			return err
+		}},
+		{"provider", func() error {
+			_, err := file.NewStorageOptionsWithProvider(map[string]string{"": "x"}, fileAccessorProvider{id: "test/file-invalid-map"})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if _, ok := err.(*lance.Error); !ok {
+				t.Fatalf("error type = %T, want *lance.Error", err)
+			}
+			var lanceErr *lance.Error
+			if !errors.As(err, &lanceErr) {
+				t.Fatalf("error = %T (%v), want *lance.Error", err, err)
+			}
+			if lanceErr.Op != "storage options" {
+				t.Fatalf("error op = %q, want storage options", lanceErr.Op)
+			}
+			if lanceErr.Code != lance.CodeInvalidArgument {
+				t.Fatalf("error code = %v, want InvalidArgument", lanceErr.Code)
+			}
+			if !errors.Is(err, lance.ErrInvalidArgument) {
+				t.Fatalf("error = %v, want ErrInvalidArgument", err)
+			}
+			if !strings.Contains(err.Error(), "storage option key must not be empty") {
+				t.Fatalf("error = %q, want the invalid-key message", err)
+			}
+			if strings.Contains(err.Error(), "lance: lance:") {
+				t.Fatalf("error has a redundant lance prefix: %v", err)
+			}
+		})
+	}
+}
+
 func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
@@ -201,47 +247,46 @@ func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
 		storage.Close()
 		t.Fatalf("create writer: %v", err)
 	}
-	if err := writer.Write(ctx, batch); err != nil {
-		writer.Close()
-		storage.Close()
-		t.Fatalf("write: %v", err)
-	}
-	if _, err := writer.Finish(ctx); err != nil {
-		writer.Close()
-		storage.Close()
-		t.Fatalf("finish: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		storage.Close()
-		t.Fatalf("close writer: %v", err)
-	}
 
-	reader, err := file.Open(ctx, path, &file.ReaderOptions{StorageOptions: owned})
-	if err != nil {
-		storage.Close()
-		t.Fatalf("open reader: %v", err)
-	}
 	// Closing the adopted accessor closes the root handle, because they are the
-	// same native accessor.
+	// same native accessor. The writer opened before Close retains its own
+	// native reference and must still be able to write and finish.
 	if err := storage.Close(); err != nil {
-		reader.Close()
+		writer.Close()
 		t.Fatalf("close adopted storage options: %v", err)
 	}
 	if _, _, err := owned.Snapshot(); !errors.Is(err, lance.ErrClosed) {
-		reader.Close()
+		writer.Close()
 		t.Fatalf("root accessor Snapshot after close = %v, want ErrClosed", err)
 	}
 	if _, err := file.Open(ctx, path, &file.ReaderOptions{StorageOptions: storage}); !errors.Is(err, lance.ErrClosed) {
-		reader.Close()
+		writer.Close()
 		t.Fatalf("open with closed accessor = %v, want ErrClosed", err)
 	}
-	// The open reader retained its own native reference.
+	if err := writer.Write(ctx, batch); err != nil {
+		writer.Close()
+		t.Fatalf("write after accessor close: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		writer.Close()
+		t.Fatalf("finish after accessor close: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	// Read the finished file back without an accessor.
+	reader, err := file.Open(ctx, path, nil)
+	if err != nil {
+		t.Fatalf("open reader: %v", err)
+	}
 	rows := mustReadAll(t, reader)
-	defer rows.Release()
 	if ids := collectIDs(t, rows); len(ids) != 4 {
+		rows.Release()
 		reader.Close()
 		t.Fatalf("read ids after accessor close = %v, want 4 rows", ids)
 	}
+	rows.Release()
 	if err := reader.Close(); err != nil {
 		t.Fatalf("close reader: %v", err)
 	}
