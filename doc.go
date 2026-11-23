@@ -67,6 +67,8 @@
 //   - namespace: typed Lance namespace access through Directory, REST, Connect
 //     and custom adapters.
 //
-// See the repository README and docs/api-guide.md for installation and
-// end-to-end examples.
+// See the README and API guide for installation and end-to-end examples:
+//
+//   - https://github.com/lance-format/lance-go#quickstart
+//   - https://github.com/lance-format/lance-go/blob/main/docs/api-guide.md
 package lance
