@@ -25,6 +25,8 @@ func FuzzBlobDescriptorBuilderPreparedArray(f *testing.F) {
 	f.Add(uint8(2), uint8(0), "", uint32(1), uint64(0), uint64(0))
 	f.Add(uint8(7), uint8(1), "payload", uint32(1024), uint64(63), uint64(64))
 	f.Add(uint8(4), uint8(2), "x", uint32(3), uint64(1), uint64(2))
+	// The third row is packed with both position and length zero.
+	f.Add(uint8(2), uint8(0), "zeroes", uint32(9), uint64(0), uint64(0))
 
 	f.Fuzz(func(t *testing.T, count, variant uint8, payloadSeed string, blobID uint32, offset, length uint64) {
 		requireNative(t)
@@ -94,6 +96,9 @@ func FuzzBlobDescriptorBuilderPreparedArray(f *testing.F) {
 				if structArray.IsNull(i) {
 					t.Fatalf("inline row %d is null", i)
 				}
+				if !kind.IsValid(i) {
+					t.Fatalf("inline row %d kind is null", i)
+				}
 				if got := kind.Value(i); got != 0 {
 					t.Fatalf("row %d kind = %d, want inline", i, got)
 				}
@@ -115,6 +120,9 @@ func FuzzBlobDescriptorBuilderPreparedArray(f *testing.F) {
 			case descriptorPacked:
 				if structArray.IsNull(i) {
 					t.Fatalf("packed row %d is null", i)
+				}
+				if !kind.IsValid(i) || !blobIDColumn.IsValid(i) || !blobSize.IsValid(i) || !position.IsValid(i) {
+					t.Fatalf("packed row %d has a null required field", i)
 				}
 				if got := kind.Value(i); got != 1 {
 					t.Fatalf("row %d kind = %d, want packed", i, got)
