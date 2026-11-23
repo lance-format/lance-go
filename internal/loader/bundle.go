@@ -34,8 +34,8 @@ type Bundle struct {
 	// UncompressedSHA256 is the lowercase SHA-256 of the shared library.
 	UncompressedSHA256 string
 	// UpstreamCommit is the lance-c commit claimed by the packaging process.
-	// lance-c exposes no runtime version symbol, so the loader cannot verify
-	// this claim from the shared library itself.
+	// lance_c_version() reports only the binding release, so the loader cannot
+	// verify this claim from the shared library itself.
 	UpstreamCommit string
 	// HeaderSHA256 is the SHA-256 of the lance.h used during packaging. It is a
 	// packaging-time claim, not a property verified from the binary.

@@ -87,8 +87,9 @@ type RuntimeStatus struct {
 //
 // Loaded and Library describe a successful library open. FFIReady is a
 // separate state: a library can open and still fail mandatory symbol binding.
-// Expected is the build-time lance-c pin. lance-c has no runtime version
-// symbol, so a loaded liblance_c cannot be verified against that pin. Bundle
+// Expected is the build-time lance-c pin. The SDK does not bind
+// lance_c_version(), which reports only the binding release, so a loaded
+// liblance_c cannot be verified against that pin. Bundle
 // metadata is available only for a compiled-in artifact, and it is a
 // packaging-time claim rather than a value read from the loaded binary.
 func RuntimeInfo() RuntimeStatus {

@@ -236,7 +236,7 @@ function Write-Summary {
 		"A generated Windows companion is an unpublished CI candidate only. No selector is activated, no module requirement is added, and no module is published.",
 		"The single-DLL companion requires an OS-only dependency closure. Direct and delay-load imports are classified by module name. A redistributable or unclassified import blocks the production candidate after native evidence; the result is recorded as BLOCKED, not PASS.",
 		"lance-c builds its release DLLs with LANCE_C_CRT_STATIC=ON. The native C consumer is built with '/MT' and rejects redistributable CRT modules before and after native operations, allowing only the exact OS components msvcp_win.dll, msvcrt.dll, and ucrtbase.dll.",
-		"lance-c exposes no runtime version symbol, so the DLL cannot prove the commit that built it. The published archive checksum and the pinned header hash are the available identity chain; this workflow never substitutes a source build."
+		"lance_c_version() reports only the binding release, so the DLL cannot prove the commit that built it. The published archive checksum and the pinned header hash are the available identity chain; this workflow never substitutes a source build."
 	)
 	$lines | Set-Content -LiteralPath (Join-Path $EvidenceDir "summary.md")
 	if (-not [string]::IsNullOrEmpty($env:GITHUB_STEP_SUMMARY)) {

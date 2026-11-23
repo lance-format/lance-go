@@ -111,9 +111,9 @@ archive.
 - the exact commit (`upstreamCommit`),
 - the SHA-256 of `include/lance/lance.h` at that commit.
 
-The Go package does not bind lance-c's `lance_c_version`, so the SDK does not
-report or check a loaded library's version at runtime. Provenance is checked
-at build time instead:
+The Go package does not bind lance-c's `lance_c_version`, which reports only
+the binding release, so the SDK does not report or check a loaded library's
+version at runtime. Provenance is checked at build time instead:
 
 ```console
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
@@ -123,7 +123,7 @@ LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a different
-commit is not detectable at runtime. When the pin changes, all five artifact
+commit is not detected by the SDK at runtime. When the pin changes, all five
 modules (`linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`,
 `windows/arm64`) must be regenerated, published as new immutable module
 versions, and adopted in the selectors and root requirements together. Follow

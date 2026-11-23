@@ -103,7 +103,8 @@ uploads only this compact directory, not module or build caches.
 A passing run is evidence for one public-consumer path at one exact revision;
 it is not a full runtime regression, a native rebuild, a release, or support
 for an unpublished platform. The native source version remains the packaging
-claim recorded in artifact metadata; no runtime version symbol is invented.
+claim recorded in artifact metadata; `lance_c_version()` reports only the
+binding release, not the source commit.
 `go mod tidy`, `go get`, and other module-graph commands may download every
 artifact module archive because Go can load packages for all build tags.
 This lane records those installation downloads separately and asserts the

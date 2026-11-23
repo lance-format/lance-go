@@ -245,11 +245,11 @@ platform library name for a system lookup.
 
 `Loaded` only reports that opening the library succeeded. `FFIReady` separately
 reports that the mandatory C symbols were bound. `Expected` is the lance-c
-release, commit and header this Go module was built against. A loaded
-`liblance_c` cannot be verified against that pin because lance-c has no runtime
-version symbol. For a bundled load, `Library.Bundle` carries the artifact's
-recorded packaging metadata; for explicit and system loads, only the source and
-path are known.
+release, commit and header this Go module was built against. The SDK does not
+bind `lance_c_version()`, which in any case reports only the binding release,
+so a loaded `liblance_c` is not verified against that pin. For a bundled load,
+`Library.Bundle` carries the artifact's recorded packaging metadata; for
+external and system loads, only the source and path are known.
 
 ## Mutations and schema evolution
 
