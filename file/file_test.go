@@ -430,6 +430,74 @@ func TestEmptyFile(t *testing.T) {
 	}
 }
 
+func TestMetadataEmptyColumnCollections(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "empty-columns.lance")
+
+	writer, err := file.Create(ctx, path, arrow.NewSchema(nil, nil), nil)
+	if err != nil {
+		t.Fatalf("create writer: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		t.Fatalf("finish empty-column file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close writer: %v", err)
+	}
+
+	reader, err := file.Open(ctx, path, nil)
+	if err != nil {
+		t.Fatalf("open empty-column file: %v", err)
+	}
+	defer reader.Close()
+
+	metadata, err := reader.Metadata()
+	if err != nil {
+		t.Fatalf("reader metadata: %v", err)
+	}
+	defer metadata.Close()
+	info, err := metadata.Info()
+	if err != nil {
+		t.Fatalf("metadata info: %v", err)
+	}
+	if info.NumColumns != 0 || info.NumPhysicalColumns != 0 {
+		t.Fatalf("metadata info = %+v, want no columns", info)
+	}
+	columns, err := metadata.Columns()
+	if err != nil {
+		t.Fatalf("metadata columns: %v", err)
+	}
+	if len(columns) != 0 {
+		t.Fatalf("metadata columns = %d, want 0", len(columns))
+	}
+	buffers, err := metadata.GlobalBuffers()
+	if err != nil {
+		t.Fatalf("metadata global buffers: %v", err)
+	}
+	if uint64(len(buffers)) != info.NumGlobalBuffers {
+		t.Fatalf("metadata global buffers = %d, info reports %d", len(buffers), info.NumGlobalBuffers)
+	}
+	for i, buffer := range buffers {
+		if buffer.Position > info.FileSizeBytes || buffer.Size > info.FileSizeBytes-buffer.Position {
+			t.Fatalf("global buffer %d = %+v, outside %d-byte file", i, buffer, info.FileSizeBytes)
+		}
+	}
+
+	statistics, err := reader.Statistics()
+	if err != nil {
+		t.Fatalf("reader statistics: %v", err)
+	}
+	defer statistics.Close()
+	statColumns, err := statistics.Columns()
+	if err != nil {
+		t.Fatalf("statistics columns: %v", err)
+	}
+	if len(statColumns) != 0 {
+		t.Fatalf("statistics columns = %d, want 0", len(statColumns))
+	}
+}
+
 func TestAbortUnfinishedFile(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()

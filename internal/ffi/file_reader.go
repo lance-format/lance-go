@@ -338,7 +338,10 @@ func (m *FileMetadata) GlobalBuffers() ([]FileBufferDescriptor, error) {
 	if handle == 0 {
 		return nil, ErrClosed
 	}
-	var buffers *fileBufferDescriptor
+	// lance-c returns Vec::as_ptr() for borrowed arrays. An empty Vec yields
+	// a non-nil dangling address, so keep the native pointer in a uintptr and
+	// convert it only after the count proves it addresses an element array.
+	var buffers uintptr
 	var count uint64
 	runtime.LockOSThread()
 	rc := m.b.fileMetadataGetGlobalBuffers(handle, &buffers, &count)
@@ -354,13 +357,13 @@ func (m *FileMetadata) GlobalBuffers() ([]FileBufferDescriptor, error) {
 	if count == 0 {
 		return []FileBufferDescriptor{}, nil
 	}
-	if buffers == nil {
+	if buffers == 0 {
 		return nil, fmt.Errorf("ffi: metadata returned %d global buffers with NULL data", count)
 	}
 	if count > uint64(maxIntValue()) {
 		return nil, fmt.Errorf("ffi: too many global buffers: %d", count)
 	}
-	raw := unsafe.Slice(buffers, int(count))
+	raw := nativeBorrowedArray[fileBufferDescriptor](buffers, count)
 	result := make([]FileBufferDescriptor, len(raw))
 	for i, buffer := range raw {
 		result[i] = FileBufferDescriptor{Position: buffer.Position, Size: buffer.Size}
@@ -374,7 +377,9 @@ func (m *FileMetadata) Columns() ([]FileColumnMetadata, error) {
 	if handle == 0 {
 		return nil, ErrClosed
 	}
-	var columns *fileColumnMetadata
+	// See GlobalBuffers: an empty native Vec has a non-nil dangling address,
+	// which must not enter a Go pointer slot.
+	var columns uintptr
 	var count uint64
 	runtime.LockOSThread()
 	rc := m.b.fileMetadataGetColumns(handle, &columns, &count)
@@ -390,14 +395,14 @@ func (m *FileMetadata) Columns() ([]FileColumnMetadata, error) {
 	if count == 0 {
 		return []FileColumnMetadata{}, nil
 	}
-	if columns == nil {
+	if columns == 0 {
 		return nil, fmt.Errorf("ffi: metadata returned %d columns with NULL data", count)
 	}
 	if count > uint64(maxIntValue()) {
 		return nil, fmt.Errorf("ffi: too many columns: %d", count)
 	}
 
-	raw := unsafe.Slice(columns, int(count))
+	raw := nativeBorrowedArray[fileColumnMetadata](columns, count)
 	result := make([]FileColumnMetadata, len(raw))
 	for i, column := range raw {
 		buffers, err := copyBufferDescriptors(column.Buffers, column.BufferCount)
@@ -446,6 +451,19 @@ func (m *FileMetadata) Columns() ([]FileColumnMetadata, error) {
 		}
 	}
 	return result, nil
+}
+
+// nativeBorrowedArray views a native-owned array whose address the ABI wrote
+// into an integer slot. lance-c returns Vec::as_ptr(), which is a non-nil
+// dangling address for an empty Vec, so callers pass a positive count only.
+// Copying the pointer word through unsafe.Pointer avoids a direct uintptr
+// conversion, which go vet rejects even though this address is native memory.
+func nativeBorrowedArray[T any](address uintptr, count uint64) []T {
+	if count == 0 {
+		return nil
+	}
+	pointer := *(*unsafe.Pointer)(unsafe.Pointer(&address))
+	return unsafe.Slice((*T)(pointer), int(count))
 }
 
 func copyBufferDescriptors(buffers *fileBufferDescriptor, count uint64) ([]FileBufferDescriptor, error) {
@@ -506,7 +524,9 @@ func (s *FileStatistics) Columns() ([]FileColumnStatistics, error) {
 	if handle == 0 {
 		return nil, ErrClosed
 	}
-	var columns *fileColumnStatistics
+	// See GlobalBuffers: an empty native Vec has a non-nil dangling address,
+	// which must not enter a Go pointer slot.
+	var columns uintptr
 	var count uint64
 	runtime.LockOSThread()
 	rc := s.b.fileStatisticsGetColumns(handle, &columns, &count)
@@ -522,13 +542,13 @@ func (s *FileStatistics) Columns() ([]FileColumnStatistics, error) {
 	if count == 0 {
 		return []FileColumnStatistics{}, nil
 	}
-	if columns == nil {
+	if columns == 0 {
 		return nil, fmt.Errorf("ffi: statistics returned %d columns with NULL data", count)
 	}
 	if count > uint64(maxIntValue()) {
 		return nil, fmt.Errorf("ffi: too many statistics columns: %d", count)
 	}
-	raw := unsafe.Slice(columns, int(count))
+	raw := nativeBorrowedArray[fileColumnStatistics](columns, count)
 	result := make([]FileColumnStatistics, len(raw))
 	for i, column := range raw {
 		result[i] = FileColumnStatistics{NumPages: column.NumPages, SizeBytes: column.SizeBytes}
