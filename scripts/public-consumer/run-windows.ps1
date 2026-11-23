@@ -294,6 +294,24 @@ function Get-RegexValue([string]$Text, [string]$Pattern, [string]$Label) {
     Fail "metadata is missing $Label"
 }
 
+function Assert-GoDirectiveAtMost([string]$Label, [string]$Directive, [string]$Ceiling) {
+    # Companion artifact modules are immutable. One published by an older SDK may
+    # declare an older directive, but a directive newer than the SDK floor would
+    # stop consumers at that floor from building.
+    if ($Directive -notmatch '^\d+\.\d+(\.\d+)?$' -or $Ceiling -notmatch '^\d+\.\d+(\.\d+)?$') {
+        Fail ("{0} go directive '{1}' or SDK floor '{2}' is not a major.minor version" -f $Label, $Directive, $Ceiling)
+    }
+    $directiveParts = @($Directive.Split('.'))
+    $ceilingParts = @($Ceiling.Split('.'))
+    while ($directiveParts.Count -lt 3) { $directiveParts += '0' }
+    while ($ceilingParts.Count -lt 3) { $ceilingParts += '0' }
+    $directiveVersion = [version]($directiveParts[0..2] -join '.')
+    $ceilingVersion = [version]($ceilingParts[0..2] -join '.')
+    if ($directiveVersion -gt $ceilingVersion) {
+        Fail ("{0} go directive is {1}, newer than the SDK floor {2}" -f $Label, $Directive, $Ceiling)
+    }
+}
+
 function Get-ArtifactFieldInt([string]$Text, [string]$Name) {
     $pattern = '(?m)^\s*' + [regex]::Escape($Name) + '\s+int64\s*=\s*([0-9]+)'
     return [int64]::Parse(
@@ -339,8 +357,8 @@ function Assert-NativeHost {
             Fail ("go env {0} is '{1}', want empty" -f $name, $property.Value)
         }
     }
-    if ([string]$script:GoEnv.GOVERSION -notmatch '^go1\.23\.') {
-        Fail ("go version is '{0}', want go1.23.x" -f $script:GoEnv.GOVERSION)
+    if ([string]$script:GoEnv.GOVERSION -notmatch '^go1\.26\.') {
+        Fail ("go version is '{0}', want go1.26.x" -f $script:GoEnv.GOVERSION)
     }
     foreach ($line in @(
         "host=windows/$TargetGoarch",
@@ -584,7 +602,7 @@ function Get-ArtifactMods([string]$LabelPrefix) {
 }
 
 function Assert-SetupArtifactZips([string]$Name, [string]$LabelPrefix) {
-    # Go 1.23 resolves imports with every build tag during go get, so setup
+    # The setup go get resolves imports with every build tag, so setup
     # legitimately observes all pinned artifact archives. Validate that exact
     # set against the downloaded root go.mod instead of tolerating extras.
     $got = @(Get-ArtifactZips $LabelPrefix)
@@ -635,7 +653,7 @@ function Assert-OnlySelectedArtifactZip([string]$LabelPrefix) {
     }
 }
 
-function Assert-RootArchive([string]$Zip, [string]$Label, [string[]]$NestedModules) {
+function Assert-RootArchive([string]$Zip, [string]$Label) {
     $out = Join-Path $script:EvidenceDir ("verify-root-archive-" + ($Label -replace '/', '-') + ".json")
     $arguments = @(
         $script:Verify, 'archive',
@@ -646,9 +664,6 @@ function Assert-RootArchive([string]$Zip, [string]$Label, [string[]]$NestedModul
         '--source-commit', $script:SourceHead,
         '--out', $out
     )
-    foreach ($module in $NestedModules) {
-        $arguments += @('--nested-module', $module)
-    }
     $null = Invoke-Python $arguments $script:CommandsLog
     $report = Read-JsonFile $out
     Write-Summary "$Label.root_archive_files=$($report.expected_files)"
@@ -689,7 +704,7 @@ function Enter-ColdTargetPhase($Mode) {
     Write-Summary "$($Mode.Name).cold_cache_scope=empty_after_setup"
 }
 
-function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
+function Resolve-ColdRoot($Mode, [string]$SetupZip) {
     $jsonPath = Join-Path $Mode.Dir 'cold-root-download.json'
     $null = Invoke-GoCapture $Mode.Consumer @('mod', 'download', '-json', ($script:RootModule + '@' + $script:RootVersion)) $jsonPath $script:CommandsLog
     $json = Read-JsonFile $jsonPath
@@ -709,7 +724,7 @@ function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
     Assert-Equal "$($Mode.Name) root go.mod bytes at setup and cold target caches" (Get-FileSha256 $script:SetupRootGoMod) (Get-FileSha256 $goMod)
     Save-ModuleCacheSnapshot "$($Mode.Name)/cold/root-resolve" $Mode.ModCache
     Assert-RootZip "$($Mode.Name)/cold/root-resolve"
-    Assert-RootArchive $zip ("$($Mode.Name)-cold") $NestedModules
+    Assert-RootArchive $zip ("$($Mode.Name)-cold")
     return $zip
 }
 
@@ -804,9 +819,7 @@ function Read-ArtifactModule($Json, [string]$Label) {
         Fail "$Label artifact go.mod contains replace or exclude"
     }
     $goDirective = Get-RegexValue $moduleText '(?m)^go\s+(\S+)' 'go directive'
-    if ($goDirective -notmatch '^1\.23\.') {
-        Fail "$Label artifact go directive is $goDirective, want 1.23.x"
-    }
+    Assert-GoDirectiveAtMost "$Label artifact" $goDirective $script:RootGoDirective
     $payloads = @(Get-ChildItem -LiteralPath $dir -File | Where-Object { $_.Name -like '*.zst' })
     if ($payloads.Count -ne 1) {
         Fail "$Label artifact has $($payloads.Count) compressed payloads, want one"
@@ -1202,7 +1215,7 @@ function Add-IdentityHelperSource([string]$Label, $Mode) {
     # Resolve the helper's pinned dependency during setup. Building the helper
     # in the cold target phase must not run go get and contaminate its archive
     # observations.
-    $source = Join-Path $script:RepoDir 'internal/tools/public-consumer/windows-consumer/main.go'
+    $source = Join-Path $script:RepoDir 'scripts/public-consumer/consumer-src/windows-consumer/main.go'
     if (-not (Test-Path -LiteralPath $source)) {
         Fail "identity fixture is missing: $source"
     }
@@ -1276,6 +1289,7 @@ function Run-Consumer($Mode, [string]$Binary, [string]$Label, [string[]]$Argumen
 # Main flow. Evidence is created before argument validation so configuration
 # failures still leave a durable record for the workflow upload.
 $script:RepoDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$script:RootGoDirective = Get-RegexValue (Get-Content -LiteralPath (Join-Path $script:RepoDir 'go.mod') -Raw -Encoding utf8) '(?m)^go\s+(\S+)' 'checkout go directive'
 $script:Verify = Join-Path $PSScriptRoot 'verify.py'
 $evidenceRoot = if ([string]::IsNullOrWhiteSpace($EvidenceDir)) {
     Join-Path ([IO.Path]::GetTempPath()) 'public-consumer-evidence'
@@ -1445,8 +1459,8 @@ try {
     $rootGoModText = Get-Content -LiteralPath $rootGoMod -Raw -Encoding utf8
     Assert-Equal 'downloaded go.mod module' (Get-RegexValue $rootGoModText '(?m)^module\s+(\S+)' 'module') $RootModule
     $rootGoDirective = Get-RegexValue $rootGoModText '(?m)^go\s+(\S+)' 'go directive'
-    if ($rootGoDirective -notmatch '^1\.23\.') {
-        Fail "downloaded go.mod go directive is $rootGoDirective, want 1.23.x"
+    if ($rootGoDirective -notmatch '^1\.26\.') {
+        Fail "downloaded go.mod go directive is $rootGoDirective, want 1.26.x"
     }
     if ($rootGoModText -match '(?m)^\s*(replace|exclude)\s') {
         Fail 'downloaded root go.mod contains replace or exclude'
@@ -1474,11 +1488,7 @@ try {
     }
     Write-Summary "required_windows_artifact=$windowsArtifactPath@$($script:RequiredWindows.Version)"
 
-    $nested = New-Object System.Collections.Generic.List[string]
-    if (Test-Path -LiteralPath (Join-Path $script:RepoDir 'scripts/go-module-origin/generator/go.mod')) {
-        $nested.Add('scripts/go-module-origin/generator')
-    }
-    Assert-RootArchive $rootZip 'default-setup' $nested.ToArray()
+    Assert-RootArchive $rootZip 'default-setup'
 
     $null = Invoke-Go $default.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
     Save-ModuleCacheSnapshot 'default/setup/go-get' $default.SetupModCache
@@ -1487,7 +1497,7 @@ try {
     Assert-SetupArtifactZips 'default' 'default/setup/'
 
     Enter-ColdTargetPhase $default
-    $null = Resolve-ColdRoot $default $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $default $rootZip
 
     $defaultBinary = Join-Path $default.Dir 'roundtrip.exe'
     $null = Invoke-Go $default.Consumer @('build', '-o', $defaultBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog
@@ -1530,7 +1540,7 @@ try {
     $namespace = New-Mode 'namespace'
     $null = Invoke-Go $namespace.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
     Save-ModuleCacheSnapshot 'namespace/setup/go-get' $namespace.SetupModCache
-    $namespaceSource = Join-Path $script:RepoDir 'internal/tools/public-consumer/namespace-consumer/main.go'
+    $namespaceSource = Join-Path $script:RepoDir 'scripts/public-consumer/consumer-src/namespace-consumer/main.go'
     if (-not (Test-Path -LiteralPath $namespaceSource)) {
         Fail "namespace fixture is missing: $namespaceSource"
     }
@@ -1541,7 +1551,7 @@ try {
     Assert-SetupArtifactZips 'namespace' 'namespace/setup/'
 
     Enter-ColdTargetPhase $namespace
-    $null = Resolve-ColdRoot $namespace $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $namespace $rootZip
 
     $namespaceBinary = Join-Path $namespace.Dir 'namespace-consumer.exe'
     $null = Invoke-Go $namespace.Consumer @('build', '-o', $namespaceBinary, '.') $script:CommandsLog
@@ -1585,7 +1595,7 @@ try {
     Assert-SetupArtifactZips 'external' 'external/setup/'
 
     Enter-ColdTargetPhase $external
-    $null = Resolve-ColdRoot $external $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $external $rootZip
 
     $externalBinary = Join-Path $external.Dir 'roundtrip-external.exe'
     $null = Invoke-Go $external.Consumer @('build', '-tags', 'lance_external_lib', '-o', $externalBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog

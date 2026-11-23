@@ -96,12 +96,24 @@ takes a long time.
 
 CI and release packaging do not use this path. They acquire the official release
 archive for `upstreamRelease` through `internal/tools/fetch-lance-c-release`,
-which verifies the published per-asset checksum, the pinned header hash, and the
-target machine. It also compares the acquired library with the
+which verifies the published per-asset checksum, the pinned header identity, and
+the target machine. It also compares the acquired library with the
 `UncompressedSHA256` that the adopted artifact module declares; after a pin bump
 that check stays inactive until the new modules are published. Build from source
 when you are changing `lance-c`, or when the pin has no matching release
 archive.
+
+A legacy archive ships only `include/lance/lance.h`, which is verified against
+`upstreamHeaderSHA256`. A split archive ships every public
+`include/lance/*.h`; the tool extracts all of them, excludes `lance.hpp`, and
+requires an independent composite identity from `-expected-header-identity`,
+`-expected-header-manifest`, or the optional `upstreamHeaderIdentitySHA256` pin
+constant. The identity is the SHA-256 of the sorted
+`include/lance/<name> <sha256>` manifest text, and the acquisition writes
+`HEADER-MANIFEST` plus `COMPOSITE-SHA256` for split archives. The acquisition
+record keeps `header=` as the legacy single file for file consumers and adds
+`abi_header=` as the path to pass to the ABI checker; `scripts/abi-checker-input.sh`
+selects it and falls back to `header=` for historical records.
 
 ## Pinned ABI and verification
 
@@ -119,7 +131,7 @@ version at runtime. Provenance is checked at build time instead:
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
 git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
+LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a different
@@ -130,11 +142,17 @@ versions, and adopted in the selectors and root requirements together. Follow
 [RELEASING.md](../RELEASING.md) for the exact source, package, publication and
 verification sequence.
 
-The checker refuses a header whose SHA-256 differs from the pin, then verifies
-that every bound symbol is declared, that C and Go agree on arity, and that
-parameters and return values are pointer or integer classes that `purego` maps
-compatibly. It does not model struct layout or distinguish same-width integer
-types beyond their signedness and integer width.
+For a single legacy header, the checker refuses bytes whose SHA-256 differs from
+`upstreamHeaderSHA256`. For a split release, pass the `include/lance` directory
+with `-header` and supply `-header-manifest` or `-header-identity` (the pin's
+optional `upstreamHeaderIdentitySHA256` is another source). The directory check
+reports missing, changed and unexpected headers before parsing the union of all
+files. Type-only headers such as `fwd.h` may contain no `lance_*` function
+declarations but remain part of the manifest. The checker then verifies that every bound
+symbol is declared, that C and Go agree on arity, and that parameters and return
+values are pointer or integer classes that `purego` maps compatibly. It does not
+model struct layout or distinguish same-width integer types beyond their
+signedness and integer width.
 
 ## Native error contract
 
@@ -203,7 +221,7 @@ evidence.
 
 Standard Go benchmarks cover the Arrow C Data import and export paths, handle
 registration, the warm in-process loader fast path and `Scanner.Records`
-streaming. They use the Go 1.23 minimum and normal public inputs:
+streaming. They use the Go 1.26 minimum and normal public inputs:
 
 ```console
 CGO_ENABLED=0 go test -run '^$' -bench . -benchmem ./...
@@ -258,12 +276,43 @@ workflow tests Windows amd64 and arm64; its native evidence lane runs the full
 Go SDK suite against the pinned release DLL on both hosted runners, with a
 `CGO 1` race lane on amd64.
 
+## Go version support
+
+The module declares and tests an explicit Go floor; there is no automatic bump
+schedule. As of 2026-11-24 the approved floor is Go 1.26, with Go 1.27 as the
+current stable release. CI sets `GOTOOLCHAIN=local` so each lane runs the floor
+or the exact installed stable toolchain instead of silently switching.
+
+- `.github/workflows/ci.yml` and `windows.yml` test `1.26.x` and `stable`.
+- Lanes with `go-version-file: go.mod` (native, cross, module-origin and
+  public-consumer workflows) run the floor.
+- `scripts/public-consumer/run.sh` and `run-windows.ps1` require `go1.26.x` from
+  `GOTOOLCHAIN=local`, and their fixture modules declare `go 1.26.0`.
+- `internal/tools/artifactgen` and `scripts/go-module-origin/generator` write
+  the same directive into newly published artifact modules. Published artifact
+  modules are immutable and keep the directive they were published with.
+- `internal/tools` is a nested module and declares the same floor; CI runs its
+  tidy, vet, build and tests with the matrix toolchains.
+
+A future floor change is a separate minor-release decision, not a consequence
+of an upstream Go release. When one is approved, update these declarations
+together:
+
+- the `go` directive in `go.mod` and `internal/tools/go.mod`;
+- the Go matrices and their minimum-version conditionals in the CI workflows;
+- the artifact module generators and their fixture tests;
+- the public-consumer drivers, fixtures and toolchain assertions;
+- README, this document and RELEASING.md.
+
+Patch releases do not change the floor. The minor release's migration notes
+state the new minimum and the toolchain behavior change.
+
 ## Layout
 
 Maintenance commands, compatibility fixtures and the soak benchmark live under
 `internal/` so they are not part of the public SDK package surface. On the root
 module, `go list ./...` exposes only the public SDK packages, `internal/...`,
-and user-facing `examples/...`.
+the `scripts/`-hosted harness sources, and user-facing `examples/...`.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
@@ -273,11 +322,24 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
-internal/tools/   maintainer Go commands and artifact tooling
+internal/tools/   maintainer Go commands and artifact tooling, in their own Go module
 internal/benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
 internal/compat/            cross-language compatibility harness
 scripts/          build-lance-c.sh, verify-quickstart.sh, shell/PS/Python harnesses
 ```
+
+`internal/tools` is a nested Go module
+(`github.com/lance-format/lance-go/internal/tools`), so its dependencies —
+currently `github.com/klauspost/compress` and `github.com/ulikunitz/xz` — never
+enter the root module graph or the published root module ZIP. Run its commands
+from the repository root with `go -C internal/tools run ./<command>`; the tools
+locate the repository root from their working directory, and `-root` or `-pin`
+still override it. `go -C` makes `internal/tools` the tool process's working
+directory, so pass absolute paths for `-root`, `-pin`, `-header`, `-out`,
+`-module`, `-library` and `LANCE_C_HEADER`; relative values resolve there, not
+in the caller's directory. The public-consumer fixture programs live in
+`scripts/public-consumer/consumer-src/` because they deliberately compile
+against the published root SDK rather than the working tree.
 
 The Arrow bridge is independent of the loader and Lance FFI. Native calls and
 thread-local error extraction stay in `internal/ffi`; public resource ownership

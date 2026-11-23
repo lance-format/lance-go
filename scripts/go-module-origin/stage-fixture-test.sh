@@ -18,7 +18,7 @@ for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; 
   windows-arm64) dir="$downloads/windows-arm64/windows-arm64/module" ;;
   esac
   printf 'package artifact\n' > "$dir/artifact.go"
-  printf 'module fixture/%s\n\ngo 1.23.0\n' "$target" > "$dir/go.mod"
+  printf 'module fixture/%s\n\ngo 1.26.0\n' "$target" > "$dir/go.mod"
   printf 'payload-%s' "$target" > "$dir/payload.zst"
 done
 printf 'candidate\n' > "$downloads/windows-amd64/windows-amd64/candidate-manifest.txt"

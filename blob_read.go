@@ -2,13 +2,11 @@ package lance
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/streamreader"
 )
 
 // BlobRowSelector selects how read rows are interpreted.
@@ -79,7 +77,7 @@ func (d *Dataset) ReadBlobs(ctx context.Context, column string, selector BlobRow
 		stream.Close()
 		return nil, err
 	}
-	return newBlobRecordReader(ctx, stream, func(err error) error {
+	return streamreader.NewReader(ctx, stream, stream.Schema(), func(err error) error {
 		return wrapError("read blobs", d.uri, err)
 	}), nil
 }
@@ -121,7 +119,7 @@ func (d *Dataset) ReadBlobRanges(ctx context.Context, column string, selector Bl
 		stream.Close()
 		return nil, err
 	}
-	return newBlobRecordReader(ctx, stream, func(err error) error {
+	return streamreader.NewReader(ctx, stream, stream.Schema(), func(err error) error {
 		return wrapError("read blob ranges", d.uri, err)
 	}), nil
 }
@@ -135,104 +133,3 @@ func toFFIBlobReadOptions(options *BlobReadOptions) *ffi.BlobReadOptions {
 		Order:        int32(options.Order),
 	}
 }
-
-type blobRecordReader struct {
-	ctx    context.Context
-	stream *ffi.StreamReader
-	schema *arrow.Schema
-	refs   atomic.Int64
-
-	// wrap classifies stream failures for the public API. It is set by the
-	// dataset operation that planned the stream.
-	wrap func(error) error
-
-	mu      sync.Mutex
-	current arrow.RecordBatch
-	err     error
-	done    bool
-}
-
-func newBlobRecordReader(ctx context.Context, stream *ffi.StreamReader, wrap func(error) error) *blobRecordReader {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	reader := &blobRecordReader{
-		ctx:    ctx,
-		stream: stream,
-		schema: stream.Schema(),
-		wrap:   wrap,
-	}
-	reader.refs.Store(1)
-	return reader
-}
-
-func (r *blobRecordReader) Retain() {
-	r.refs.Add(1)
-}
-
-func (r *blobRecordReader) Release() {
-	if r.refs.Add(-1) != 0 {
-		return
-	}
-	r.mu.Lock()
-	if r.current != nil {
-		r.current.Release()
-		r.current = nil
-	}
-	r.mu.Unlock()
-	r.stream.Close()
-}
-
-func (r *blobRecordReader) Schema() *arrow.Schema {
-	return r.schema
-}
-
-func (r *blobRecordReader) Next() bool {
-	if r.refs.Load() <= 0 {
-		return false
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.done || r.err != nil {
-		return false
-	}
-	if err := r.ctx.Err(); err != nil {
-		r.err = err
-		r.done = true
-		return false
-	}
-	if r.current != nil {
-		r.current.Release()
-		r.current = nil
-	}
-	batch, ok, err := r.stream.Next()
-	if err != nil {
-		r.err = r.wrap(err)
-		r.done = true
-		return false
-	}
-	if !ok {
-		r.done = true
-		return false
-	}
-	r.current = batch
-	return true
-}
-
-func (r *blobRecordReader) RecordBatch() arrow.RecordBatch {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.current
-}
-
-func (r *blobRecordReader) Record() arrow.Record {
-	return r.RecordBatch()
-}
-
-func (r *blobRecordReader) Err() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.err
-}
-
-var _ array.RecordReader = (*blobRecordReader)(nil)

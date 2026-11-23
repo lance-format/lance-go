@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -401,6 +402,164 @@ class CachePlatformTests(unittest.TestCase):
             )
             self.assertEqual(code, 1)
             self.assertTrue(any("cached library is missing" in error for error in read_report(out)["errors"]))
+
+
+def write_fixture_repo(root, files):
+    """Write files, commit them, and return the resulting commit SHA."""
+    for name, content in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(root),
+            "-c", "user.name=public-consumer-test",
+            "-c", "user.email=public-consumer-test@example.com",
+            "commit", "-q", "-m", "fixture",
+        ],
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout.decode("ascii").strip()
+
+
+def write_module_zip(path, module, version, files):
+    prefix = "%s@%s/" % (module, version)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(prefix + name, content)
+
+
+class ArchiveComparisonTests(unittest.TestCase):
+    MODULE = "example.com/module"
+    VERSION = "v1.2.3"
+
+    def archive_args(self, repo, zip_path, source_commit, out):
+        return [
+            "archive",
+            "--repo", str(repo),
+            "--zip", str(zip_path),
+            "--module", self.MODULE,
+            "--version", self.VERSION,
+            "--source-commit", source_commit,
+            "--out", str(out),
+        ]
+
+    def test_nested_module_with_go_mod_is_excluded(self):
+        files = {
+            "go.mod": b"module example.com/module\n\ngo 1.23.0\n",
+            "main.go": b"package module\n",
+            "internal/tools/go.mod": b"module example.com/module/internal/tools\n\ngo 1.23.0\n",
+            "internal/tools/main.go": b"package main\n",
+            "scripts/go-module-origin/generator/go.mod": b"module example.com/module/tools/generator\n\ngo 1.23.0\n",
+            "scripts/go-module-origin/generator/main.go": b"package main\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            commit = write_fixture_repo(repo, files)
+            zip_path = root / "module.zip"
+            write_module_zip(zip_path, self.MODULE, self.VERSION, {
+                "go.mod": files["go.mod"],
+                "main.go": files["main.go"],
+            })
+            out = root / "report.json"
+            code, _, stderr = run_verify(self.archive_args(repo, zip_path, commit, out))
+            self.assertEqual(code, 0, stderr)
+            report = read_report(out)
+            self.assertEqual(report["expected_files"], 2)
+            self.assertEqual(
+                report["nested_modules_excluded"],
+                ["internal/tools", "scripts/go-module-origin/generator"],
+            )
+
+    def test_historical_tree_keeps_present_directory_files(self):
+        # Before internal/tools became a nested module its files were part of
+        # the root module ZIP; historical tags must keep expecting them.
+        files = {
+            "go.mod": b"module example.com/module\n\ngo 1.23.0\n",
+            "main.go": b"package module\n",
+            "internal/tools/main.go": b"package main\n",
+            "scripts/go-module-origin/generator/go.mod": b"module example.com/module/tools/generator\n\ngo 1.23.0\n",
+            "scripts/go-module-origin/generator/main.go": b"package main\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            commit = write_fixture_repo(repo, files)
+            zip_path = root / "module.zip"
+            write_module_zip(zip_path, self.MODULE, self.VERSION, {
+                "go.mod": files["go.mod"],
+                "main.go": files["main.go"],
+                "internal/tools/main.go": files["internal/tools/main.go"],
+            })
+            out = root / "report.json"
+            code, _, stderr = run_verify(self.archive_args(repo, zip_path, commit, out))
+            self.assertEqual(code, 0, stderr)
+            report = read_report(out)
+            self.assertEqual(report["expected_files"], 3)
+            self.assertEqual(
+                report["nested_modules_excluded"],
+                ["scripts/go-module-origin/generator"],
+            )
+
+    def test_archive_containing_nested_module_files_fails(self):
+        files = {
+            "go.mod": b"module example.com/module\n\ngo 1.23.0\n",
+            "main.go": b"package module\n",
+            "internal/tools/go.mod": b"module example.com/module/internal/tools\n\ngo 1.23.0\n",
+            "internal/tools/main.go": b"package main\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            commit = write_fixture_repo(repo, files)
+            zip_path = root / "module.zip"
+            write_module_zip(zip_path, self.MODULE, self.VERSION, {
+                "go.mod": files["go.mod"],
+                "main.go": files["main.go"],
+                "internal/tools/main.go": files["internal/tools/main.go"],
+            })
+            out = root / "report.json"
+            code, _, _ = run_verify(self.archive_args(repo, zip_path, commit, out))
+            self.assertEqual(code, 1)
+            self.assertIn(
+                "unexpected in archive: internal/tools/main.go",
+                read_report(out)["differences"],
+            )
+
+    def test_explicit_nested_module_is_still_excluded(self):
+        files = {
+            "go.mod": b"module example.com/module\n\ngo 1.23.0\n",
+            "main.go": b"package module\n",
+            "internal/tools/main.go": b"package main\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            commit = write_fixture_repo(repo, files)
+            zip_path = root / "module.zip"
+            write_module_zip(zip_path, self.MODULE, self.VERSION, {
+                "go.mod": files["go.mod"],
+                "main.go": files["main.go"],
+            })
+            out = root / "report.json"
+            args = self.archive_args(repo, zip_path, commit, out)
+            args += ["--nested-module", "internal/tools"]
+            code, _, stderr = run_verify(args)
+            self.assertEqual(code, 0, stderr)
+            report = read_report(out)
+            self.assertEqual(report["expected_files"], 2)
+            self.assertEqual(report["nested_modules_excluded"], ["internal/tools"])
 
 
 if __name__ == "__main__":

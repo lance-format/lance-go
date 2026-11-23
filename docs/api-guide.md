@@ -610,24 +610,66 @@ result falls back to the initial options. At the callback boundary a fetch retur
 empty map means Some(empty); native then applies its fallback, so a resolved
 snapshot with a provider but no initial options is Some(empty). `Snapshot` returns an
 independent Go map and preserves whether native resolved Some or None.
-`Close` stops new local acquisitions and waits for in-flight snapshots and
-native calls that already acquired the accessor. Native datasets, readers,
+`Close() error` stops new local acquisitions, waits for in-flight snapshots and
+native calls that already acquired the accessor, and implements `io.Closer`;
+it always returns nil. Native datasets, readers,
 writers and sessions retain their own native reference, so they remain usable
-after the caller closes its accessor and do not block `Close`. A provider has no Close hook; the adapter context is
-released when the final native owner is dropped, while the caller still owns
-the Go provider value.
+after the caller closes its accessor and do not block `Close`. A provider has
+no Close hook and the SDK never calls a provider `Close` method; the adapter
+keeps the Go provider reachable, and may call `FetchStorageOptions`, until
+native releases the final owner. That can happen after the caller closes its
+accessor or file value. The provider value stays caller-owned and can be
+reused by another accessor.
 
 Do not call `Close` on an accessor or its owner from inside its own callback.
 Callbacks may be invoked while an operation is using the accessor; external
 synchronization must not depend on `Close` returning from that callback.
 
+### Migrating accessor ownership from v0.2.0
+
+`StorageOptionsAccessor.Close` now returns `error`, so the type implements
+`io.Closer`. `defer accessor.Close()` still compiles, but a stored method value
+changes from `func()` to `func() error`, and a custom interface or wrapper that
+declared `Close()` must add the error result. Use `io.Closer` and check the
+error where it matters:
+
+```go
+// v0.2.0: accessor.Close is a func() method value.
+closeFn := accessor.Close
+
+// v0.3.0: the method value is a func() error; adapt it when a func() is required.
+closeFn := func() { _ = accessor.Close() }
+```
+
+`file.StorageOptions` is now a type alias for `lance.StorageOptionsAccessor`,
+so raw file APIs accept a root accessor directly. `NewStorageOptions`,
+`NewStorageOptionsWithProvider` and the deprecated
+`NewStorageOptionsFromAccessor` all return that same root accessor type.
+Passing an accessor directly borrows it for the open call and leaves closing
+with its creator; there is no second wrapper. `NewStorageOptionsFromAccessor`
+is retained for source compatibility and returns the accessor it receives, so
+closing that value still closes the same accessor as closing the root value.
+
+```go
+// v0.2.0: the file wrapper owned the accessor after adoption.
+storage, err := file.NewStorageOptionsFromAccessor(accessor)
+reader, err := file.Open(ctx, uri, &file.ReaderOptions{StorageOptions: storage})
+defer storage.Close()
+
+// v0.3.0: pass the accessor and close it once from its creator.
+reader, err := file.Open(ctx, uri, &file.ReaderOptions{StorageOptions: accessor})
+defer accessor.Close()
+```
+
 For raw files, pass either `file.NewStorageOptions` (static) or
 `file.NewStorageOptionsWithProvider` to `ReaderOptions`, `WriterOptions` or
-`SessionOptions`. To reuse a root `StorageOptionsAccessor`, wrap it with
-`file.NewStorageOptionsFromAccessor`; ownership of the accessor transfers to
-the returned `file.StorageOptions`. Readers, writers and sessions retain the
-accessor; close the caller-owned `StorageOptions` after the open calls return.
-A `file.Session` rejects per-call Session, StorageOptions and Scheduler
+`SessionOptions`, or pass a root `StorageOptionsAccessor` directly. A nil
+`*file.StorageOptions` means native defaults; `file.NewStorageOptions(nil)` or
+an empty map means an explicitly empty option set. Readers, writers and
+sessions retain their own native accessor reference, so it is safe to close the
+accessor after their open calls return; already-open handles remain usable and
+`Close` does not wait for them. Close the accessor once, from its creator. A
+`file.Session` rejects per-call Session, StorageOptions and Scheduler
 overrides.
 
 A transaction returned by `WriteUncommitted` does not retain the accessor.
@@ -722,11 +764,15 @@ Contracts and limits:
 - Contexts are checked before a native call; they cannot interrupt a native
   blocking call once it starts. No method claims that cancellation stopped I/O.
 - Storage options may be static or dynamic. Pass `file.NewStorageOptions` or
-  `file.NewStorageOptionsWithProvider` to a standalone reader or writer, and
-  close the caller-owned `StorageOptions` after those open calls return.
-  Readers, writers and sessions retain the native accessor. Dynamic provider
-  tests use local fixtures and provider counters; real cloud authentication
-  and remote object-store acceptance are separate and are not claimed here.
+  `file.NewStorageOptionsWithProvider` to a standalone reader or writer, or
+  pass a root `StorageOptionsAccessor` directly. A nil `*file.StorageOptions`
+  means native defaults, while `file.NewStorageOptions(nil)` or an empty map
+  means an explicitly empty set. Readers, writers and sessions retain the
+  native accessor and remain usable after the caller closes it; closing the
+  accessor does not wait for them. The provider stays caller-owned and is never
+  closed by the SDK. Dynamic provider tests use local fixtures and provider
+  counters; real cloud authentication and remote object-store acceptance are
+  separate and are not claimed here.
 - `PackedBlobWriter.WriteBlobs` borrows a Binary, LargeBinary, or
   FixedSizeBinary Arrow array and appends its payloads in order. Null and empty
   values remain distinct. Sliced arrays and repeated calls are supported; the

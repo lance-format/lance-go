@@ -89,8 +89,8 @@ func TestGenerateELFModule(t *testing.T) {
 	if !strings.Contains(string(goMod), "module example.com/artifact\n") {
 		t.Fatalf("generated go.mod does not declare the module path:\n%s", goMod)
 	}
-	if !strings.Contains(string(goMod), "\ngo 1.23.0\n") {
-		t.Fatalf("generated go.mod does not target Go 1.23:\n%s", goMod)
+	if !strings.Contains(string(goMod), "\ngo 1.26.0\n") {
+		t.Fatalf("generated go.mod does not target Go 1.26:\n%s", goMod)
 	}
 
 	if got := parsePackageName(t, filepath.Join(result.ModuleDir, "artifact.go")); got != "artifact" {

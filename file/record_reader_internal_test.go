@@ -14,13 +14,15 @@ import (
 	lance "github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/cdata"
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/streamreader"
 )
 
-// TestRecordReaderWrapsStreamErrors verifies that the raw-file record reader
-// maps an Arrow stream failure to the public error contract. A raw-file stream
-// cannot be made to fail deterministically through the public API, so the
-// stream comes from a failing RecordReader; the recordReader.Next path and its
-// wrap closure are the same ones used by ReadAll, ReadRange and ReadIndices.
+// TestRecordReaderWrapsStreamErrors verifies that the record reader used by
+// raw-file reads maps an Arrow stream failure to the public error contract. A
+// raw-file stream cannot be made to fail deterministically through the public
+// API, so the stream comes from a failing RecordReader; the reader path and
+// the wrap closure are the same ones used by ReadAll, ReadRange and
+// ReadIndices.
 func TestRecordReaderWrapsStreamErrors(t *testing.T) {
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
@@ -39,7 +41,7 @@ func TestRecordReaderWrapsStreamErrors(t *testing.T) {
 	}
 
 	const uri = "/tmp/data.lance"
-	records := newRecordReader(context.Background(), stream, func(err error) error {
+	records := streamreader.NewReader(context.Background(), stream, stream.Schema(), func(err error) error {
 		return wrapError("read all", uri, err)
 	})
 	defer records.Release()

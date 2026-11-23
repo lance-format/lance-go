@@ -51,17 +51,27 @@ check them at runtime. What is verifiable is that the payload decompresses to
 those bytes, that the module version resolves through the public proxy and
 checksum database, and that the bytes match the official release archive:
 
-- `internal/tools/fetch-lance-c-release` acquires the archive for the pinned
-  release, verifies the published per-asset checksum and the canonical header,
-  and then compares the extracted library with the resolved artifact module that
-  this target's generated selector imports. A release archive and a replacement
-  checksum cannot change the bytes CI tests without failing that comparison. The
-  check reports itself as inactive while a new pin has no republished module yet.
+- `fetch-lance-c-release` in the `internal/tools` module acquires the archive
+  for the pinned release, verifies the published per-asset checksum and the
+  canonical header set, and then compares the extracted library with the resolved
+  artifact module that this target's generated selector imports. A legacy
+  archive keeps the single-file `upstreamHeaderSHA256` check; a split archive
+  extracts every public `include/lance/*.h` (excluding `lance.hpp`) and verifies
+  the sorted manifest against an independent composite identity. The record
+  keeps `header=` for file consumers and adds `abi_header=` for the ABI
+  checker; `scripts/abi-checker-input.sh` selects the directory for split
+  layouts and the validated file for legacy layouts. A release archive and a
+  replacement checksum cannot change the bytes CI tests without failing that
+  comparison. The check reports itself as inactive while a new pin has no
+  republished module yet.
 - `scripts/check-native-library.sh` validates the acquired library against the
   pinned header, object format and architecture, dependency closure, libc or
   macOS deployment floor, and every symbol the Go bindings bind.
-- `internal/tools/check-abi-symbols` verifies that each bound symbol is declared
-  by the header with compatible arity and pointer/integer classes.
+- `check-abi-symbols` in the `internal/tools` module verifies that each bound
+  symbol is declared by the header with compatible arity and pointer/integer
+  classes. It accepts a single legacy header or a verified `include/lance`
+  directory; the directory form checks the manifest and parses the union,
+  including type-only headers.
 
 The pinned `lance-c v0.2.1-beta.3` library exports 890 `lance_*` symbols; the Go
 bindings bind 608 of them. The ABI check covers that bound subset and does not
