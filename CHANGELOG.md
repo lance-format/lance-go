@@ -72,6 +72,10 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   `ErrInvalidArgument` for a nil provider, and
   `file.NewStorageOptionsFromAccessor` does the same for a nil accessor. A
   non-nil zero accessor is returned unchanged and behaves as already closed.
+- The reader returned by `Scanner.ToArrowReader` releases safely while a
+  `Next` call is blocked: the final `Release` wakes that call and releases a
+  batch that arrives after release. At end of stream, a `WithScanStatistics`
+  callback may call `Next` on the same reader and receives `false`.
 
 ### Migration from v0.2.0
 
