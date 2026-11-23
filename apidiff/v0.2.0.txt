@@ -26,6 +26,13 @@ lance: (*Dataset).AddColumnsSQL: changed from func(context.Context, []SQLColumn,
 lance: (*Dataset).AddColumnsStream: changed from func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...uint64) (*Dataset, error) to func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...AddColumnsOption) (*Dataset, error)
 lance: (*Fragment).AddColumnsSQL: changed from func(context.Context, []SQLColumn, ...uint64) (*Fragment, *NativeSchema, error) to func(context.Context, []SQLColumn, ...AddColumnsOption) (*Fragment, *NativeSchema, error)
 lance: (*Fragment).AddColumnsStream: changed from func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...uint64) (*Fragment, *NativeSchema, error) to func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...AddColumnsOption) (*Fragment, *NativeSchema, error)
+
+# ScanMetric.Kind changed from int32 to the named ScanMetricKind in #108
+# (v0.3.0). Review material: "Scan statistics" in docs/api-guide.md and the
+# ScanMetric migration entry in CHANGELOG.md. Untyped literals keep compiling;
+# int32 assignments, parameters and typed struct-literal fields need an
+# explicit conversion. The type, constants and String method are additive.
+lance: ScanMetric.Kind: changed from int32 to ScanMetricKind
 lance: BranchOption: changed from func(*branchOptions) error to interface{applyBranch(*branchOptions) error}
 lance: CommitOption: changed from func(*commitConfig) error to interface{applyCommit(*commitConfig) error}
 lance: OpenOption: changed from func(*openConfig) error to interface{applyOpen(*openConfig) error}

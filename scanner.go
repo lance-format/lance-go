@@ -3,6 +3,7 @@ package lance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"iter"
 	"runtime"
 	"sync"
@@ -14,10 +15,40 @@ import (
 	"github.com/lance-format/lance-go/internal/ffi"
 )
 
-// ScanMetric is one native scanner metric.
+// ScanMetricKind identifies the unit of a ScanMetric value.
+//
+// The values match LanceScanMetricKind in the pinned lance-c header. A metric
+// produced by a newer native library may carry a kind this version does not
+// define; ScanMetric.Kind preserves that value.
+type ScanMetricKind int32
+
+const (
+	// ScanMetricKindCount reports a number of occurrences.
+	ScanMetricKindCount ScanMetricKind = 0
+	// ScanMetricKindTimeNanoseconds reports elapsed time in nanoseconds.
+	ScanMetricKindTimeNanoseconds ScanMetricKind = 1
+)
+
+// String returns the native enumerator name, or ScanMetricKind(N) for a kind
+// added by a newer lance-c.
+func (k ScanMetricKind) String() string {
+	switch k {
+	case ScanMetricKindCount:
+		return "LANCE_SCAN_METRIC_COUNT"
+	case ScanMetricKindTimeNanoseconds:
+		return "LANCE_SCAN_METRIC_TIME_NANOSECONDS"
+	default:
+		return fmt.Sprintf("ScanMetricKind(%d)", int32(k))
+	}
+}
+
+// ScanMetric is one native scanner metric. Metric names and the set of metrics
+// are native diagnostics, not a stable API.
 type ScanMetric struct {
-	Name  string
-	Kind  int32
+	Name string
+	// Kind is the native LanceScanMetricKind value.
+	Kind ScanMetricKind
+	// Value is a count or a duration in nanoseconds, according to Kind.
 	Value uint64
 }
 
@@ -103,7 +134,7 @@ func (s *Scanner) Statistics() ScanStatistics {
 		Metrics:               make([]ScanMetric, len(stats.Metrics)),
 	}
 	for i, metric := range stats.Metrics {
-		result.Metrics[i] = ScanMetric{Name: metric.Name, Kind: metric.Kind, Value: metric.Value}
+		result.Metrics[i] = ScanMetric{Name: metric.Name, Kind: ScanMetricKind(metric.Kind), Value: metric.Value}
 	}
 	return result
 }
