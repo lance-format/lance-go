@@ -953,7 +953,7 @@ try {
 	Push-Location $RepoRoot
 	try {
 		Invoke-Logged -FilePath "go" -ArgumentList @(
-			"run", "./internal/tools/fetch-lance-c-release",
+			"-C", "internal/tools", "run", "./fetch-lance-c-release",
 			"-target", "windows/$Architecture",
 			"-out", $releaseDir
 		) -LogPath $acquireLog -Label "acquire pinned lance-c release"
@@ -1414,7 +1414,7 @@ try {
 	$abiLog = Join-Path $EvidenceDir "abi-check.log"
 	Push-Location $RepoRoot
 	try {
-		Invoke-Logged -FilePath "go" -ArgumentList @("run", "./internal/tools/check-abi-symbols") -LogPath $abiLog -Label "check-abi-symbols"
+		Invoke-Logged -FilePath "go" -ArgumentList @("-C", "internal/tools", "run", "./check-abi-symbols") -LogPath $abiLog -Label "check-abi-symbols"
 	} finally {
 		Pop-Location
 	}
@@ -1729,7 +1729,7 @@ try {
 	Push-Location $RepoRoot
 	try {
 		Invoke-Logged -FilePath "go" -ArgumentList @(
-			"run", "./internal/tools/sync-lance-c-gen",
+			"-C", "internal/tools", "run", "./sync-lance-c-gen",
 			"-library", $stagedDll,
 			"-header", $stagedHeader,
 			"-target", "windows/$Architecture",
@@ -1804,7 +1804,7 @@ try {
 	Push-Location $RepoRoot
 	try {
 		Invoke-Logged -FilePath "go" -ArgumentList @(
-			"run", "./internal/tools/verify-lance-c-artifact",
+			"-C", "internal/tools", "run", "./verify-lance-c-artifact",
 			"-module", $candidateModule,
 			"-library", $stagedDll,
 			"-pin", (Join-Path $RepoRoot "internal\ffi\upstream.go"),

@@ -176,5 +176,5 @@ build-lance-c: installed lance-c $upstream_commit
 Next steps:
   export LANCE_LIB_PATH="$lib_path"
   go test ./...
-  LANCE_C_HEADER="$installed_header" go run ./internal/tools/check-abi-symbols
+  LANCE_C_HEADER="$installed_header" go -C internal/tools run ./check-abi-symbols
 EOF

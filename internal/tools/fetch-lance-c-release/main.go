@@ -10,9 +10,13 @@
 //
 // Usage:
 //
-//	go run ./internal/tools/fetch-lance-c-release \
+//	go -C internal/tools run ./fetch-lance-c-release \
 //	  -target linux/amd64 \
 //	  -out /tmp/lance-c-release
+//
+// The command runs from the internal/tools module directory. Pass absolute
+// paths for -out, -pin and -root; relative values resolve under internal/tools
+// rather than the caller's directory.
 //
 // Extraction uses in-process xz and tar readers, so acquisition does not depend
 // on the platform tar implementation.
@@ -73,16 +77,15 @@ import (
 	"time"
 
 	"github.com/lance-format/lance-go/internal/tools/artifactmeta"
+	"github.com/lance-format/lance-go/internal/tools/reporoot"
 	"github.com/ulikunitz/xz"
 )
 
-const pinPath = "internal/ffi/upstream.go"
-
 func main() {
 	targetFlag := flag.String("target", "", "target to acquire as GOOS/GOARCH: linux/amd64, linux/arm64, darwin/arm64, windows/amd64, or windows/arm64")
-	outFlag := flag.String("out", "", "new output directory; must not exist")
-	pinFlag := flag.String("pin", pinPath, "pin file with the upstream provenance constants")
-	rootFlag := flag.String("root", ".", "repository root that provides go.mod and internal/bundled")
+	outFlag := flag.String("out", "", "new output directory; must not exist (absolute path; relative values resolve from the internal/tools module directory)")
+	pinFlag := flag.String("pin", "", "pin file with the upstream provenance constants (absolute path; relative values resolve from the internal/tools module directory; default: <root>/internal/ffi/upstream.go)")
+	rootFlag := flag.String("root", "", "repository root that provides go.mod and internal/bundled (absolute path; relative values resolve from the internal/tools module directory; default: discovered from the current directory)")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
@@ -93,7 +96,20 @@ func main() {
 		fail(errors.New("-target and -out are required"))
 	}
 
-	if err := run(*targetFlag, *outFlag, *pinFlag, *rootFlag); err != nil {
+	root := *rootFlag
+	if root == "" {
+		discovered, err := reporoot.Find()
+		if err != nil {
+			fail(err)
+		}
+		root = discovered
+	}
+	pin := *pinFlag
+	if pin == "" {
+		pin = filepath.Join(root, "internal", "ffi", "upstream.go")
+	}
+
+	if err := run(*targetFlag, *outFlag, pin, root); err != nil {
 		fail(err)
 	}
 }

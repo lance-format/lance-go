@@ -162,13 +162,18 @@ module declares no requirements and contains only `embed` data.
 
 ## 2. Build, check, and record native acceptance
 
+The `go -C internal/tools` commands in this section run the tool from the
+`internal/tools` module directory. Pass absolute paths for `-out`, `-pin`,
+`-root`, `-module`, `-library` and `LANCE_C_HEADER`; a relative value resolves
+under `internal/tools`, not the repository root.
+
 When the pin is a published `lance-c` release, acquire the exact published
 bytes instead of rebuilding:
 
 ```sh
 : "${TARGET:?target as GOOS/GOARCH, for example linux/amd64}"
-: "${RELEASE_OUT:?new output directory}"
-go run ./internal/tools/fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
+: "${RELEASE_OUT:?absolute new output directory}"
+go -C internal/tools run ./fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
 NATIVE_LIB=$(find "$RELEASE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
 NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
 ```
@@ -217,7 +222,7 @@ ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 Check the bindings against the installed header:
 
 ```sh
-LANCE_C_HEADER="$NATIVE_HEADER" go run ./internal/tools/check-abi-symbols
+LANCE_C_HEADER="$NATIVE_HEADER" go -C internal/tools run ./check-abi-symbols
 ```
 
 Run the maintained native-library checker:
@@ -284,7 +289,7 @@ outside the checkout. The generator remains `scripts/sync-lance-c.sh`; the
 static-origin packager consumes its `module/` output for each target:
 
 ```sh
-: "${ARTIFACT_OUT:?new output directory outside the checkout}"
+: "${ARTIFACT_OUT:?absolute new output directory outside the checkout}"
 scripts/sync-lance-c.sh \
   --library "$NATIVE_LIB" \
   --header "$NATIVE_HEADER" \
@@ -320,7 +325,7 @@ pin, and module path. It also checks that `Payload []byte` embeds that exact
 archive and that the module contains only the allowed data files:
 
 ```sh
-go run ./internal/tools/verify-lance-c-artifact \
+go -C internal/tools run ./verify-lance-c-artifact \
   -module "$ARTIFACT_OUT/module" \
   -library "$NATIVE_LIB" \
   -target "$TARGET" \

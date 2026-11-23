@@ -119,7 +119,7 @@ version at runtime. Provenance is checked at build time instead:
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
 git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER=./lance.h go run ./internal/tools/check-abi-symbols
+LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a different
@@ -263,7 +263,7 @@ Go SDK suite against the pinned release DLL on both hosted runners, with a
 Maintenance commands, compatibility fixtures and the soak benchmark live under
 `internal/` so they are not part of the public SDK package surface. On the root
 module, `go list ./...` exposes only the public SDK packages, `internal/...`,
-and user-facing `examples/...`.
+the `scripts/`-hosted harness sources, and user-facing `examples/...`.
 
 ```text
 *.go              public Dataset, Session, Write, Scanner, transaction, fragment and option APIs
@@ -273,11 +273,24 @@ internal/cdata/   Arrow C Data import/export and release callbacks
 internal/handle/  Go callback state handles
 internal/loader/  discovery, platform loading, cache and process-wide singleton
 internal/ffi/     native bindings, resource handles, TLS error extraction
-internal/tools/   maintainer Go commands and artifact tooling
+internal/tools/   maintainer Go commands and artifact tooling, in their own Go module
 internal/benchmarks/soak/  opt-in Linux RSS and lifecycle benchmark (long runs are opt-in)
 internal/compat/            cross-language compatibility harness
 scripts/          build-lance-c.sh, verify-quickstart.sh, shell/PS/Python harnesses
 ```
+
+`internal/tools` is a nested Go module
+(`github.com/lance-format/lance-go/internal/tools`), so its dependencies —
+currently `github.com/klauspost/compress` and `github.com/ulikunitz/xz` — never
+enter the root module graph or the published root module ZIP. Run its commands
+from the repository root with `go -C internal/tools run ./<command>`; the tools
+locate the repository root from their working directory, and `-root` or `-pin`
+still override it. `go -C` makes `internal/tools` the tool process's working
+directory, so pass absolute paths for `-root`, `-pin`, `-header`, `-out`,
+`-module`, `-library` and `LANCE_C_HEADER`; relative values resolve there, not
+in the caller's directory. The public-consumer fixture programs live in
+`scripts/public-consumer/consumer-src/` because they deliberately compile
+against the published root SDK rather than the working tree.
 
 The Arrow bridge is independent of the loader and Lance FFI. Native calls and
 thread-local error extraction stay in `internal/ffi`; public resource ownership
