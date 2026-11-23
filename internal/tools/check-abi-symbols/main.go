@@ -3,7 +3,9 @@
 //
 // The header is not vendored. Export it from the pinned upstream checkout:
 //
-//	git -C /path/to/lance-c show ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca:include/lance/lance.h > lance.h
+//	PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
+//	test -n "$PINNED_COMMIT"
+//	git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
 //	LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
 //
 // The command runs from the internal/tools module directory. Pass absolute

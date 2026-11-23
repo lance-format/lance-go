@@ -1,17 +1,20 @@
 // Command sync-lance-c-gen generates one lance-c artifact module and its
 // bundled selector from an already-built shared library.
 //
-// Usage:
+// The supported entry point is the pin-aware script, which reads
+// internal/ffi/upstream.go and supplies the provenance flags this command
+// requires:
 //
-//	go -C internal/tools run ./sync-lance-c-gen \
-//	  -library /path/to/liblance_c.so \
-//	  -header /path/to/lance.h \
-//	  -target linux/amd64 \
-//	  -out /tmp/artifact
+//	scripts/sync-lance-c.sh \
+//	  --library /path/to/liblance_c.so \
+//	  --header /path/to/lance.h \
+//	  --target linux/amd64 \
+//	  --out /tmp/artifact
 //
-// The command runs from the internal/tools module directory. Pass absolute
-// paths for -library, -header and -out; relative values resolve under
-// internal/tools rather than the caller's directory.
+// A direct invocation must also provide -upstream-repo, -upstream-commit and
+// -header-sha256. The command runs from the internal/tools module directory,
+// so pass absolute paths for -library, -header and -out; relative values
+// resolve under internal/tools rather than the caller's directory.
 package main
 
 import (
@@ -31,9 +34,9 @@ func main() {
 	flag.StringVar(&opts.OutDir, "out", "", "new output directory to publish (must not exist; absolute path; relative values resolve from the internal/tools module directory)")
 	flag.StringVar(&opts.ModulePath, "module-path", "", "generated artifact module path (default: go.lance.org/liblance/<goos>-<goarch>)")
 	flag.StringVar(&opts.SelectorPackage, "selector-package", "bundled", "package name for the generated selector (copied into internal/bundled)")
-	flag.StringVar(&opts.UpstreamRepo, "upstream-repo", "", "lance-c repository recorded as provenance")
-	flag.StringVar(&opts.UpstreamCommit, "upstream-commit", "", "lance-c commit recorded as provenance")
-	flag.StringVar(&opts.HeaderSHA256, "header-sha256", "", "pinned SHA-256 of the header")
+	flag.StringVar(&opts.UpstreamRepo, "upstream-repo", "", "lance-c repository recorded as provenance (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
+	flag.StringVar(&opts.UpstreamCommit, "upstream-commit", "", "lance-c commit recorded as provenance (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
+	flag.StringVar(&opts.HeaderSHA256, "header-sha256", "", "pinned SHA-256 of the header (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
