@@ -319,3 +319,109 @@ jobs:
           set -euo pipefail
           go build ./...
           go build -tags lance_external_lib ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+
+      - name: Install pinned linter
+        run: |
+          set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/analysis-bin"
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          echo "$GOBIN" >> "$GITHUB_PATH"
+
+      - name: Lint the default and external-library builds
+        run: |
+          set -euo pipefail
+          golangci-lint run
+          golangci-lint run --build-tags lance_external_lib
+
+  govulncheck:
+    name: Vulnerability scan (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both maintained Go lines. The live vulnerability database is not
+        # pinned, so the module versions are recorded in each log.
+        go-version:
+          - 1.26.x
+          - stable
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache-dependency-path: go.sum
+
+      - name: Install pinned vulnerability scanner
+        run: |
+          set -euo pipefail
+          export GOBIN="$RUNNER_TEMP/analysis-bin"
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          echo "$GOBIN" >> "$GITHUB_PATH"
+
+      # The SDK module and the maintainer tools module are separate modules.
+      # The tools module compresses and extracts release payloads through its
+      # own compress dependency, so it needs its own scan.
+      - name: Scan the SDK module
+        run: |
+          set -euo pipefail
+          govulncheck -show=version ./...
+
+      - name: Scan the maintainer tools module
+        run: |
+          set -euo pipefail
+          cd internal/tools
+          govulncheck -show=version ./...
+
+  apidiff:
+    name: API compatibility
+    # Run on pull requests and manual dispatch. A minor-release line may carry
+    # reviewed, intentional deltas from the previous stable tag; the report is
+    # checked against its migration notes, and a push to main must not fail on
+    # those approved deltas before the new tag exists.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The comparison needs the release tag and a worktree for it.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+
+      - name: Compare exported APIs with the latest stable release
+        run: ./scripts/check-api-compat.sh
