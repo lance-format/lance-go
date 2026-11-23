@@ -110,8 +110,9 @@ the public-consumer lanes accept the published modules.
   default, namespace-only and external consumers on all five targets with cold
   module, build and loader caches. They verify the root archive against the
   checked-out tree, the selected module and payload, the extracted library
-  identity and the roundtrip output. They run on a root `v*` tag or by dispatch
-  naming that tag; a SHA or pseudo-version is rejected.
+  identity and the roundtrip output, and run the default-bundle RTree and raw
+  Blob v2 regressions. They run on a root `v*` tag or by dispatch naming that
+  tag; a SHA or pseudo-version is rejected.
 - `.github/workflows/go-module-origin-checks.yml` runs the origin generator unit
   tests, shell and Python syntax checks, and a mock publisher test. It does not
   reach the origin.

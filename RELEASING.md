@@ -81,10 +81,10 @@ checkout or publish it before the exact modules exist. Update together:
 - README install command, quickstart tag, native release and Lance version
   sentence, supported target table, and the read-only deployment recipe's
   module, version and library hash;
-- [`docs/api-guide.md`](docs/api-guide.md) dated API notes and the versioned
-  Blob v2 and RTree support boundaries. Keep the exact native mapping in the
-  README, the [native package record](docs/native-packages.md) and the release
-  record, not duplicated in the guide;
+- [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
+  boundaries. Keep the exact native mapping in the README, the
+  [native package record](docs/native-packages.md) and the release record, not
+  duplicated in the guide;
 - [`docs/development.md`](docs/development.md) "Building liblance_c" Rust
   requirement and matching native build guards, "Pinned ABI" reproducible
   command, and "Testing" current RTree command;

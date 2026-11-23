@@ -42,7 +42,7 @@ import (
 //	}
 //	defer accessor.Close()
 //
-// The method is documented on the alias target: [accessor.Provider].
+// Its methods are documented on the alias target: [accessor.Provider].
 type StorageOptionsProvider = accessor.Provider
 
 // ForceStorageOptionsProvider optionally handles an explicit force refresh.
@@ -83,6 +83,7 @@ type ForceStorageOptionsProvider = accessor.ForceProvider
 // own reference. Callers own the provider value passed to
 // NewStorageOptionsAccessor; the accessor does not call a Go provider Close
 // method.
+// Its methods are documented on the alias target: [accessor.Accessor].
 type StorageOptionsAccessor = accessor.Accessor
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map

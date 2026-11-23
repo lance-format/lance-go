@@ -157,10 +157,10 @@ downloads or bundles a library for it. Other operating systems and musl builds
 must supply their own `lance-c` library through `LANCE_LIB_PATH` or the platform
 search.
 
-RTree indices and raw storage 2.2 Blob reads work with the bundled library on
-every listed target. The [API guide](docs/api-guide.md) describes their support
-boundaries, and [native packages](docs/native-packages.md) records the exact
-native pin.
+RTree indices and raw storage 2.2 Blob reads work with the bundled library. The
+[API guide](docs/api-guide.md) describes their support boundaries, and
+[native packages](docs/native-packages.md) records the exact native pin and
+which lanes run those regressions.
 
 ## Read-only or no-cache deployment
 

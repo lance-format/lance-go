@@ -33,9 +33,8 @@
 //
 // [Session], [CacheStats], [StorageOptionsAccessor], [StorageOptionsProvider]
 // and [ForceStorageOptionsProvider] are aliases of internal implementation
-// types, so their declarations are the reference for their methods, fields and
-// interface signatures. Follow the declaration link from each entry in the
-// package index.
+// types; each declaration links to the aliased type that documents its methods,
+// fields and interface signatures.
 //
 // # Errors
 //
