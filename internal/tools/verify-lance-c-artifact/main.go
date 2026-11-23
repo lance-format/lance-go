@@ -12,7 +12,7 @@
 //	  -module /tmp/staging/linux-amd64/module \
 //	  -library /path/to/liblance_c.so \
 //	  -target linux/amd64 \
-//	  -module-path github.com/lance-format/lance-go/artifacts/staging/linux-amd64
+//	  -module-path go.lance.org/liblance/staging/linux-amd64
 package main
 
 import (

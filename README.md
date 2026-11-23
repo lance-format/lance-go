@@ -39,7 +39,9 @@ In your Go module, install the same version. Dependency setup can fetch native a
 go get github.com/lance-format/lance-go@v0.1.0
 ```
 
-For the preview, install `github.com/lance-format/lance-go@v0.1.1-preview.1` instead and keep the same program. Production applications should stay on the stable release unless they are testing the preview native pin.
+For the preview, install `github.com/lance-format/lance-go@v0.1.1-preview.1` instead and keep the same program.
+
+Future releases use artifact modules served from `go.lance.org/liblance/<target>`; see [RELEASING.md](RELEASING.md) and [scripts/go-module-origin/README.md](scripts/go-module-origin/README.md). This page keeps the `v0.1.0` stable links until the `v0.1.1` release preparation.
 
 Save this program as `main.go` and run `CGO_ENABLED=0 go run .` in a directory where `data.lance` does not already exist.
 
@@ -133,6 +135,8 @@ Raw storage 2.2 Blob reads are verified for `v0.1.0`, including the released Lan
 | Linux (glibc 2.28+) | amd64, arm64 |
 | macOS | arm64 (Apple silicon) |
 | Windows | amd64, arm64 |
+
+Future previews keep the SDK path and use the static Go module origin documented in [scripts/go-module-origin/README.md](scripts/go-module-origin/README.md); the commands below remain historical v0.1.x instructions.
 
 `v0.1.0` supports RTree indices and raw storage 2.2 Blob reads with the default bundle. `v0.1.1-preview.1` keeps both and carries the newer lance-c pin. The [preview.2](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.2) and [preview.1](https://github.com/lance-format/lance-go/releases/tag/v0.1.0-preview.1) releases remain available; preview.1 included Intel macOS and used an earlier lance-c commit, `ac2634c`. Use [examples from the installed tag](https://github.com/lance-format/lance-go/tree/v0.1.0/examples).
 

@@ -27,7 +27,7 @@ Required:
 
 Optional:
   --module-path PATH      generated module path
-                          (default: github.com/lance-format/lance-go/artifacts/<goos>-<goarch>)
+                          (default: go.lance.org/liblance/<goos>-<goarch>)
   --selector-package NAME package name for the generated selector (default: bundled)
 
 The output directory contains:
@@ -156,7 +156,7 @@ header_sha256=$(read_pin upstreamHeaderSHA256)
 [[ $header_sha256 =~ ^[0-9a-f]{64}$ ]] || die "pinned upstreamHeaderSHA256 is not a SHA-256: $header_sha256"
 
 if [[ -z $module_path ]]; then
-	module_path="github.com/lance-format/lance-go/artifacts/${target//\//-}"
+	module_path="go.lance.org/liblance/${target//\//-}"
 fi
 
 cd "$repo_root"

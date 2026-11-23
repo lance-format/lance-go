@@ -520,7 +520,7 @@ func recordProvenance(library *loader.Library) (nativeRecord, buildRecord) {
 // hash is separate runtime evidence.
 func declaredArtifact(dependencies []moduleInfo) *moduleInfo {
 	for i := range dependencies {
-		if strings.HasPrefix(dependencies[i].Path, "github.com/lance-format/lance-go/artifacts/") {
+		if strings.HasPrefix(dependencies[i].Path, "go.lance.org/liblance/") {
 			return &dependencies[i]
 		}
 	}

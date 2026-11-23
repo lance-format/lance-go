@@ -27,7 +27,7 @@ import verify  # noqa: E402
 ROOT = "github.com/lance-format/lance-go"
 ROOT_VERSION = "v0.0.0-20261112090442-99cf6d137940"
 ROOT_SUM = "h1:TaAzPvfhCFuQ8PIn+BJ9Acn1o+7s+A0GGR3u3uHp8MI="
-ARTIFACT = ROOT + "/artifacts/linux-amd64"
+ARTIFACT = "go.lance.org/liblance/linux-amd64"
 ARTIFACT_VERSION = "v0.0.0-20261111235843-ac5955a095d0"
 ARTIFACT_SUM = "h1:tOJ/owlrb9wrZ1Yr18N3yXakU0+JCuSNutOu3sREkJ4="
 ARROW = "github.com/apache/arrow-go/v18"
@@ -111,6 +111,7 @@ def binary_arguments(**overrides):
         "payload": None,
         "out": None,
         "root_module": ROOT,
+        "artifact_prefix": "go.lance.org/liblance",
         "expect_root_version": ROOT_VERSION,
         "expect_root_sum": ROOT_SUM,
         "expect_artifact": artifact_ref(),

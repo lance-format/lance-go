@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Exact official release tag (for example v0.1.1-preview.1) to resolve from proxy.golang.org"
+        description: "Exact official release tag (for example v0.2.0-preview.1) to resolve from proxy.golang.org"
         required: true
         type: string
   push:
@@ -35,6 +35,7 @@ env:
   GOENV: "off"
   GOPROXY: https://proxy.golang.org
   GOSUMDB: sum.golang.org
+  ARTIFACT_MODULE_PREFIX: go.lance.org/liblance
 
 jobs:
   public-consumer:
@@ -145,7 +146,7 @@ jobs:
           mkdir -p "$EVIDENCE_DIR" "$XDG_CACHE_HOME"
           rm -rf "$XDG_CACHE_HOME/lance-go" "$HOME/Library/Caches/lance-go"
           go list -m -f 'artifact={{.Path}}@{{.Version}}' \
-            "github.com/lance-format/lance-go/artifacts/${{ matrix.slug }}"
+            "go.lance.org/liblance/${{ matrix.slug }}"
           log="$EVIDENCE_DIR/default-bundle-regressions.log"
           go test -tags lance_rtree_native -run '^(TestRTree|TestRawBlobV2)' -count=1 -p 1 -v . ./file 2>&1 | tee "$log"
           grep -Fq -- '--- PASS: TestRTreeScalarIndexGeometryQueriesAndLifecycle' "$log"

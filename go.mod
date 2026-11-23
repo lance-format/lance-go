@@ -6,12 +6,12 @@ require (
 	github.com/apache/arrow-go/v18 v18.4.1
 	github.com/ebitengine/purego v0.10.2
 	github.com/klauspost/compress v1.18.0
-	github.com/lance-format/lance-go/artifacts/darwin-arm64 v0.1.1-preview.1
-	github.com/lance-format/lance-go/artifacts/linux-amd64 v0.1.1-preview.1
-	github.com/lance-format/lance-go/artifacts/linux-arm64 v0.1.1-preview.1
-	github.com/lance-format/lance-go/artifacts/windows-amd64 v0.1.1-preview.1
-	github.com/lance-format/lance-go/artifacts/windows-arm64 v0.1.1-preview.1
 	github.com/ulikunitz/xz v0.5.17
+	go.lance.org/liblance/darwin-arm64 v0.2.0-preview.1
+	go.lance.org/liblance/linux-amd64 v0.2.0-preview.1
+	go.lance.org/liblance/linux-arm64 v0.2.0-preview.1
+	go.lance.org/liblance/windows-amd64 v0.2.0-preview.1
+	go.lance.org/liblance/windows-arm64 v0.2.0-preview.1
 	golang.org/x/sys v0.35.0
 )
 

@@ -1,5 +1,14 @@
 # Packaged lance-c artifacts
 
+## Future release distribution
+
+Future previews and the `v0.1.1` stable adoption use the static Go module origin documented in
+[`scripts/go-module-origin/README.md`](../scripts/go-module-origin/README.md):
+the artifact modules are served as ordinary Go proxy `.info`/`.mod`/`.zip`
+objects at `go.lance.org/liblance/<target>`, not committed to Git. The
+snapshots below remain the historical v0.1.x record; the new static versions
+are recorded in the release evidence.
+
 This directory records metadata snapshots for the published artifact modules.
 Each `artifacts/<target>/` snapshot contains `artifact.go`, `go.mod`, and
 `LICENSE`, byte-identical to its pinned publication. Compressed payloads live

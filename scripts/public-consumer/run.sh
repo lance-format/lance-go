@@ -7,6 +7,7 @@
 set -euo pipefail
 
 ROOT_MODULE=${ROOT_MODULE:-github.com/lance-format/lance-go}
+ARTIFACT_MODULE_PREFIX=${ARTIFACT_MODULE_PREFIX:-go.lance.org/liblance}
 ROOT_REVISION=${ROOT_REVISION:-}
 SOURCE_COMMIT=${SOURCE_COMMIT:-}
 TARGET_GOOS=${TARGET_GOOS:?TARGET_GOOS is required}
@@ -31,7 +32,8 @@ REQUIRED_ARTIFACTS="$EVIDENCE_DIR/required-artifacts.txt"
 PUBLIC_GO_ENV=(
   -u GOPRIVATE -u GONOPROXY -u GONOSUMDB -u GONOSUMCHECK -u GOINSECURE -u GOFLAGS
   GOENV=off GOWORK=off GOTOOLCHAIN=local CGO_ENABLED=0
-  GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org
+  GOPROXY="${PUBLIC_GOPROXY:-https://proxy.golang.org}" \
+  GOSUMDB="${PUBLIC_GOSUMDB:-sum.golang.org}"
 )
 : > "$COMMANDS"
 : > "$SUMMARY"
@@ -179,33 +181,40 @@ go_env_value() {
 
 snapshot() {
   local label=$1 modcache=$2
-  local root="$modcache/cache/download/$ROOT_MODULE"
-  [[ -d $root ]] || return 0
-  find "$root" -type f \( -name '*.zip' -o -name '*.mod' \) -print | LC_ALL=C sort |
-    while IFS= read -r path; do
-      local relative module_dir module_path size hash kind version
-      relative=${path#"$root"/}
-      case "$relative" in
-        @v/*)
-          module_path=$ROOT_MODULE
-          ;;
-        */@v/*)
-          module_dir=${relative%%/@v/*}
-          module_path="$ROOT_MODULE/$module_dir"
-          ;;
-        *)
-          continue
-          ;;
-      esac
-      version=${relative##*/}
-      version=${version%.*}
-      kind=${relative##*.}
-      size=$(wc -c < "$path" | tr -d ' ')
-      hash=$(sha256_file "$path")
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$label" "$relative" "$module_path" "$kind" "$version" "$size" "$hash" "$path" \
-        >> "$MODULE_CACHE_TSV"
-    done
+  local root module_path_base
+  for root in "$modcache/cache/download/$ROOT_MODULE" "$modcache/cache/download/$ARTIFACT_MODULE_PREFIX"; do
+    [[ -d $root ]] || continue
+    if [[ $root == "$modcache/cache/download/$ROOT_MODULE" ]]; then
+      module_path_base=$ROOT_MODULE
+    else
+      module_path_base=$ARTIFACT_MODULE_PREFIX
+    fi
+    find "$root" -type f \( -name '*.zip' -o -name '*.mod' \) -print | LC_ALL=C sort |
+      while IFS= read -r path; do
+        local relative module_dir module_path size hash kind version
+        relative=${path#"$root"/}
+        case "$relative" in
+          @v/*)
+            module_path=$module_path_base
+            ;;
+          */@v/*)
+            module_dir=${relative%%/@v/*}
+            module_path="$module_path_base/$module_dir"
+            ;;
+          *)
+            continue
+            ;;
+        esac
+        version=${relative##*/}
+        version=${version%.*}
+        kind=${relative##*.}
+        size=$(wc -c < "$path" | tr -d ' ')
+        hash=$(sha256_file "$path")
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+          "$label" "$relative" "$module_path" "$kind" "$version" "$size" "$hash" "$path" \
+          >> "$MODULE_CACHE_TSV"
+      done
+  done
 }
 
 assert_empty_dir() {
@@ -216,14 +225,14 @@ assert_empty_dir() {
 
 artifact_zips_for() {
   local prefix=$1
-  awk -F'\t' -v p="$prefix" -v r="$ROOT_MODULE/artifacts/" \
+  awk -F'\t' -v p="$prefix" -v r="$ARTIFACT_MODULE_PREFIX/" \
     '$1 ~ ("^" p) && index($3, r) == 1 && $4 == "zip" { print $3 "@" $5 }' \
     "$MODULE_CACHE_TSV" | LC_ALL=C sort -u
 }
 
 artifact_mods_for() {
   local prefix=$1
-  awk -F'\t' -v p="$prefix" -v r="$ROOT_MODULE/artifacts/" \
+  awk -F'\t' -v p="$prefix" -v r="$ARTIFACT_MODULE_PREFIX/" \
     '$1 ~ ("^" p) && index($3, r) == 1 && $4 == "mod" { print $3 "@" $5 }' \
     "$MODULE_CACHE_TSV" | LC_ALL=C sort -u
 }
@@ -334,15 +343,20 @@ verify_artifact_module() {
   [[ $(basename "$META_PAYLOAD") == "$LIBRARY_NAME.zst" ]] || fail "$label payload name is $(basename "$META_PAYLOAD")"
   assert_file_identity "$META_PAYLOAD" "$META_COMPRESSED_SIZE" "$META_COMPRESSED_SHA" "$label payload"
 
-  local tracked="$REPO_DIR/artifacts/${path##*/}" tracked_file
-  # The SDK tree retains metadata; payload bytes live at the pinned publication
-  # commit. Matching artifact.go binds the payload hash checked above to HEAD.
-  for tracked_file in artifact.go go.mod LICENSE; do
-    require_file "$tracked/$tracked_file"
-    cmp "$tracked/$tracked_file" "$dir/$tracked_file" ||
-      fail "$label published $tracked_file differs from tracked artifacts/${path##*/}/$tracked_file"
-  done
-  record "${label}_tracked_artifact_metadata_match" yes
+  if [[ $path == "$ROOT_MODULE/artifacts/"* ]]; then
+    local tracked="$REPO_DIR/artifacts/${path##*/}" tracked_file
+    # Historical Git artifact modules retain metadata snapshots in the SDK tree.
+    for tracked_file in artifact.go go.mod LICENSE; do
+      require_file "$tracked/$tracked_file"
+      cmp "$tracked/$tracked_file" "$dir/$tracked_file" ||
+        fail "$label published $tracked_file differs from tracked artifacts/${path##*/}/$tracked_file"
+    done
+    record "${label}_tracked_artifact_metadata_match" yes
+  else
+    # Static-origin modules are validated from their own artifact.go, payload,
+    # checksum and the root requirement; there is no Git metadata snapshot.
+    record "${label}_tracked_artifact_metadata_match" static-origin
+  fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" "$path" "$META_TARGET" "$META_LIBRARY" "$META_COMPRESSED_SIZE" \
@@ -406,6 +420,7 @@ verify_binary() {
       --metadata "$meta" \
       --payload "$payload" \
       --root-module "$ROOT_MODULE" \
+      --artifact-prefix "$ARTIFACT_MODULE_PREFIX" \
       --expect-root-version "$ROOT_VERSION" \
       --expect-root-sum "$ROOT_SUM" \
       --expect-artifact "$expect_artifact" \
@@ -434,7 +449,7 @@ capture_deps() {
 }
 
 artifact_deps_from_meta() {
-  awk -F'\t' -v r="$ROOT_MODULE/artifacts/" '
+  awk -F'\t' -v r="$ARTIFACT_MODULE_PREFIX/" '
     $2 == "dep" && index($3, r) == 1 { print $3 "@" $4 }
   ' "$1" | LC_ALL=C sort -u
 }
@@ -447,7 +462,7 @@ assert_no_artifact_in_meta() {
 }
 
 count_artifact_packages() {
-  grep -c "^$ROOT_MODULE/artifacts/" "$1" 2>/dev/null || true
+  grep -c "^$ARTIFACT_MODULE_PREFIX/" "$1" 2>/dev/null || true
 }
 
 assert_selected_artifact_package() {
@@ -460,8 +475,8 @@ assert_selected_artifact_package() {
 
 assert_no_artifact_package() {
   local deps=$1 label=$2
-  if grep -q "^$ROOT_MODULE/artifacts/" "$deps"; then
-    grep "^$ROOT_MODULE/artifacts/" "$deps" | tee -a "$SUMMARY" >&2
+  if grep -q "^$ARTIFACT_MODULE_PREFIX/" "$deps"; then
+    grep "^$ARTIFACT_MODULE_PREFIX/" "$deps" | tee -a "$SUMMARY" >&2
     fail "$label dependency graph contains an artifact package"
   fi
   record "${label}_dependency_artifact" "<none>"
@@ -760,6 +775,7 @@ resolve_root() {
       --nested-module artifacts/darwin-arm64 \
       --nested-module artifacts/windows-amd64 \
       --nested-module artifacts/windows-arm64 \
+      --nested-module scripts/go-module-origin/generator \
       --out "$EVIDENCE_DIR/root-archive.json"; then
     fail "root archive does not match the checked-out source tree"
   fi
@@ -777,7 +793,7 @@ resolve_root() {
     block && /^\)/ { block = 0; next }
     block && NF >= 2 { print $1 " " $2 }
     !block && /^require[[:space:]]+/ { print $2 " " $3 }
-  ' "$ROOT_GOMOD" | grep "^$ROOT_MODULE/artifacts/" | LC_ALL=C sort -u > "$REQUIRED_ARTIFACTS" || true
+  ' "$ROOT_GOMOD" | grep "^$ARTIFACT_MODULE_PREFIX/" | LC_ALL=C sort -u > "$REQUIRED_ARTIFACTS" || true
   [[ -s $REQUIRED_ARTIFACTS ]] || fail "downloaded root module has no artifact requirements"
   record required_artifact_modules "$(tr '\n' ';' < "$REQUIRED_ARTIFACTS")"
 }
@@ -809,8 +825,8 @@ assert_go_environment() {
   [[ $(go_env_value CGO_ENABLED) == 0 ]] || fail "CGO_ENABLED is not 0"
   [[ $(go_env_value GOTOOLCHAIN) == local ]] || fail "GOTOOLCHAIN is not local"
   [[ $(go_env_value GOWORK) == off ]] || fail "GOWORK is not off"
-  [[ $(go_env_value GOPROXY) == https://proxy.golang.org ]] || fail "GOPROXY is not the public proxy"
-  [[ $(go_env_value GOSUMDB) == sum.golang.org ]] || fail "GOSUMDB is not sum.golang.org"
+  [[ $(go_env_value GOPROXY) == "${PUBLIC_GOPROXY:-https://proxy.golang.org}" ]] || fail "GOPROXY is not the expected proxy"
+  [[ $(go_env_value GOSUMDB) == "${PUBLIC_GOSUMDB:-sum.golang.org}" ]] || fail "GOSUMDB is not the expected sum database"
   record go_toolchain "$goversion"
   record go_host "$host_goos/$host_goarch"
   record go_target "$TARGET_GOOS/$TARGET_GOARCH"

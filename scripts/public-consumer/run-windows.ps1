@@ -25,6 +25,7 @@ POSIX modes are recorded as evidence only; this script does not claim them.
 [CmdletBinding()]
 param(
     [string]$RootModule = $env:ROOT_MODULE,
+    [string]$ArtifactModulePrefix = $env:ARTIFACT_MODULE_PREFIX,
     [string]$RootRevision = $env:ROOT_REVISION,
     [string]$LibraryName = $env:LIBRARY_NAME,
     [string]$TargetGoos = $env:TARGET_GOOS,
@@ -40,6 +41,10 @@ Set-StrictMode -Version Latest
 if ([string]::IsNullOrWhiteSpace($RootModule)) {
     $RootModule = 'github.com/lance-format/lance-go'
 }
+if ([string]::IsNullOrWhiteSpace($ArtifactModulePrefix)) {
+    $ArtifactModulePrefix = 'go.lance.org/liblance'
+}
+$script:ArtifactModulePrefix = $ArtifactModulePrefix
 $ErrorActionPreference = 'Stop'
 if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
     $PSNativeCommandUseErrorActionPreference = $false
@@ -513,40 +518,46 @@ function Assert-CacheAbsent($Mode, [string]$Label) {
 }
 
 function Save-ModuleCacheSnapshot([string]$Label, [string]$ModCache) {
-    $root = Join-Path $ModCache ("cache/download/" + $script:RootModule)
-    if (-not (Test-Path -LiteralPath $root)) {
-        return
-    }
-    $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Extension -eq '.zip' -or $_.Extension -eq '.mod' } |
-        Sort-Object FullName)
-    foreach ($file in $files) {
-        $relative = ([IO.Path]::GetRelativePath($root, $file.FullName) -replace '\\', '/')
-        $modulePath = $script:RootModule
-        $rest = $relative
-        if ($rest.StartsWith('@v/')) {
-            $rest = $rest.Substring(3)
-        } else {
-            $index = $rest.IndexOf('/@v/')
-            if ($index -lt 0) {
-                Fail "unexpected module cache path: $relative"
-            }
-            $modulePath = $script:RootModule + '/' + $rest.Substring(0, $index)
-            $rest = $rest.Substring($index + 4)
+    $roots = @(
+        @{ Path = (Join-Path $ModCache ("cache/download/" + $script:RootModule)); Base = $script:RootModule },
+        @{ Path = (Join-Path $ModCache ("cache/download/" + $script:ArtifactModulePrefix)); Base = $script:ArtifactModulePrefix }
+    )
+    foreach ($rootInfo in $roots) {
+        $root = $rootInfo.Path
+        if (-not (Test-Path -LiteralPath $root)) {
+            continue
         }
-        $kind = $file.Extension.TrimStart('.')
-        $version = [IO.Path]::GetFileNameWithoutExtension($rest)
-        $line = @(
-            $Label,
-            $relative,
-            $modulePath,
-            $kind,
-            $version,
-            [string]$file.Length,
-            (Get-FileSha256 $file.FullName),
-            $file.FullName
-        ) -join "`t"
-        Write-Evidence $script:ModuleCacheTsv $line
+        $files = @(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -eq '.zip' -or $_.Extension -eq '.mod' } |
+            Sort-Object FullName)
+        foreach ($file in $files) {
+            $relative = ([IO.Path]::GetRelativePath($root, $file.FullName) -replace '\\', '/')
+            $modulePath = $rootInfo.Base
+            $rest = $relative
+            if ($rest.StartsWith('@v/')) {
+                $rest = $rest.Substring(3)
+            } else {
+                $index = $rest.IndexOf('/@v/')
+                if ($index -lt 0) {
+                    Fail "unexpected module cache path: $relative"
+                }
+                $modulePath = $rootInfo.Base + '/' + $rest.Substring(0, $index)
+                $rest = $rest.Substring($index + 4)
+            }
+            $kind = $file.Extension.TrimStart('.')
+            $version = [IO.Path]::GetFileNameWithoutExtension($rest)
+            $line = @(
+                $Label,
+                $relative,
+                $modulePath,
+                $kind,
+                $version,
+                [string]$file.Length,
+                (Get-FileSha256 $file.FullName),
+                $file.FullName
+            ) -join "`t"
+            Write-Evidence $script:ModuleCacheTsv $line
+        }
     }
 }
 
@@ -560,14 +571,14 @@ function Get-CacheRows([string]$LabelPrefix) {
 
 function Get-ArtifactZips([string]$LabelPrefix) {
     return @(Get-CacheRows $LabelPrefix |
-        Where-Object { $_.module_path.StartsWith($script:RootModule + '/artifacts/') -and $_.kind -eq 'zip' } |
+        Where-Object { $_.module_path.StartsWith($script:ArtifactModulePrefix + '/') -and $_.kind -eq 'zip' } |
         ForEach-Object { '{0}@{1}' -f $_.module_path, $_.version } |
         Sort-Object -Unique)
 }
 
 function Get-ArtifactMods([string]$LabelPrefix) {
     return @(Get-CacheRows $LabelPrefix |
-        Where-Object { $_.module_path.StartsWith($script:RootModule + '/artifacts/') -and $_.kind -eq 'mod' } |
+        Where-Object { $_.module_path.StartsWith($script:ArtifactModulePrefix + '/') -and $_.kind -eq 'mod' } |
         ForEach-Object { '{0}@{1}' -f $_.module_path, $_.version } |
         Sort-Object -Unique)
 }
@@ -738,6 +749,10 @@ function Assert-GitTracked([string]$RelativePath) {
 }
 
 function Assert-TrackedArtifact($Meta) {
+    if ($Meta.Path.StartsWith($script:ArtifactModulePrefix + '/')) {
+        Write-Summary "artifact.$($Meta.Label).tracked_dir=static-origin"
+        return
+    }
     $leaf = Split-Path -Leaf $Meta.Path
     $trackedDir = Join-Path (Join-Path $script:RepoDir 'artifacts') $leaf
     if (-not (Test-Path -LiteralPath $trackedDir)) {
@@ -902,7 +917,7 @@ function Get-ArtifactDependencies([string]$MetadataFile) {
     $result = New-Object System.Collections.Generic.List[string]
     foreach ($line in (Get-Content -LiteralPath $MetadataFile -Encoding utf8)) {
         $fields = $line -split "`t"
-        if ($fields.Count -ge 5 -and $fields[1] -eq 'dep' -and $fields[2].StartsWith($script:RootModule + '/artifacts/')) {
+        if ($fields.Count -ge 5 -and $fields[1] -eq 'dep' -and $fields[2].StartsWith($script:ArtifactModulePrefix + '/')) {
             $result.Add(('{0}@{1}' -f $fields[2], $fields[3]))
         }
     }
@@ -944,7 +959,7 @@ function Get-GoVersionMetadata($Mode, [string]$Binary, [string]$Label) {
 function Assert-SelectedArtifactFromMetadata([string]$MetadataFile, [string]$Label) {
     $dependencies = @(Get-ArtifactDependencies $MetadataFile)
     if ($dependencies.Count -eq 0) {
-        Fail ("{0} was built without a Windows artifact dependency; the published {1}/artifacts/windows-{2} module is not adopted or its selector is inactive (no skip)" -f $Label, $script:RootModule, $script:TargetGoarch)
+        Fail ("{0} was built without a Windows artifact dependency; the published {1}/windows-{2} module is not adopted or its selector is inactive (no skip)" -f $Label, $script:ArtifactModulePrefix, $script:TargetGoarch)
     }
     if ($dependencies.Count -ne 1) {
         Fail ("{0} lists {1} artifact dependencies, want one" -f $Label, $dependencies.Count)
@@ -953,7 +968,7 @@ function Assert-SelectedArtifactFromMetadata([string]$MetadataFile, [string]$Lab
     $at = $dependency.LastIndexOf('@')
     $path = $dependency.Substring(0, $at)
     $version = $dependency.Substring($at + 1)
-    $expectedPath = $script:RootModule + '/artifacts/windows-' + $script:TargetGoarch
+    $expectedPath = $script:ArtifactModulePrefix + '/windows-' + $script:TargetGoarch
     Assert-Equal "$Label selected artifact path" $path $expectedPath
     Assert-Equal "$Label selected artifact version" $version $script:RequiredWindows.Version
     return [pscustomobject]@{ Path = $path; Version = $version }
@@ -978,6 +993,7 @@ function Assert-BinaryMetadata {
         '--metadata', $MetadataFile,
         '--payload', $Payload,
         '--root-module', $script:RootModule,
+        '--artifact-prefix', $script:ArtifactModulePrefix,
         '--expect-root-version', $script:RootVersion,
         '--expect-root-sum', $script:RootSum,
         '--expect-artifact', $ExpectedArtifact,
@@ -1012,7 +1028,7 @@ function Assert-SelectedArtifactRequired {
 
 function Assert-DefaultDeps([string]$DepsFile) {
     $deps = @(Get-Content -LiteralPath $DepsFile -Encoding utf8 | Where-Object { $_ })
-    $artifacts = @($deps | Where-Object { $_.StartsWith($script:RootModule + '/artifacts/') })
+    $artifacts = @($deps | Where-Object { $_.StartsWith($script:ArtifactModulePrefix + '/') })
     if ($artifacts.Count -ne 1 -or $artifacts[0] -cne $script:SelectedPath) {
         Fail ("default dependency graph artifact packages are {0}, want [{1}]" -f ($artifacts -join ','), $script:SelectedPath)
     }
@@ -1023,7 +1039,7 @@ function Assert-DefaultDeps([string]$DepsFile) {
 
 function Assert-NamespaceDeps([string]$DepsFile) {
     $deps = @(Get-Content -LiteralPath $DepsFile -Encoding utf8 | Where-Object { $_ })
-    $artifacts = @($deps | Where-Object { $_.StartsWith($script:RootModule + '/artifacts/') })
+    $artifacts = @($deps | Where-Object { $_.StartsWith($script:ArtifactModulePrefix + '/') })
     if ($artifacts.Count -ne 1 -or $artifacts[0] -cne $script:SelectedPath) {
         Fail ("namespace dependency graph artifact packages are {0}, want [{1}]" -f ($artifacts -join ','), $script:SelectedPath)
     }
@@ -1037,7 +1053,7 @@ function Assert-NamespaceDeps([string]$DepsFile) {
 
 function Assert-ExternalDeps([string]$DepsFile) {
     $deps = @(Get-Content -LiteralPath $DepsFile -Encoding utf8 | Where-Object { $_ })
-    $artifacts = @($deps | Where-Object { $_.StartsWith($script:RootModule + '/artifacts/') })
+    $artifacts = @($deps | Where-Object { $_.StartsWith($script:ArtifactModulePrefix + '/') })
     if ($artifacts.Count -ne 0) {
         Fail ("external dependency graph links artifact packages: {0}" -f ($artifacts -join ','))
     }
@@ -1469,13 +1485,13 @@ try {
         Fail 'downloaded root go.mod contains replace or exclude'
     }
     $script:RootRequires = @(Parse-GoModRequires $rootGoModText)
-    $script:ArtifactRequires = @($script:RootRequires | Where-Object { $_.Path.StartsWith($RootModule + '/artifacts/') })
+    $script:ArtifactRequires = @($script:RootRequires | Where-Object { $_.Path.StartsWith($script:ArtifactModulePrefix + '/') })
     foreach ($require in $script:RootRequires) {
-        if ($require.Path.StartsWith($RootModule + '/artifacts/')) {
+        if ($require.Path.StartsWith($script:ArtifactModulePrefix + '/')) {
             Write-Evidence $script:RequiredArtifacts ("{0} {1}" -f $require.Path, $require.Version)
         }
     }
-    $windowsArtifactPath = $RootModule + '/artifacts/windows-' + $TargetGoarch
+    $windowsArtifactPath = $script:ArtifactModulePrefix + '/windows-' + $TargetGoarch
     $script:RequiredWindows = $null
     foreach ($require in $script:RootRequires) {
         if ($require.Path -eq $windowsArtifactPath) {
@@ -1499,6 +1515,9 @@ try {
                 $nested.Add('artifacts/' + $dir.Name)
             }
         }
+    }
+    if (Test-Path -LiteralPath (Join-Path $script:RepoDir 'scripts/go-module-origin/generator/go.mod')) {
+        $nested.Add('scripts/go-module-origin/generator')
     }
     Assert-RootArchive $rootZip 'default-setup' $nested.ToArray()
 
