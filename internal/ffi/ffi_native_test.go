@@ -97,3 +97,42 @@ func TestOpenDatasetReportsNativeErrors(t *testing.T) {
 		}
 	}
 }
+
+// TestOptimizePlanFromJSONReportsNativeErrors drives migrated wrappers through
+// a real lance-c failure on a pinned OS thread. It checks that the wrappers
+// report the thread-local native error rather than their fallback for a failed
+// call that set none.
+func TestOptimizePlanFromJSONReportsNativeErrors(t *testing.T) {
+	requireLibrary(t)
+
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{"OptimizeIndicesPlanFromJSON", func() error {
+			_, err := OptimizeIndicesPlanFromJSON("not json")
+			return err
+		}},
+		{"IndexSegmentResultFromJSON", func() error {
+			_, err := IndexSegmentResultFromJSON("not json")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.call()
+			if err == nil {
+				t.Fatal("invalid JSON was accepted")
+			}
+			var nativeErr *Error
+			if !errors.As(err, &nativeErr) {
+				t.Fatalf("error is %T, want *ffi.Error from thread-local storage: %v", err, err)
+			}
+			if nativeErr.Code == CodeOK {
+				t.Fatal("native error has CodeOK")
+			}
+			if nativeErr.Message == "" {
+				t.Fatal("native error has an empty message")
+			}
+		})
+	}
+}
