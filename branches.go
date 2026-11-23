@@ -36,29 +36,15 @@ type Branch struct {
 }
 
 // BranchOption configures CreateBranch.
-type BranchOption func(*branchOptions) error
+//
+// BranchOption has an unexported method, so only values produced by this
+// package's With... constructors implement it.
+type BranchOption interface {
+	applyBranch(*branchOptions) error
+}
 
 type branchOptions struct {
 	storage *ffi.BranchOptions
-}
-
-// WithBranchStorageOptions passes storage options to native branch creation.
-//
-// A nil options map inherits the source dataset's store parameters, matching
-// CreateBranch without this option. A non-nil empty map explicitly passes an
-// empty parameter set, which is distinct from inheriting.
-func WithBranchStorageOptions(options map[string]string) BranchOption {
-	return func(target *branchOptions) error {
-		if options == nil {
-			return nil
-		}
-		copied, err := copyStorageOptions(options)
-		if err != nil {
-			return err
-		}
-		target.storage = &ffi.BranchOptions{StorageOptions: copied}
-		return nil
-	}
 }
 
 // Branches lists the explicit branches recorded in the shared catalog,
@@ -143,9 +129,9 @@ func (d *Dataset) CreateBranch(ctx context.Context, name string, ref Ref, opts .
 	var config branchOptions
 	for _, opt := range opts {
 		if opt == nil {
-			continue
+			return nil, invalidError("create branch", d.uri, "nil BranchOption")
 		}
-		if err := opt(&config); err != nil {
+		if err := opt.applyBranch(&config); err != nil {
 			return nil, invalidError("create branch", d.uri, "%v", err)
 		}
 	}

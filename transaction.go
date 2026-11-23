@@ -651,7 +651,18 @@ func NewProjectOperation(schema *NativeSchema, preservesNullability bool) (*Oper
 }
 
 // TransactionOption configures NewTransaction.
-type TransactionOption func(*transactionConfig) error
+//
+// TransactionOption has an unexported method, so only values produced by this
+// package's With... constructors implement it.
+type TransactionOption interface {
+	applyTransaction(*transactionConfig) error
+}
+
+// transactionOptionFunc adapts per-operation option functions to
+// TransactionOption.
+type transactionOptionFunc func(*transactionConfig) error
+
+func (f transactionOptionFunc) applyTransaction(config *transactionConfig) error { return f(config) }
 
 type transactionConfig struct {
 	uuid          *string
@@ -662,44 +673,24 @@ type transactionConfig struct {
 
 // WithTransactionUUID sets an explicit transaction UUID.
 func WithTransactionUUID(uuid string) TransactionOption {
-	return func(config *transactionConfig) error {
+	return transactionOptionFunc(func(config *transactionConfig) error {
 		if err := validateCString(uuid); err != nil {
 			return fmt.Errorf("transaction UUID: %w", err)
 		}
 		config.uuid = &uuid
 		return nil
-	}
+	})
 }
 
 // WithTransactionTag records an optional transaction tag.
 func WithTransactionTag(tag string) TransactionOption {
-	return func(config *transactionConfig) error {
+	return transactionOptionFunc(func(config *transactionConfig) error {
 		if err := validateCString(tag); err != nil {
 			return fmt.Errorf("transaction tag: %w", err)
 		}
 		config.tag = &tag
 		return nil
-	}
-}
-
-// WithTransactionProperties attaches a property map. Passing nil records a
-// present, empty map.
-func WithTransactionProperties(properties map[string]string) TransactionOption {
-	return func(config *transactionConfig) error {
-		copied := make(map[string]string, len(properties))
-		for key, value := range properties {
-			if err := validateCString(key); err != nil {
-				return fmt.Errorf("transaction property key: %w", err)
-			}
-			if err := validateCString(value); err != nil {
-				return fmt.Errorf("transaction property %q: %w", key, err)
-			}
-			copied[key] = value
-		}
-		config.properties = copied
-		config.hasProperties = true
-		return nil
-	}
+	})
 }
 
 // NewTransaction constructs a transaction from an operation. The operation is
@@ -713,7 +704,7 @@ func NewTransaction(readVersion uint64, operation *Operation, opts ...Transactio
 		if option == nil {
 			return nil, invalidError("new transaction", "", "nil TransactionOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyTransaction(&config); err != nil {
 			return nil, invalidError("new transaction", "", "%v", err)
 		}
 	}
@@ -749,8 +740,22 @@ type CommitTimeout struct {
 	Duration time.Duration
 }
 
-// CommitOption configures CommitTransaction.
-type CommitOption func(*commitConfig) error
+// CommitOption configures CommitTransaction, CommitTransactionBatch,
+// CommitTransactionToNamespace and Transaction.Commit.
+//
+// CommitOption has an unexported method, so only values produced by this
+// package's With... constructors implement it. Shared constructors such as
+// WithSession return a concrete value that implements CommitOption wherever
+// the commit entry point supports the underlying capability; entry points that
+// cannot express a value reject it with ErrInvalidArgument.
+type CommitOption interface {
+	applyCommit(*commitConfig) error
+}
+
+// commitOptionFunc adapts per-operation option functions to CommitOption.
+type commitOptionFunc func(*commitConfig) error
+
+func (f commitOptionFunc) applyCommit(config *commitConfig) error { return f(config) }
 
 type commitConfig struct {
 	useStableRowIDs        *bool
@@ -770,43 +775,43 @@ type commitConfig struct {
 
 // WithCommitStableRowIDs overrides stable row ID generation.
 func WithCommitStableRowIDs(enabled bool) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		config.useStableRowIDs = &enabled
 		return nil
-	}
+	})
 }
 
 // WithCommitV2ManifestPaths overrides v2 manifest path generation.
 func WithCommitV2ManifestPaths(enabled bool) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		config.enableV2ManifestPaths = &enabled
 		return nil
-	}
+	})
 }
 
 // WithCommitMaxRetries sets the commit conflict retry count.
 func WithCommitMaxRetries(retries uint32) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		config.maxRetries = &retries
 		return nil
-	}
+	})
 }
 
 // WithCommitRetryTimeout bounds the total time spent retrying conflict
 // resolution.
 func WithCommitRetryTimeout(timeout time.Duration) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		if timeout < 0 {
 			return fmt.Errorf("retry timeout must not be negative")
 		}
 		config.retryTimeout = &timeout
 		return nil
-	}
+	})
 }
 
 // WithCommitTimeout sets the native overall commit timeout policy.
 func WithCommitTimeout(timeout CommitTimeout) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		switch timeout.Mode {
 		case CommitTimeoutDefault, CommitTimeoutDisabled:
 		case CommitTimeoutExplicit:
@@ -818,71 +823,27 @@ func WithCommitTimeout(timeout CommitTimeout) CommitOption {
 		}
 		config.timeout = timeout
 		return nil
-	}
+	})
 }
 
 // WithCommitDetached writes a detached manifest version without advancing the
 // dataset's latest version.
 func WithCommitDetached(detached bool) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		config.detached = detached
 		return nil
-	}
-}
-
-// WithCommitSkipAutoCleanup controls native old-version cleanup on commit.
-func WithCommitSkipAutoCleanup(skip bool) CommitOption {
-	return func(config *commitConfig) error {
-		config.skipAutoCleanup = skip
-		return nil
-	}
+	})
 }
 
 // WithCommitDataStorageVersion overrides the data storage version.
 func WithCommitDataStorageVersion(version string) CommitOption {
-	return func(config *commitConfig) error {
+	return commitOptionFunc(func(config *commitConfig) error {
 		if err := validateCString(version); err != nil {
 			return fmt.Errorf("data storage version: %w", err)
 		}
 		config.dataStorageVersion = &version
 		return nil
-	}
-}
-
-// WithCommitStorageOptions passes object-store options to the commit.
-func WithCommitStorageOptions(options map[string]string) CommitOption {
-	return func(config *commitConfig) error {
-		copied, err := cloneStorageOptions(options)
-		if err != nil {
-			return err
-		}
-		config.storageOptions = copied
-		config.storageOptionsSet = options != nil
-		return nil
-	}
-}
-
-// WithCommitStorageOptionsAccessor supplies a reusable dynamic accessor for a
-// commit. It is mutually exclusive with WithCommitStorageOptions.
-func WithCommitStorageOptionsAccessor(accessor *StorageOptionsAccessor) CommitOption {
-	return func(config *commitConfig) error {
-		if accessor == nil {
-			return fmt.Errorf("storage options accessor must not be nil")
-		}
-		config.storageOptionsAccessor = accessor
-		return nil
-	}
-}
-
-// WithCommitSession pins the commit to a session.
-func WithCommitSession(session *Session) CommitOption {
-	return func(config *commitConfig) error {
-		if session == nil {
-			return fmt.Errorf("session must not be nil")
-		}
-		config.session = session
-		return nil
-	}
+	})
 }
 
 // CommitTransaction publishes one transaction through CommitBuilder::execute.
@@ -1049,7 +1010,7 @@ func parseCommitOptions(opts []CommitOption) (commitConfig, error) {
 		if option == nil {
 			return commitConfig{}, fmt.Errorf("nil CommitOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyCommit(&config); err != nil {
 			return commitConfig{}, err
 		}
 	}
@@ -1099,7 +1060,7 @@ func WriteUncommitted(ctx context.Context, uri string, reader array.RecordReader
 		if option == nil {
 			return nil, invalidError("write uncommitted", uri, "nil WriteOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyWrite(&config); err != nil {
 			return nil, invalidError("write uncommitted", uri, "%v", err)
 		}
 	}

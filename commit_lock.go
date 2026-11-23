@@ -1,8 +1,6 @@
 package lance
 
 import (
-	"fmt"
-
 	"github.com/lance-format/lance-go/internal/ffi"
 )
 
@@ -94,40 +92,4 @@ func (l *CommitLock) pin(op, uri string) (func(), error) {
 		return nil, closedError(op, uri)
 	}
 	return l.res.release, nil
-}
-
-// WithOpenCommitLock routes Open through an external commit lock.
-func WithOpenCommitLock(lock *CommitLock) OpenOption {
-	return func(config *openConfig) error {
-		if lock == nil {
-			return fmt.Errorf("commit lock must not be nil")
-		}
-		config.commitLock = lock
-		return nil
-	}
-}
-
-// WithWriteCommitLock routes ordinary and uncommitted writes through an
-// external commit lock. It is not supported by namespace writes or fragment
-// creation.
-func WithWriteCommitLock(lock *CommitLock) WriteOption {
-	return func(config *writeConfig) error {
-		if lock == nil {
-			return fmt.Errorf("commit lock must not be nil")
-		}
-		config.commitLock = lock
-		return nil
-	}
-}
-
-// WithCommitLock routes CommitTransaction and CommitTransactionBatch through an
-// external commit lock.
-func WithCommitLock(lock *CommitLock) CommitOption {
-	return func(config *commitConfig) error {
-		if lock == nil {
-			return fmt.Errorf("commit lock must not be nil")
-		}
-		config.commitLock = lock
-		return nil
-	}
 }

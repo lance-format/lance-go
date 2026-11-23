@@ -185,7 +185,7 @@ func executeNamespace(cfg config, prefix targetPrefix) *report {
 		ctx,
 		runURI,
 		reader,
-		lance.WithWriteStorageOptions(fixtureOptions),
+		lance.WithStorageOptions(fixtureOptions),
 		lance.WithSkipAutoCleanup(true),
 	)
 	reader.Release()

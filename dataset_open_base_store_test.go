@@ -214,7 +214,7 @@ func TestOpenWithBaseStoreParamsReopenExactPaths(t *testing.T) {
 	}
 	created, err := lance.Create(ctx, uri, makeReader(t, schema,
 		makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})),
-		lance.WithWriteSession(session),
+		lance.WithSession(session),
 		lance.WithWriteParams(lance.WriteParams{
 			InitialBases: []lance.BasePath{{ID: 1, Path: base, IsDatasetRoot: false}},
 			TargetBases:  []uint32{1},

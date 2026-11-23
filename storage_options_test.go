@@ -288,7 +288,7 @@ func TestDatasetStorageOptionsAccessorLifecycle(t *testing.T) {
 	}
 
 	record := makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})
-	dataset, err := lance.Write(ctx, uri, makeReader(t, schema, record), lance.WithWriteStorageOptionsAccessor(accessor))
+	dataset, err := lance.Write(ctx, uri, makeReader(t, schema, record), lance.WithStorageOptionsAccessor(accessor))
 	if err != nil {
 		t.Fatalf("Write with accessor: %v", err)
 	}
@@ -355,19 +355,19 @@ func TestDatasetAccessorStagedAndBatchCommit(t *testing.T) {
 
 	t.Run("staged commit", func(t *testing.T) {
 		uri := filepath.Join(t.TempDir(), "staged.lance")
-		base, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteStorageOptionsAccessor(accessor))
+		base, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("create base: %v", err)
 		}
 		base.Close()
 
-		tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteStorageOptionsAccessor(accessor))
+		tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("WriteUncommitted: %v", err)
 		}
 		defer tx.Close()
 
-		committed, err := lance.CommitTransaction(ctx, uri, tx, lance.WithCommitStorageOptionsAccessor(accessor))
+		committed, err := lance.CommitTransaction(ctx, uri, tx, lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("CommitTransaction: %v", err)
 		}
@@ -379,24 +379,24 @@ func TestDatasetAccessorStagedAndBatchCommit(t *testing.T) {
 
 	t.Run("batch commit", func(t *testing.T) {
 		uri := filepath.Join(t.TempDir(), "batch.lance")
-		base, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteStorageOptionsAccessor(accessor))
+		base, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("create base: %v", err)
 		}
 		base.Close()
 
-		txA, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteStorageOptionsAccessor(accessor))
+		txA, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("WriteUncommitted A: %v", err)
 		}
 		defer txA.Close()
-		txB, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{3}, []string{"c"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteStorageOptionsAccessor(accessor))
+		txB, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{3}, []string{"c"}, []bool{true})), lance.WithWriteMode(lance.WriteModeAppend), lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("WriteUncommitted B: %v", err)
 		}
 		defer txB.Close()
 
-		committed, merged, err := lance.CommitTransactionBatch(ctx, uri, []*lance.Transaction{txA, txB}, lance.WithCommitStorageOptionsAccessor(accessor))
+		committed, merged, err := lance.CommitTransactionBatch(ctx, uri, []*lance.Transaction{txA, txB}, lance.WithStorageOptionsAccessor(accessor))
 		if err != nil {
 			t.Fatalf("CommitTransactionBatch: %v", err)
 		}

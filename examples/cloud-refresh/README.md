@@ -42,7 +42,7 @@ refresh early using a real `refresh_offset_millis` derived from A's actual
 ### Direct-accessor mode
 
 The runner builds a `lance.StorageOptionsAccessor` from A and the provider,
-creates the dataset with `WithWriteStorageOptionsAccessor`, closes the public
+creates the dataset with `WithStorageOptionsAccessor`, closes the public
 accessor before the refresh, and performs `Delete` through the retained
 dataset. Native's accessor refresh calls the runner's provider, which invokes
 the credential executable for B. The final reopen uses a fresh accessor and

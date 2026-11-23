@@ -11,12 +11,12 @@ import (
 // FragmentCreateOption configures CreateFragment and WriteFragments.
 //
 // It aliases WriteOption so callers can reuse file-layout WriteParams,
-// WithWriteStorageOptions, WithWriteSession and WithFragmentSchema. Creation
-// does not commit: WithAutoCleanup, WithSkipAutoCleanup(true), stable row ID
-// generation and transaction properties are rejected. Configure publication
-// with CommitTransaction options, including WithCommitStableRowIDs and
-// WithCommitSkipAutoCleanup. The native fragment API accepts static storage
-// options only; WithWriteStorageOptionsAccessor and WithWriteBranch are rejected.
+// WithStorageOptions, WithSession and WithFragmentSchema. Creation does not
+// commit: WithAutoCleanup, WithSkipAutoCleanup(true), stable row ID generation
+// and transaction properties are rejected. Configure publication with
+// CommitTransaction options, including WithCommitStableRowIDs and
+// WithSkipAutoCleanup. The native fragment API accepts static storage options
+// only; WithStorageOptionsAccessor and WithWriteBranch are rejected.
 // Native-only WriteParams fields, including base placement, Blob policy,
 // file-writer options and progress, are also rejected; use ordinary or staged
 // dataset writes when those options are required.
@@ -173,7 +173,7 @@ func parseFragmentCreateConfig(op, uri string, opts []WriteOption) (writeConfig,
 		if option == nil {
 			return config, invalidError(op, uri, "nil WriteOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyWrite(&config); err != nil {
 			return config, invalidError(op, uri, "%v", err)
 		}
 	}
@@ -184,13 +184,13 @@ func parseFragmentCreateConfig(op, uri string, opts []WriteOption) (writeConfig,
 		return config, invalidError(op, uri, "WriteParams.%s is not supported by fragment creation", field)
 	}
 	if config.hasTransactionProperties {
-		return config, invalidError(op, uri, "WithWriteTransactionProperties is not supported by fragment creation")
+		return config, invalidError(op, uri, "WithTransactionProperties is not supported by fragment creation")
 	}
 	if config.storageOptionsAccessor != nil {
-		return config, invalidError(op, uri, "WithWriteStorageOptionsAccessor is not supported by fragment creation; use static storage options")
+		return config, invalidError(op, uri, "WithStorageOptionsAccessor is not supported by fragment creation; use static storage options")
 	}
 	if config.commitLock != nil {
-		return config, invalidError(op, uri, "WithWriteCommitLock is not supported by fragment creation")
+		return config, invalidError(op, uri, "WithCommitLock is not supported by fragment creation")
 	}
 	if config.branch != "" {
 		return config, invalidError(op, uri, "WithWriteBranch is valid only for WriteToNamespace")

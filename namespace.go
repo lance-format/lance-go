@@ -57,7 +57,7 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 		if option == nil {
 			return nil, invalidError("open namespace", "", "nil OpenOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyOpen(&config); err != nil {
 			return nil, invalidError("open namespace", "", "%v", err)
 		}
 	}
@@ -68,7 +68,7 @@ func OpenFromNamespace(ctx context.Context, ns namespace.Namespace, tableID []st
 		return nil, invalidError("open namespace", "", "WithStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}
 	if config.commitLock != nil {
-		return nil, invalidError("open namespace", "", "WithOpenCommitLock is not supported for namespace operations")
+		return nil, invalidError("open namespace", "", "WithCommitLock is not supported for namespace operations")
 	}
 	session, releaseSession, err := acquireSession("open namespace", "", config.session)
 	if err != nil {
@@ -120,7 +120,7 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 		if option == nil {
 			return nil, invalidError("write namespace", "", "nil WriteOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyWrite(&config); err != nil {
 			return nil, invalidError("write namespace", "", "%v", err)
 		}
 	}
@@ -128,13 +128,13 @@ func WriteToNamespace(ctx context.Context, ns namespace.Namespace, tableID []str
 		return nil, invalidError("write namespace", "", "WithFragmentSchema is valid only for CreateFragment and WriteFragments")
 	}
 	if config.hasTransactionProperties {
-		return nil, invalidError("write namespace", "", "WithWriteTransactionProperties is not supported")
+		return nil, invalidError("write namespace", "", "WithTransactionProperties is not supported")
 	}
 	if config.storageOptionsAccessor != nil {
-		return nil, invalidError("write namespace", "", "WithWriteStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
+		return nil, invalidError("write namespace", "", "WithStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}
 	if config.commitLock != nil {
-		return nil, invalidError("write namespace", "", "WithWriteCommitLock is not supported for namespace writes")
+		return nil, invalidError("write namespace", "", "WithCommitLock is not supported for namespace writes")
 	}
 	if field := config.params.firstNativeOptionField(); field != "" {
 		return nil, invalidError("write namespace", "", "WriteParams.%s is not supported for namespace writes", field)
@@ -191,7 +191,7 @@ func CommitTransactionToNamespace(ctx context.Context, ns namespace.Namespace, t
 		return nil, invalidError("commit namespace", "", "%v", err)
 	}
 	if config.storageOptionsAccessor != nil {
-		return nil, invalidError("commit namespace", "", "WithCommitStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
+		return nil, invalidError("commit namespace", "", "WithStorageOptionsAccessor is not supported for namespace operations; the native namespace provider already supplies credentials")
 	}
 	if config.commitLock != nil {
 		return nil, invalidError("commit namespace", "", "WithCommitLock is not supported for namespace operations")

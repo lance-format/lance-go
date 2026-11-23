@@ -140,7 +140,7 @@ func executeDirect(cfg config, prefix targetPrefix) *report {
 		ctx,
 		runURI,
 		reader,
-		lance.WithWriteStorageOptionsAccessor(accessor),
+		lance.WithStorageOptionsAccessor(accessor),
 		lance.WithSkipAutoCleanup(true),
 	)
 	reader.Release()

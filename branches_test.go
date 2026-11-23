@@ -227,7 +227,7 @@ func TestBranchesOptionsAndValidation(t *testing.T) {
 	dataset, _, _ := newVersionedDataset(t)
 	ctx := context.Background()
 
-	inherited, err := dataset.CreateBranch(ctx, "inherit", lance.BranchRef("main"), lance.WithBranchStorageOptions(nil))
+	inherited, err := dataset.CreateBranch(ctx, "inherit", lance.BranchRef("main"), lance.WithStorageOptions(nil))
 	if err != nil {
 		t.Fatalf("CreateBranch(inherit, nil storage options): %v", err)
 	}
@@ -239,7 +239,7 @@ func TestBranchesOptionsAndValidation(t *testing.T) {
 		t.Fatalf("DeleteBranch(inherit): %v", err)
 	}
 
-	explicit, err := dataset.CreateBranch(ctx, "explicit", lance.BranchRef("main"), lance.WithBranchStorageOptions(map[string]string{}))
+	explicit, err := dataset.CreateBranch(ctx, "explicit", lance.BranchRef("main"), lance.WithStorageOptions(map[string]string{}))
 	if err != nil {
 		t.Fatalf("CreateBranch(explicit empty storage options): %v", err)
 	}
@@ -251,8 +251,11 @@ func TestBranchesOptionsAndValidation(t *testing.T) {
 		t.Fatalf("DeleteBranch(explicit): %v", err)
 	}
 
-	if _, err := dataset.CreateBranch(ctx, "bad", lance.BranchRef("main"), lance.WithBranchStorageOptions(map[string]string{"": "value"})); !errors.Is(err, lance.ErrInvalidArgument) {
+	if _, err := dataset.CreateBranch(ctx, "bad", lance.BranchRef("main"), lance.WithStorageOptions(map[string]string{"": "value"})); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("CreateBranch(empty storage key) error = %v, want ErrInvalidArgument", err)
+	}
+	if _, err := dataset.CreateBranch(ctx, "nil", lance.BranchRef("main"), nil); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("CreateBranch(nil option) error = %v, want ErrInvalidArgument", err)
 	}
 	if _, err := dataset.CreateBranch(ctx, "", lance.BranchRef("main")); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("CreateBranch(empty name) error = %v, want ErrInvalidArgument", err)

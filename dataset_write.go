@@ -45,7 +45,7 @@ func Write(ctx context.Context, uri string, reader array.RecordReader, opts ...W
 		if option == nil {
 			return nil, invalidError("write", uri, "nil WriteOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyWrite(&config); err != nil {
 			return nil, invalidError("write", uri, "%v", err)
 		}
 	}
