@@ -351,6 +351,14 @@ jobs:
           golangci-lint run
           golangci-lint run --build-tags lance_external_lib
 
+      # The maintainer tools are a separate Go module. Run the same curated
+      # configuration there so the gate covers both module scopes.
+      - name: Lint the maintainer tools module
+        run: |
+          set -euo pipefail
+          cd internal/tools
+          golangci-lint run -c ../../.golangci.yml
+
   govulncheck:
     name: Vulnerability scan (Go ${{ matrix.go-version }})
     runs-on: ubuntu-24.04

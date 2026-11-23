@@ -867,9 +867,9 @@ func TestAcquireSplitHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/releases/download/v0.2.0-beta.1/" + archiveName:
-			w.Write(archiveBytes)
+			_, _ = w.Write(archiveBytes)
 		case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
-			io.WriteString(w, checksum)
+			_, _ = io.WriteString(w, checksum)
 		default:
 			http.NotFound(w, r)
 		}
@@ -973,9 +973,9 @@ func TestAcquireSplitHeaders(t *testing.T) {
 		crlfServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {
 			case "/releases/download/v0.2.0-beta.1/" + archiveName:
-				w.Write(crlfBytes)
+				_, _ = w.Write(crlfBytes)
 			case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
-				io.WriteString(w, crlfChecksum)
+				_, _ = io.WriteString(w, crlfChecksum)
 			default:
 				http.NotFound(w, r)
 			}
@@ -1025,9 +1025,9 @@ func TestAcquireLegacySingleHeaderRecordUnchanged(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/releases/download/v0.2.0-beta.1/" + archiveName:
-			w.Write(archiveBytes)
+			_, _ = w.Write(archiveBytes)
 		case "/releases/download/v0.2.0-beta.1/" + archiveName + ".sha256":
-			io.WriteString(w, checksum)
+			_, _ = io.WriteString(w, checksum)
 		default:
 			http.NotFound(w, r)
 		}

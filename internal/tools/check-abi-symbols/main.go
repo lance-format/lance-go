@@ -230,7 +230,9 @@ func checkHeaderDirectory(input headerInput, upstream *pin) (map[string]cFunc, s
 func parseGo(root string) (*pin, *bindingsModel, error) {
 	dir := filepath.Join(root, "internal", "ffi")
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+	// ParseDir deliberately ignores build tags: the ABI checker must see the
+	// declarations of every supported target, not only the host's files.
+	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool { //nolint:staticcheck // build-tag-agnostic discovery is the checker's contract
 		name := fi.Name()
 		return !strings.HasPrefix(name, ".") && !strings.HasSuffix(name, "_test.go")
 	}, 0)
