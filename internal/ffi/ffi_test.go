@@ -171,3 +171,24 @@ func TestOpenDatasetNullHandleWithoutError(t *testing.T) {
 		t.Fatalf("synthetic NULL-handle error must not masquerade as a native *Error: %v", err)
 	}
 }
+
+// TestLoadReturnsPublishedBindingsWithoutRebinding pins the fast path: once
+// the binding table is published, load returns it without loading the native
+// library or rebinding symbols again. A load that rebound here would fail
+// because this environment has no library.
+func TestLoadReturnsPublishedBindingsWithoutRebinding(t *testing.T) {
+	previous := bound.Load()
+	published := &bindings{}
+	bound.Store(published)
+	t.Cleanup(func() {
+		bound.Store(previous)
+	})
+
+	got, err := load()
+	if err != nil {
+		t.Fatalf("load after publish: %v", err)
+	}
+	if got != published {
+		t.Fatalf("load returned a new binding table instead of the published one")
+	}
+}

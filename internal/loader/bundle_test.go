@@ -77,6 +77,48 @@ func TestBundleReusesVerifiedCache(t *testing.T) {
 	}
 }
 
+// TestBundleWarmCacheHitVerifiesUnderSharedLock pins the warm-hit fast path:
+// while another shared holder is active, cachedLibrary must still verify the
+// existing entry. A fast path that took the exclusive lock first would block
+// behind the shared holder.
+func TestBundleWarmCacheHitVerifiesUnderSharedLock(t *testing.T) {
+	testCacheBase(t)
+	b := testBundle(t, []byte("shared lock payload"))
+
+	path, err := b.cachedLibrary()
+	if err != nil {
+		t.Fatalf("prime cache: %v", err)
+	}
+
+	holder, err := os.OpenFile(filepath.Join(filepath.Dir(path), ".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatalf("open cache lock: %v", err)
+	}
+	defer holder.Close()
+	if err := lockShared(holder); err != nil {
+		t.Fatalf("take shared lock: %v", err)
+	}
+	defer unlock(holder)
+
+	done := make(chan error, 1)
+	go func() {
+		got, err := b.cachedLibrary()
+		if err == nil && got != path {
+			err = fmt.Errorf("cache path = %q, want %q", got, path)
+		}
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("warm cache hit: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("warm cache hit blocked; it must verify under a shared lock while another shared holder is active")
+	}
+}
+
 func TestBundleCacheDirOverrideUsesPrivateLayout(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv(EnvCacheDir, root)
@@ -430,37 +472,79 @@ func TestBundleCacheSharedByProcesses(t *testing.T) {
 		stderr *bytes.Buffer
 	}
 	const workers = 4
-	children := make([]*child, 0, workers)
-	for i := 0; i < workers; i++ {
-		cmd := exec.CommandContext(ctx, exe, "-test.run=^TestBundleCacheHelper$")
-		cmd.Env = append(os.Environ(),
-			cacheHelperEnv+"=1",
-			"LANCE_HELPER_PAYLOAD="+payloadPath,
-			"LANCE_HELPER_MODULE="+b.Module,
-			"LANCE_HELPER_TARGET="+b.Target,
-			"LANCE_HELPER_LIBRARY="+b.LibraryName,
-			"LANCE_HELPER_COMPRESSED_SIZE="+strconv.FormatInt(b.CompressedSize, 10),
-			"LANCE_HELPER_COMPRESSED_SHA="+b.CompressedSHA256,
-			"LANCE_HELPER_UNCOMPRESSED_SIZE="+strconv.FormatInt(b.UncompressedSize, 10),
-			"LANCE_HELPER_UNCOMPRESSED_SHA="+b.UncompressedSHA256,
-			"LANCE_HELPER_UPSTREAM_COMMIT="+b.UpstreamCommit,
-			"LANCE_HELPER_HEADER_SHA="+b.HeaderSHA256,
-		)
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			t.Fatalf("stdin pipe for worker %d: %v", i, err)
+	var children []*child
+
+	// startWave launches workers and blocks until every one is ready.
+	startWave := func() []*child {
+		wave := make([]*child, 0, workers)
+		for i := 0; i < workers; i++ {
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestBundleCacheHelper$")
+			cmd.Env = append(os.Environ(),
+				cacheHelperEnv+"=1",
+				"LANCE_HELPER_PAYLOAD="+payloadPath,
+				"LANCE_HELPER_MODULE="+b.Module,
+				"LANCE_HELPER_TARGET="+b.Target,
+				"LANCE_HELPER_LIBRARY="+b.LibraryName,
+				"LANCE_HELPER_COMPRESSED_SIZE="+strconv.FormatInt(b.CompressedSize, 10),
+				"LANCE_HELPER_COMPRESSED_SHA="+b.CompressedSHA256,
+				"LANCE_HELPER_UNCOMPRESSED_SIZE="+strconv.FormatInt(b.UncompressedSize, 10),
+				"LANCE_HELPER_UNCOMPRESSED_SHA="+b.UncompressedSHA256,
+				"LANCE_HELPER_UPSTREAM_COMMIT="+b.UpstreamCommit,
+				"LANCE_HELPER_HEADER_SHA="+b.HeaderSHA256,
+			)
+			stdin, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatalf("stdin pipe for worker %d: %v", i, err)
+			}
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatalf("stdout pipe for worker %d: %v", i, err)
+			}
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			if err := cmd.Start(); err != nil {
+				t.Fatalf("start worker %d: %v", i, err)
+			}
+			wave = append(wave, &child{cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: &stderr})
 		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			t.Fatalf("stdout pipe for worker %d: %v", i, err)
+		children = append(children, wave...)
+
+		for i, c := range wave {
+			line, err := c.stdout.ReadString('\n')
+			if err != nil {
+				t.Fatalf("worker %d did not become ready: %v; stderr: %s", i, err, c.stderr.String())
+			}
+			if line != "ready\n" {
+				t.Fatalf("worker %d ready line = %q; stderr: %s", i, line, c.stderr.String())
+			}
 		}
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		if err := cmd.Start(); err != nil {
-			t.Fatalf("start worker %d: %v", i, err)
+		for _, c := range wave {
+			if _, err := io.WriteString(c.stdin, "go\n"); err != nil {
+				t.Fatalf("release worker: %v", err)
+			}
 		}
-		children = append(children, &child{cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: &stderr})
+		return wave
 	}
+
+	// collectWave waits for the workers of one wave and returns their paths.
+	collectWave := func(wave []*child) []string {
+		paths := make([]string, len(wave))
+		for i, c := range wave {
+			line, err := c.stdout.ReadString('\n')
+			if err != nil {
+				t.Fatalf("worker %d result: %v; stderr: %s", i, err, c.stderr.String())
+			}
+			if !strings.HasPrefix(line, "ok ") {
+				t.Fatalf("worker %d result = %q; stderr: %s", i, line, c.stderr.String())
+			}
+			paths[i] = strings.TrimSpace(strings.TrimPrefix(line, "ok "))
+			if err := c.cmd.Wait(); err != nil {
+				t.Fatalf("worker %d exit: %v; stderr: %s", i, err, c.stderr.String())
+			}
+		}
+		return paths
+	}
+
 	t.Cleanup(func() {
 		for _, c := range children {
 			if c.cmd.Process != nil {
@@ -469,36 +553,11 @@ func TestBundleCacheSharedByProcesses(t *testing.T) {
 		}
 	})
 
-	for i, c := range children {
-		line, err := c.stdout.ReadString('\n')
-		if err != nil {
-			t.Fatalf("worker %d did not become ready: %v; stderr: %s", i, err, c.stderr.String())
-		}
-		if line != "ready\n" {
-			t.Fatalf("worker %d ready line = %q; stderr: %s", i, line, c.stderr.String())
-		}
-	}
-
-	for _, c := range children {
-		if _, err := io.WriteString(c.stdin, "go\n"); err != nil {
-			t.Fatalf("release worker: %v", err)
-		}
-	}
-
+	// First wave: every worker races to publish the missing entry.
 	wantPath := filepath.Join(cacheBase, b.UncompressedSHA256, libraryName)
-	for i, c := range children {
-		line, err := c.stdout.ReadString('\n')
-		if err != nil {
-			t.Fatalf("worker %d result: %v; stderr: %s", i, err, c.stderr.String())
-		}
-		if !strings.HasPrefix(line, "ok ") {
-			t.Fatalf("worker %d result = %q; stderr: %s", i, line, c.stderr.String())
-		}
-		if got := strings.TrimSpace(strings.TrimPrefix(line, "ok ")); got != wantPath {
+	for i, got := range collectWave(startWave()) {
+		if got != wantPath {
 			t.Fatalf("worker %d cache path = %q, want %q", i, got, wantPath)
-		}
-		if err := c.cmd.Wait(); err != nil {
-			t.Fatalf("worker %d exit: %v; stderr: %s", i, err, c.stderr.String())
 		}
 	}
 
@@ -509,6 +568,26 @@ func TestBundleCacheSharedByProcesses(t *testing.T) {
 	if !bytes.Equal(got, raw) {
 		t.Fatal("shared cache entry does not contain the original payload")
 	}
+	firstInfo, err := os.Stat(wantPath)
+	if err != nil {
+		t.Fatalf("stat shared cache entry: %v", err)
+	}
+
+	// Second wave: every worker verifies the existing entry and must not
+	// replace it while the others verify the same bytes.
+	for i, got := range collectWave(startWave()) {
+		if got != wantPath {
+			t.Fatalf("warm worker %d cache path = %q, want %q", i, got, wantPath)
+		}
+	}
+	secondInfo, err := os.Stat(wantPath)
+	if err != nil {
+		t.Fatalf("stat warm cache entry: %v", err)
+	}
+	if !os.SameFile(firstInfo, secondInfo) {
+		t.Fatal("warm cache wave replaced an entry that already matched the metadata")
+	}
+
 	assertNoTemporaryFiles(t, filepath.Dir(wantPath))
 }
 
