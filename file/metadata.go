@@ -1,11 +1,10 @@
 package file
 
 import (
-	"sync"
-
 	"github.com/apache/arrow-go/v18/arrow"
 
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 )
 
 // FormatVersion identifies the raw file format revision.
@@ -78,34 +77,32 @@ type ColumnMetadata struct {
 // Metadata is an independent native metadata snapshot. It stays usable after
 // the reader and session that produced it are closed.
 type Metadata struct {
-	mu     sync.Mutex
+	res    *lifetime.Resource
 	native *ffi.FileMetadata
 	uri    string
 }
 
-// Close releases the native snapshot. It is idempotent and waits for in-flight
-// snapshot calls.
+func newMetadata(native *ffi.FileMetadata, uri string) *Metadata {
+	metadata := &Metadata{native: native, uri: uri}
+	metadata.res = lifetime.New(native.Close)
+	return metadata
+}
+
+// Close releases the native snapshot. It is idempotent, waits for in-flight
+// snapshot calls, and is a no-op for a nil or zero-value snapshot.
 func (m *Metadata) Close() error {
-	if m == nil {
+	if m == nil || m.res == nil {
 		return nil
 	}
-	m.mu.Lock()
-	native := m.native
-	m.native = nil
-	m.mu.Unlock()
-	if native != nil {
-		native.Close()
-	}
+	m.res.Close()
 	return nil
 }
 
 func (m *Metadata) acquire() (*ffi.FileMetadata, func(), error) {
-	m.mu.Lock()
-	if m.native == nil {
-		m.mu.Unlock()
+	if m.res == nil || !m.res.Acquire() {
 		return nil, nil, closedError("metadata", m.uri)
 	}
-	return m.native, m.mu.Unlock, nil
+	return m.native, m.res.Release, nil
 }
 
 // Info copies scalar metadata.
@@ -233,36 +230,43 @@ type ColumnStatistics struct {
 
 // Statistics is an independent native statistics snapshot.
 type Statistics struct {
-	mu     sync.Mutex
+	res    *lifetime.Resource
 	native *ffi.FileStatistics
 	uri    string
 }
 
-// Close releases the native snapshot. It is idempotent and waits for in-flight
-// snapshot calls.
+func newStatistics(native *ffi.FileStatistics, uri string) *Statistics {
+	statistics := &Statistics{native: native, uri: uri}
+	statistics.res = lifetime.New(native.Close)
+	return statistics
+}
+
+// Close releases the native snapshot. It is idempotent, waits for in-flight
+// snapshot calls, and is a no-op for a nil or zero-value snapshot.
 func (s *Statistics) Close() error {
-	if s == nil {
+	if s == nil || s.res == nil {
 		return nil
 	}
-	s.mu.Lock()
-	native := s.native
-	s.native = nil
-	s.mu.Unlock()
-	if native != nil {
-		native.Close()
-	}
+	s.res.Close()
 	return nil
+}
+
+func (s *Statistics) acquire() (*ffi.FileStatistics, func(), error) {
+	if s.res == nil || !s.res.Acquire() {
+		return nil, nil, closedError("statistics", s.uri)
+	}
+	return s.native, s.res.Release, nil
 }
 
 // Columns copies per-column statistics.
 func (s *Statistics) Columns() ([]ColumnStatistics, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.native == nil {
-		return nil, closedError("statistics", s.uri)
+	native, unlock, err := s.acquire()
+	if err != nil {
+		return nil, err
 	}
+	defer unlock()
 
-	columns, err := s.native.Columns()
+	columns, err := native.Columns()
 	if err != nil {
 		return nil, wrapError("statistics columns", s.uri, err)
 	}

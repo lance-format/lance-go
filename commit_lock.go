@@ -73,10 +73,11 @@ func NewCommitLock(callbacks CommitLockCallbacks) (*CommitLock, error) {
 	return lock, nil
 }
 
-// Close releases the caller's native commit-lock owner. It is idempotent and
-// waits for native calls that already pinned the lock. Callback state must
-// outlive native datasets that retain the lock. Close returns an error only for
-// API symmetry; native close has no failure status.
+// Close releases the caller's native commit-lock owner. It is idempotent,
+// waits for native calls that already pinned the lock, and is a no-op for a nil
+// or zero-value lock. Callback state must outlive native datasets that retain
+// the lock. Close returns an error only for API symmetry; native close has no
+// failure status.
 func (l *CommitLock) Close() error {
 	if l == nil || l.res == nil {
 		return nil

@@ -2,11 +2,11 @@ package file
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/accessor"
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/lifetime"
 )
 
 // StorageOptions holds reusable object-store configuration. It can carry
@@ -20,8 +20,14 @@ import (
 // value passed to NewStorageOptionsWithProvider remains owned by the caller;
 // this type owns only the native accessor and its retained callback context.
 type StorageOptions struct {
-	mu       sync.RWMutex
+	res      *lifetime.Resource
 	accessor *accessor.Accessor
+}
+
+func newStorageOptions(owned *accessor.Accessor) *StorageOptions {
+	options := &StorageOptions{accessor: owned}
+	options.res = lifetime.New(owned.Close)
+	return options
 }
 
 // NewStorageOptions creates static storage options. An empty map produces an
@@ -35,7 +41,7 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 	if err != nil {
 		return nil, wrapError("storage options", "", err)
 	}
-	return &StorageOptions{accessor: owned}, nil
+	return newStorageOptions(owned), nil
 }
 
 // NewStorageOptionsWithProvider creates storage options with a dynamic
@@ -57,7 +63,7 @@ func NewStorageOptionsWithProvider(initial map[string]string, provider lance.Sto
 	if !ok || core == nil {
 		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
 	}
-	return &StorageOptions{accessor: core}, nil
+	return newStorageOptions(core), nil
 }
 
 // NewStorageOptionsFromAccessor adopts an already-created root storage-options
@@ -73,23 +79,18 @@ func NewStorageOptionsFromAccessor(owned *lance.StorageOptionsAccessor) (*Storag
 	if !ok {
 		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
 	}
-	return &StorageOptions{accessor: core}, nil
+	return newStorageOptions(core), nil
 }
 
-// Close releases the native accessor. It is idempotent and waits for open
-// calls currently acquiring this StorageOptions, but not for native handles
-// that retained their own accessor reference.
+// Close releases the native accessor. It is idempotent, waits for open calls
+// currently acquiring this StorageOptions, and is a no-op for a nil or
+// zero-value receiver. It does not wait for native handles that retained their
+// own accessor reference.
 func (o *StorageOptions) Close() error {
-	if o == nil {
+	if o == nil || o.res == nil {
 		return nil
 	}
-	o.mu.Lock()
-	owned := o.accessor
-	o.accessor = nil
-	o.mu.Unlock()
-	if owned != nil {
-		owned.Close()
-	}
+	o.res.Close()
 	return nil
 }
 
@@ -99,18 +100,16 @@ func lockStorage(opts *StorageOptions) (func(), *ffi.StorageOptionsAccessor, err
 	if opts == nil {
 		return func() {}, nil, nil
 	}
-	opts.mu.RLock()
-	if opts.accessor == nil {
-		opts.mu.RUnlock()
+	if opts.res == nil || !opts.res.Acquire() {
 		return nil, nil, closedError("storage options", "")
 	}
 	native, release, ok := accessor.Acquire(opts.accessor)
 	if !ok {
-		opts.mu.RUnlock()
+		opts.res.Release()
 		return nil, nil, closedError("storage options", "")
 	}
 	return func() {
 		release()
-		opts.mu.RUnlock()
+		opts.res.Release()
 	}, native, nil
 }

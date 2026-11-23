@@ -212,7 +212,8 @@ func (b *BlobDescriptorBuilder) Finish() (arrow.Array, arrow.Field, error) {
 	return array, field, nil
 }
 
-// Close frees the native builder. It is idempotent.
+// Close frees the native builder. It is idempotent, waits for in-flight calls,
+// and is a no-op for a nil or zero-value builder.
 func (b *BlobDescriptorBuilder) Close() error {
 	if b == nil {
 		return nil

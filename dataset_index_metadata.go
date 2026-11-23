@@ -38,7 +38,8 @@ func (m *IndexSegmentMetadata) call(op string, fn func(*ffi.SegmentMetadata) err
 	return nil
 }
 
-// Close releases the metadata. It is safe to call more than once.
+// Close releases the metadata. It is idempotent and is a no-op for a nil or
+// zero-value metadata value.
 func (m *IndexSegmentMetadata) Close() error {
 	if m == nil || m.native == nil {
 		return nil

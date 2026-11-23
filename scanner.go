@@ -165,8 +165,12 @@ func (s *Scanner) CountRows(ctx context.Context) (uint64, error) {
 	return rows, nil
 }
 
-// Close releases the scanner. It is idempotent.
+// Close releases the scanner. It is idempotent, waits for an in-flight poll to
+// leave native code, and is a no-op for a nil or zero-value scanner.
 func (s *Scanner) Close() error {
+	if s == nil || s.native == nil {
+		return nil
+	}
 	return s.native.Close()
 }
 

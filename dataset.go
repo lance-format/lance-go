@@ -147,9 +147,12 @@ func newDataset(native *ffi.Dataset, requestURI string) (*Dataset, error) {
 	return dataset, nil
 }
 
-// Close releases the dataset. It is idempotent and waits for active
-// operations before calling native close.
+// Close releases the dataset. It is idempotent, waits for active operations,
+// and is a no-op for a nil or zero-value dataset.
 func (d *Dataset) Close() error {
+	if d == nil || d.res == nil {
+		return nil
+	}
 	d.res.close()
 	return nil
 }
