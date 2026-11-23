@@ -205,19 +205,15 @@ func (s *Scanner) Records(ctx context.Context) iter.Seq2[arrow.RecordBatch, erro
 }
 
 // ToArrowReader returns an Arrow RecordReader over the scan. The reader owns
-// the scanner and closes it when Release reaches zero.
+// the scanner and closes it when Release reaches zero. Release is safe
+// concurrently with Next: it closes the scanner, which wakes a blocked native
+// poll, and discards a batch that arrives after release.
 func (s *Scanner) ToArrowReader(ctx context.Context) (array.RecordReader, error) {
 	if err := s.begin(ctx); err != nil {
 		_ = s.Close()
 		return nil, err
 	}
-	reader := &scannerReader{
-		scanner: s,
-		ctx:     ctx,
-		schema:  s.Schema(),
-	}
-	reader.refs.Store(1)
-	return reader, nil
+	return newScannerReader(s, s.native, ctx, s.Schema()), nil
 }
 
 func (s *Scanner) begin(ctx context.Context) error {
@@ -250,16 +246,46 @@ func (s *Scanner) scanError(err error) error {
 	return wrapError("scan", s.uri, err)
 }
 
+// scannerSource is the native scanner a scannerReader polls. *ffi.Scanner
+// implements it. The interface keeps the reader's cancellation behavior
+// testable without a native library.
+type scannerSource interface {
+	Next(ctx context.Context) (arrow.RecordBatch, bool, error)
+	Close() error
+}
+
+// scannerReader adapts a Scanner to array.RecordReader.
+//
+// Next is serialized by nextMu rather than by mu so Release can close the
+// scanner while a native poll is in flight. Closing the scanner wakes that
+// poll through the native close channel; the reader then discards whatever the
+// poll returns because released is set. Holding mu across the poll would let a
+// blocked Next prevent Release from ever reaching Close.
 type scannerReader struct {
 	scanner *Scanner
+	source  scannerSource
 	ctx     context.Context
 	schema  *arrow.Schema
 	refs    atomic.Int64
 
-	mu      sync.Mutex
-	current arrow.RecordBatch
-	err     error
-	done    bool
+	nextMu sync.Mutex
+
+	mu       sync.Mutex
+	current  arrow.RecordBatch
+	err      error
+	done     bool
+	released bool
+}
+
+func newScannerReader(scanner *Scanner, source scannerSource, ctx context.Context, schema *arrow.Schema) *scannerReader {
+	reader := &scannerReader{
+		scanner: scanner,
+		source:  source,
+		ctx:     ctx,
+		schema:  schema,
+	}
+	reader.refs.Store(1)
+	return reader
 }
 
 func (r *scannerReader) Retain() {
@@ -271,12 +297,14 @@ func (r *scannerReader) Release() {
 		return
 	}
 	r.mu.Lock()
-	if r.current != nil {
-		r.current.Release()
-		r.current = nil
-	}
+	r.released = true
+	current := r.current
+	r.current = nil
 	r.mu.Unlock()
-	_ = r.scanner.Close()
+	if current != nil {
+		current.Release()
+	}
+	_ = r.source.Close()
 }
 
 func (r *scannerReader) Schema() *arrow.Schema {
@@ -287,32 +315,60 @@ func (r *scannerReader) Next() bool {
 	if r.refs.Load() <= 0 {
 		return false
 	}
-	r.mu.Lock()
-	if r.done || r.err != nil {
-		r.mu.Unlock()
+	r.nextMu.Lock()
+	batch, done, err := r.pollNext()
+	r.nextMu.Unlock()
+
+	if err != nil {
 		return false
+	}
+	if done {
+		// Statistics callbacks run here, after end-of-stream state and both
+		// reader locks are released, so a callback may use this reader again.
+		r.scanner.notifyStatistics()
+		return false
+	}
+	return batch != nil
+}
+
+// pollNext performs one native poll. The caller owns nextMu. This method
+// acquires mu only for state transitions and never holds it across the native
+// call, so Release can close the scanner and wake a blocked poll. It reports
+// done instead of notifying statistics so the caller can run user callbacks
+// with nextMu released as well as mu.
+func (r *scannerReader) pollNext() (batch arrow.RecordBatch, done bool, err error) {
+	r.mu.Lock()
+	if r.released || r.done || r.err != nil {
+		r.mu.Unlock()
+		return nil, false, nil
 	}
 	if r.current != nil {
 		r.current.Release()
 		r.current = nil
 	}
+	r.mu.Unlock()
 
-	batch, done, err := r.scanner.native.Next(r.ctx)
+	batch, done, err = r.source.Next(r.ctx)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if err != nil {
 		r.err = r.scanner.scanError(err)
 		r.done = true
-		r.mu.Unlock()
-		return false
+		return nil, false, r.err
+	}
+	if r.released {
+		if batch != nil {
+			batch.Release()
+		}
+		return nil, false, nil
 	}
 	if done {
 		r.done = true
-		r.mu.Unlock()
-		r.scanner.notifyStatistics()
-		return false
+		return nil, true, nil
 	}
 	r.current = batch
-	r.mu.Unlock()
-	return true
+	return batch, false, nil
 }
 
 func (r *scannerReader) RecordBatch() arrow.RecordBatch {
