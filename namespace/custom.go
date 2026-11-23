@@ -43,7 +43,7 @@ const (
 // CustomClientError reports a typed failure from a CustomClient back to native
 // code. A returned CustomClientError is translated to the matching namespace
 // error code; any other error is reported as an internal error. The error
-// message is preserved in the resulting NamespaceError. NamespaceError uses a
+// message is preserved in the resulting Error. Error uses a
 // different code space: forwarding one directly also reports an internal error.
 // A proxy client can translate it into a CustomClientError explicitly.
 type CustomClientError struct {

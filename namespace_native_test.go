@@ -162,3 +162,39 @@ func TestNamespaceManagedWriteOpenAppendCommit(t *testing.T) {
 		t.Fatalf("reopened scan ids = %v, want [1..6]", ids)
 	}
 }
+
+func TestNativeNamespaceRootErrorLosesTypedCode(t *testing.T) {
+	ctx := context.Background()
+	ns, _ := newManagedDirectory(t)
+	defer func() { _ = ns.Close() }()
+	missing := []string{"missing_table"}
+
+	// Direct namespace calls keep the native namespace code and category.
+	directErr := ns.TableExists(ctx, &namespace.TableExistsRequest{ID: &missing})
+	var namespaceErr *namespace.Error
+	if !errors.As(directErr, &namespaceErr) || namespaceErr.Code != namespace.ErrorCodeTableNotFound {
+		t.Fatalf("TableExists missing = %v, want *namespace.Error TableNotFound", directErr)
+	}
+	if !errors.Is(directErr, namespace.ErrNotFound) || !namespace.IsNotFound(directErr) {
+		t.Fatalf("TableExists missing = %v, want namespace not found", directErr)
+	}
+
+	// The pinned lance-c entry point for a root namespace open reports a
+	// generic LANCE_ERR_INTERNAL on the TLS channel, so the typed namespace
+	// code never reaches the root wrapper. Record the current public contract
+	// until lance-c preserves the code on that path.
+	_, rootErr := lance.OpenFromNamespace(ctx, ns, missing)
+	var lanceErr *lance.Error
+	if !errors.As(rootErr, &lanceErr) {
+		t.Fatalf("OpenFromNamespace = %T (%v), want *lance.Error", rootErr, rootErr)
+	}
+	if lanceErr.Code != lance.CodeInternal || !errors.Is(rootErr, lance.ErrInternal) {
+		t.Fatalf("OpenFromNamespace code = %s (%d), want LANCE_ERR_INTERNAL", lanceErr.Code, lanceErr.Code)
+	}
+	if errors.Is(rootErr, lance.ErrNotFound) || errors.Is(rootErr, namespace.ErrNotFound) || namespace.IsNotFound(rootErr) {
+		t.Fatalf("OpenFromNamespace matched not found: %v", rootErr)
+	}
+	if errors.As(rootErr, &namespaceErr) {
+		t.Fatalf("OpenFromNamespace preserved *namespace.Error: %v", rootErr)
+	}
+}
