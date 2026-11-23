@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
@@ -63,6 +64,10 @@ type WriteSummary struct {
 // for in-flight calls and is idempotent. Close does not imply a successful
 // Finish.
 type Writer struct {
+	// opMu serializes native calls on this writer; writers mutate shared native
+	// state. Close coordination stays in res, so teardown remains single and
+	// still waits for the operation holding opMu.
+	opMu   sync.Mutex
 	res    *lifetime.Resource
 	native *ffi.FileWriter
 	uri    string
@@ -110,10 +115,15 @@ func newWriter(native *ffi.FileWriter, uri string) *Writer {
 }
 
 func (w *Writer) acquire(op string) (*ffi.FileWriter, func(), error) {
+	w.opMu.Lock()
 	if w.res == nil || !w.res.Acquire() {
+		w.opMu.Unlock()
 		return nil, nil, closedError(op, w.uri)
 	}
-	return w.native, w.res.Release, nil
+	return w.native, func() {
+		w.res.Release()
+		w.opMu.Unlock()
+	}, nil
 }
 
 // Write writes one borrowed batch. The writer does not retain the batch after
