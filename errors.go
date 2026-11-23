@@ -163,7 +163,7 @@ func wrapError(op, uri string, err error) error {
 	if errors.Is(err, namespace.ErrClosed) {
 		return closedError(op, uri)
 	}
-	var namespaceErr *namespace.NamespaceError
+	var namespaceErr *namespace.Error
 	if errors.As(err, &namespaceErr) {
 		return &Error{
 			Op:      op,
@@ -195,7 +195,7 @@ func wrapError(op, uri string, err error) error {
 	return fmt.Errorf("lance: %s %s: %w", op, uri, err)
 }
 
-func namespaceErrorCode(code namespace.NamespaceErrorCode) Code {
+func namespaceErrorCode(code namespace.ErrorCode) Code {
 	switch code {
 	case namespace.ErrorCodeUnsupported:
 		return CodeNotSupported
