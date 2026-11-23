@@ -102,9 +102,10 @@ func BenchmarkImportRecordBatch(b *testing.B) {
 		if err != nil {
 			b.Fatalf("ImportRecordBatch: %v", err)
 		}
-		if imported.NumRows() != benchmarkBatchRows {
-			b.Fatalf("imported rows = %d, want %d", imported.NumRows(), benchmarkBatchRows)
-		}
+		rows := imported.NumRows()
 		imported.Release()
+		if rows != benchmarkBatchRows {
+			b.Fatalf("imported rows = %d, want %d", rows, benchmarkBatchRows)
+		}
 	}
 }
