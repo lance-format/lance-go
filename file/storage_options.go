@@ -1,8 +1,6 @@
 package file
 
 import (
-	"fmt"
-
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/accessor"
 	"github.com/lance-format/lance-go/internal/ffi"
@@ -53,7 +51,7 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 // after open calls return without closing the provider themselves.
 func NewStorageOptionsWithProvider(initial map[string]string, provider lance.StorageOptionsProvider) (*StorageOptions, error) {
 	if provider == nil {
-		return nil, fmt.Errorf("storage options provider must not be nil")
+		return nil, invalidError("storage options", "", "storage options provider must not be nil")
 	}
 	owned, err := lance.NewStorageOptionsAccessor(initial, provider)
 	if err != nil {
@@ -61,7 +59,7 @@ func NewStorageOptionsWithProvider(initial map[string]string, provider lance.Sto
 	}
 	core, ok := accessor.From(owned)
 	if !ok || core == nil {
-		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
+		return nil, invalidError("storage options", "", "storage options accessor is not owned by the root lance package")
 	}
 	return newStorageOptions(core), nil
 }
@@ -73,11 +71,11 @@ func NewStorageOptionsWithProvider(initial map[string]string, provider lance.Sto
 // closed.
 func NewStorageOptionsFromAccessor(owned *lance.StorageOptionsAccessor) (*StorageOptions, error) {
 	if owned == nil {
-		return nil, fmt.Errorf("storage options accessor must not be nil")
+		return nil, invalidError("storage options", "", "storage options accessor must not be nil")
 	}
 	core, ok := accessor.From(owned)
 	if !ok {
-		return nil, fmt.Errorf("storage options accessor is not owned by the root lance package")
+		return nil, invalidError("storage options", "", "storage options accessor is not owned by the root lance package")
 	}
 	return newStorageOptions(core), nil
 }

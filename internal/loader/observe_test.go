@@ -34,8 +34,7 @@ func TestObserveReportsSuccessfulSourceMetadata(t *testing.T) {
 	resetForTest()
 	t.Cleanup(resetForTest)
 
-	mu.Lock()
-	cached = &Library{
+	cached.Store(&Library{
 		path:   "/cache/lance-go/liblance_c.so",
 		source: SourceBundle,
 		bundle: &BundleInfo{
@@ -44,8 +43,7 @@ func TestObserveReportsSuccessfulSourceMetadata(t *testing.T) {
 			UpstreamCommit: "e2564b89be36bb18f5beff6d673daf9dfff8c986",
 			HeaderSHA256:   "90e52d19f7cedb6cd52a83024927453f0ded5f13e24ed2adae8684cd9d4b0d8d",
 		},
-	}
-	mu.Unlock()
+	})
 
 	state := Observe()
 	if !state.Loaded {
