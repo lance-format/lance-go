@@ -1,10 +1,13 @@
 package lance
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/lance-format/lance-go/internal/ffi"
 )
 
 // closeTeardown replaces one handle's native close function so tests can pause
@@ -138,6 +141,11 @@ func TestResourceHandleCloseWaitsForConcurrentCallers(t *testing.T) {
 			handle.res = res
 			return handle.Close
 		}},
+		{"IndexSegmentMetadata", func(res *resource) func() error {
+			handle := &IndexSegmentMetadata{}
+			handle.res = res
+			return handle.Close
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -211,5 +219,18 @@ func TestSegmentBuilderCloseNilAndZeroValueReturnsNil(t *testing.T) {
 	}
 	if err := (&SegmentBuilder{}).Close(); err != nil {
 		t.Fatalf("zero-value SegmentBuilder.Close = %v, want nil", err)
+	}
+}
+
+func TestIndexSegmentMetadataCallsAfterCloseReportClosed(t *testing.T) {
+	metadata := newIndexSegmentMetadata(&ffi.SegmentMetadata{})
+	if err := metadata.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := metadata.UUID(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("UUID after Close = %v, want ErrClosed", err)
+	}
+	if _, err := metadata.Clone(); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Clone after Close = %v, want ErrClosed", err)
 	}
 }
