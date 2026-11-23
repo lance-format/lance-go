@@ -857,6 +857,79 @@ func TestExportRecordBatchAndStream(t *testing.T) {
 	}
 }
 
+func TestRecordBatchRoundTripPreservesNulls(t *testing.T) {
+	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer mem.AssertSize(t, 0)
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int32, Nullable: true},
+		{Name: "name", Type: arrow.BinaryTypes.String, Nullable: true},
+	}, nil)
+
+	idBuilder := array.NewInt32Builder(mem)
+	idBuilder.AppendValues([]int32{1, 0, 3}, []bool{true, false, true})
+	idArray := idBuilder.NewArray()
+	idBuilder.Release()
+	nameBuilder := array.NewStringBuilder(mem)
+	nameBuilder.AppendValues([]string{"a", "b", ""}, []bool{true, false, true})
+	nameArray := nameBuilder.NewArray()
+	nameBuilder.Release()
+
+	batch := array.NewRecordBatch(schema, []arrow.Array{idArray, nameArray}, 3)
+	nullCount := idArray.NullN() + nameArray.NullN()
+	idArray.Release()
+	nameArray.Release()
+	defer batch.Release()
+
+	before := handle.Len()
+	var exported ArrowArray
+	if err := ExportRecordBatch(batch, &exported); err != nil {
+		t.Fatalf("ExportRecordBatch: %v", err)
+	}
+	if got := cChild(&exported, 0); got.Length != 3 || got.NullCount != 1 {
+		t.Fatalf("exported id child = length %d, nulls %d", got.Length, got.NullCount)
+	}
+	if got := cChild(&exported, 1); got.Length != 3 || got.NullCount != 1 {
+		t.Fatalf("exported name child = length %d, nulls %d", got.Length, got.NullCount)
+	}
+
+	imported, err := ImportRecordBatch(&exported, schema)
+	if err != nil {
+		t.Fatalf("ImportRecordBatch: %v", err)
+	}
+	if got := imported.NumRows(); got != 3 {
+		t.Errorf("imported rows = %d, want 3", got)
+	}
+	if got := imported.Column(0).NullN() + imported.Column(1).NullN(); got != nullCount {
+		t.Errorf("imported null count = %d, want %d", got, nullCount)
+	}
+	idColumn := imported.Column(0).(*array.Int32)
+	if idColumn.IsNull(0) || idColumn.Value(0) != 1 {
+		t.Errorf("imported id row 0 = %v, want 1", idColumn.Value(0))
+	}
+	if !idColumn.IsNull(1) {
+		t.Error("imported id row 1 is not null")
+	}
+	if idColumn.IsNull(2) || idColumn.Value(2) != 3 {
+		t.Errorf("imported id row 2 = %v, want 3", idColumn.Value(2))
+	}
+	nameColumn := imported.Column(1).(*array.String)
+	if nameColumn.IsNull(0) || nameColumn.Value(0) != "a" {
+		t.Errorf("imported name row 0 = %q, want a", nameColumn.Value(0))
+	}
+	if !nameColumn.IsNull(1) {
+		t.Error("imported name row 1 is not null")
+	}
+	if nameColumn.IsNull(2) || nameColumn.Value(2) != "" {
+		t.Errorf("imported name row 2 = %q, want empty string", nameColumn.Value(2))
+	}
+
+	imported.Release()
+	if got := handle.Len(); got != before {
+		t.Errorf("exported record batch left %d handles registered, want %d", got, before)
+	}
+}
+
 func TestExportStreamBorrowsReaderBatch(t *testing.T) {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
