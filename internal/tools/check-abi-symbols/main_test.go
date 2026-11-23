@@ -1,8 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+
+	"github.com/lance-format/lance-go/internal/tools/headeridentity"
 )
 
 func TestParseHeaderIgnoresDeclarationAttributes(t *testing.T) {
@@ -100,5 +108,193 @@ func TestStripDeclarationAttributes(t *testing.T) {
 		if got := stripDeclarationAttributes(tc.in); got != tc.want {
 			t.Errorf("stripDeclarationAttributes(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func testSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func writeTestFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create directory for %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	return path
+}
+
+// testCheckerRoot writes a minimal repository whose bindings bind one symbol.
+func testCheckerRoot(t *testing.T, headerSHA, identity string) string {
+	t.Helper()
+	root := t.TempDir()
+	writeTestFile(t, root, "internal/ffi/upstream.go", fmt.Sprintf(`package ffi
+
+const (
+	upstreamRepo         = "https://github.com/lance-format/lance-c"
+	upstreamRelease      = "v0.2.1-beta.3"
+	upstreamCommit       = "a800fd5f28636bfff34778e3ad6663f3cf099a38"
+	upstreamHeaderSHA256 = %q
+	upstreamHeaderIdentitySHA256 = %q
+)
+`, headerSHA, identity))
+	writeTestFile(t, root, "internal/ffi/bindings.go", `package ffi
+
+type symbol struct {
+	name string
+	addr any
+}
+
+type bindings struct {
+	lastErrorCode func() int32
+}
+
+func (b *bindings) symbols() []symbol {
+	return []symbol{
+		{"lance_last_error_code", &b.lastErrorCode},
+	}
+}
+`)
+	return root
+}
+
+func headerSetFixture(t *testing.T) (string, []byte, string) {
+	t.Helper()
+	dir := t.TempDir()
+	writeTestFile(t, dir, "lance.h", "/* umbrella */\n#include \"error.h\"\n")
+	writeTestFile(t, dir, "error.h", "#include \"fwd.h\"\nLanceErrorCode lance_last_error_code(void);\n")
+	writeTestFile(t, dir, "fwd.h", "typedef struct LanceDataset LanceDataset;\n")
+	writeTestFile(t, dir, "lance.hpp", "// C++ only\n")
+
+	files, err := headeridentity.Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	manifest, err := headeridentity.Encode(files)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	identity, err := headeridentity.Digest(files)
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	return dir, manifest, identity
+}
+
+func TestRunAcceptsSplitHeaderDirectoryWithTypeOnlyFile(t *testing.T) {
+	dir, manifest, identity := headerSetFixture(t)
+	manifestPath := writeTestFile(t, t.TempDir(), "HEADER-MANIFEST", string(manifest))
+	root := testCheckerRoot(t, strings.Repeat("0", 64), identity)
+
+	if err := run(root, headerInput{path: dir, manifestPath: manifestPath}); err != nil {
+		t.Fatalf("run split directory: %v", err)
+	}
+	if err := run(root, headerInput{path: dir, identity: identity}); err != nil {
+		t.Fatalf("run split directory with identity only: %v", err)
+	}
+	if _, _, err := headeridentity.Verify(dir, manifest, identity); err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+}
+
+func TestRunRejectsSplitHeaderSetProblems(t *testing.T) {
+	dir, manifest, identity := headerSetFixture(t)
+
+	t.Run("missing identity", func(t *testing.T) {
+		root := testCheckerRoot(t, strings.Repeat("0", 64), "")
+		if err := run(root, headerInput{path: dir}); err == nil || !strings.Contains(err.Error(), "requires an expected identity") {
+			t.Fatalf("run error = %v", err)
+		}
+	})
+
+	t.Run("missing header", func(t *testing.T) {
+		if err := os.Remove(filepath.Join(dir, "fwd.h")); err != nil {
+			t.Fatalf("remove fwd.h: %v", err)
+		}
+		t.Cleanup(func() { writeTestFile(t, dir, "fwd.h", "typedef struct LanceDataset LanceDataset;\n") })
+		root := testCheckerRoot(t, strings.Repeat("0", 64), identity)
+		manifestPath := writeTestFile(t, t.TempDir(), "HEADER-MANIFEST", string(manifest))
+		if err := run(root, headerInput{path: dir, manifestPath: manifestPath}); err == nil || !strings.Contains(err.Error(), "missing include/lance/fwd.h") {
+			t.Fatalf("run error = %v", err)
+		}
+	})
+
+	t.Run("unexpected header", func(t *testing.T) {
+		writeTestFile(t, dir, "extra.h", "int lance_extra(void);\n")
+		t.Cleanup(func() { os.Remove(filepath.Join(dir, "extra.h")) })
+		root := testCheckerRoot(t, strings.Repeat("0", 64), identity)
+		if err := run(root, headerInput{path: dir, identity: identity}); err == nil || !strings.Contains(err.Error(), "header set identity") {
+			t.Fatalf("run error = %v", err)
+		}
+	})
+
+	t.Run("signature drift", func(t *testing.T) {
+		changed := "LanceErrorCode lance_last_error_code(uint64_t changed);\n"
+		writeTestFile(t, dir, "error.h", changed)
+		t.Cleanup(func() {
+			writeTestFile(t, dir, "error.h", "#include \"fwd.h\"\nLanceErrorCode lance_last_error_code(void);\n")
+		})
+		changedFiles := []headeridentity.File{
+			{Path: "include/lance/error.h", SHA256: testSHA256([]byte(changed))},
+			{Path: "include/lance/fwd.h", SHA256: testSHA256([]byte("typedef struct LanceDataset LanceDataset;\n"))},
+			{Path: "include/lance/lance.h", SHA256: testSHA256([]byte("/* umbrella */\n#include \"error.h\"\n"))},
+		}
+		changedManifest, err := headeridentity.Encode(changedFiles)
+		if err != nil {
+			t.Fatalf("Encode changed: %v", err)
+		}
+		changedIdentity, err := headeridentity.Digest(changedFiles)
+		if err != nil {
+			t.Fatalf("Digest changed: %v", err)
+		}
+		root := testCheckerRoot(t, strings.Repeat("0", 64), changedIdentity)
+		if err := run(root, headerInput{path: dir, manifestPath: writeTestFile(t, t.TempDir(), "HEADER-MANIFEST", string(changedManifest))}); err == nil ||
+			!strings.Contains(err.Error(), "C takes 1 parameter(s), Go binding takes 0") {
+			t.Fatalf("run error = %v, want a signature drift error", err)
+		}
+	})
+
+	t.Run("duplicate declaration across files", func(t *testing.T) {
+		writeTestFile(t, dir, "lance.h", "/* umbrella */\n#include \"error.h\"\nLanceErrorCode lance_last_error_code(void);\n")
+		t.Cleanup(func() { writeTestFile(t, dir, "lance.h", "/* umbrella */\n#include \"error.h\"\n") })
+		files, err := headeridentity.Scan(dir)
+		if err != nil {
+			t.Fatalf("Scan: %v", err)
+		}
+		duplicateManifest, err := headeridentity.Encode(files)
+		if err != nil {
+			t.Fatalf("Encode: %v", err)
+		}
+		duplicateIdentity, err := headeridentity.Digest(files)
+		if err != nil {
+			t.Fatalf("Digest: %v", err)
+		}
+		root := testCheckerRoot(t, strings.Repeat("0", 64), duplicateIdentity)
+		if err := run(root, headerInput{path: dir, manifestPath: writeTestFile(t, t.TempDir(), "HEADER-MANIFEST", string(duplicateManifest))}); err == nil ||
+			!strings.Contains(err.Error(), "duplicate declaration of lance_last_error_code") {
+			t.Fatalf("run error = %v, want a duplicate declaration error", err)
+		}
+	})
+}
+
+func TestRunKeepsLegacySingleHeaderPath(t *testing.T) {
+	header := []byte("/* legacy */\nLanceErrorCode lance_last_error_code(void);\n")
+	dir := t.TempDir()
+	headerPath := writeTestFile(t, dir, "lance.h", string(header))
+	root := testCheckerRoot(t, testSHA256(header), "")
+	if err := run(root, headerInput{path: headerPath}); err != nil {
+		t.Fatalf("run legacy header: %v", err)
+	}
+	if err := run(root, headerInput{path: headerPath, identity: strings.Repeat("a", 64)}); err == nil ||
+		!strings.Contains(err.Error(), "require -header to name an include/lance directory") {
+		t.Fatalf("run legacy header with identity error = %v", err)
+	}
+	mismatched := testCheckerRoot(t, strings.Repeat("b", 64), "")
+	if err := run(mismatched, headerInput{path: headerPath}); err == nil || !strings.Contains(err.Error(), "header sha256 is") {
+		t.Fatalf("run legacy header with wrong pin error = %v", err)
 	}
 }

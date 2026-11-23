@@ -21,6 +21,7 @@ on:
       - "**/*.go"
       - go.mod
       - go.sum
+      - scripts/abi-checker-input.sh
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -28,12 +29,15 @@ on:
       - internal/tools/artifactgen/**
       - internal/tools/verify-lance-c-artifact/**
       - internal/tools/fetch-lance-c-release/**
+      - internal/tools/go.mod
+      - internal/tools/go.sum
       - .github/workflows/unix-native.yml
   pull_request:
     paths:
       - "**/*.go"
       - go.mod
       - go.sum
+      - scripts/abi-checker-input.sh
       - scripts/check-native-library.sh
       - scripts/sync-lance-c.sh
       - internal/tools/check-abi-symbols/**
@@ -41,6 +45,8 @@ on:
       - internal/tools/artifactgen/**
       - internal/tools/verify-lance-c-artifact/**
       - internal/tools/fetch-lance-c-release/**
+      - internal/tools/go.mod
+      - internal/tools/go.sum
       - .github/workflows/unix-native.yml
 
 permissions:
@@ -92,7 +98,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            internal/tools/go.sum
 
       - name: Record runner and target
         run: |
@@ -136,21 +144,23 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/lance-c-release"
-          go run ./internal/tools/fetch-lance-c-release \
+          go -C internal/tools run ./fetch-lance-c-release \
             -target "$TARGET" \
             -out "$out" | tee "$RUNNER_TEMP/evidence/acquisition.txt"
           record="$out/acquisition.txt"
           library="$(sed -n 's/^library=//p' "$record")"
           header="$(sed -n 's/^header=//p' "$record")"
+          abi_header="$(./scripts/abi-checker-input.sh "$record")"
           library_sha="$(sed -n 's/^library_sha256=//p' "$record")"
           archive_sha="$(sed -n 's/^archive_sha256=//p' "$record")"
-          if [[ -z $library || -z $header || -z $library_sha || -z $archive_sha ]]; then
-            echo "acquisition record did not report the library, header, and hashes" >&2
+          if [[ -z $library || -z $header || -z $abi_header || -z $library_sha || -z $archive_sha ]]; then
+            echo "acquisition record did not report the library, header, ABI header input, and hashes" >&2
             exit 1
           fi
           {
             echo "library=$library"
             echo "header=$header"
+            echo "abi_header=$abi_header"
             echo "library_sha256=$library_sha"
             echo "archive_sha256=$archive_sha"
           } >> "$GITHUB_OUTPUT"
@@ -168,10 +178,10 @@ jobs:
 
       - name: Check ABI against published header
         env:
-          LANCE_C_HEADER: ${{ steps.native.outputs.header }}
+          LANCE_C_HEADER: ${{ steps.native.outputs.abi_header }}
         run: |
           set -euo pipefail
-          go run ./internal/tools/check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
+          go -C internal/tools run ./check-abi-symbols 2>&1 | tee "$RUNNER_TEMP/evidence/abi-check.txt"
 
       - name: Test default build against installed library
         env:
@@ -325,7 +335,7 @@ jobs:
           test -f "$CANDIDATE_ROOT/module/artifact.go"
           grep -Fq "//go:build !lance_external_lib && $TARGET_GOOS && $TARGET_GOARCH" "$selector"
           grep -Fq "\"$MODULE_PATH\"" "$selector"
-          go run ./internal/tools/verify-lance-c-artifact \
+          go -C internal/tools run ./verify-lance-c-artifact \
             -module "$CANDIDATE_ROOT/module" \
             -library "$LANCE_LIBRARY" \
             -target "$TARGET" \

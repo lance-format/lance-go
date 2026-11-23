@@ -42,10 +42,7 @@ func (p *OptimizeIndicesPlan) PlanID() ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndicesPlanPlanID(handle, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_indices_plan_id failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_optimize_indices_plan_id failed")
 	}
 	return uuid, nil
 }
@@ -57,14 +54,7 @@ func (p *OptimizeIndicesPlan) ReadVersion() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := p.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	version := b.optimizeIndicesPlanReadVersion(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return callPinned(p.b, func() uint64 { return p.b.optimizeIndicesPlanReadVersion(handle) })
 }
 
 // TaskCount returns the number of tasks in the plan.
@@ -74,14 +64,7 @@ func (p *OptimizeIndicesPlan) TaskCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := p.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndicesPlanTaskCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(p.b, func() uint64 { return p.b.optimizeIndicesPlanTaskCount(handle) })
 }
 
 // MergeCount returns the number of merges in the plan.
@@ -91,14 +74,7 @@ func (p *OptimizeIndicesPlan) MergeCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := p.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndicesPlanMergeCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(p.b, func() uint64 { return p.b.optimizeIndicesPlanMergeCount(handle) })
 }
 
 // TaskAt returns an owned snapshot of one plan task.
@@ -113,10 +89,7 @@ func (p *OptimizeIndicesPlan) TaskAt(index uint64) (*OptimizeIndexTask, error) {
 	defer runtime.UnlockOSThread()
 	task := b.optimizeIndicesPlanTaskAt(handle, index)
 	if task == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_indices_plan_task_at returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_indices_plan_task_at returned NULL")
 	}
 	return &OptimizeIndexTask{b: b, handle: task}, nil
 }
@@ -133,10 +106,7 @@ func (p *OptimizeIndicesPlan) MergeAt(index uint64) (*OptimizeIndexMerge, error)
 	defer runtime.UnlockOSThread()
 	merge := b.optimizeIndicesPlanMergeAt(handle, index)
 	if merge == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_indices_plan_merge_at returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_indices_plan_merge_at returned NULL")
 	}
 	return &OptimizeIndexMerge{b: b, handle: merge}, nil
 }
@@ -153,10 +123,7 @@ func (p *OptimizeIndicesPlan) JSON() (string, error) {
 	defer runtime.UnlockOSThread()
 	ptr := b.optimizeIndicesPlanJSON(handle)
 	if ptr == nil {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return "", nativeErr
-		}
-		return "", fmt.Errorf("ffi: lance_optimize_indices_plan_json returned NULL without setting an error")
+		return "", b.takeErrorOr("lance_optimize_indices_plan_json returned NULL")
 	}
 	value := goString(ptr)
 	b.freeString(ptr)
@@ -177,10 +144,7 @@ func OptimizeIndicesPlanFromJSON(data string) (*OptimizeIndicesPlan, error) {
 	defer runtime.UnlockOSThread()
 	plan := b.optimizeIndicesPlanFromJSON(data)
 	if plan == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_indices_plan_from_json returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_indices_plan_from_json returned NULL")
 	}
 	return &OptimizeIndicesPlan{b: b, handle: plan}, nil
 }
@@ -220,10 +184,7 @@ func (t *OptimizeIndexTask) PlanID() ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexTaskPlanID(handle, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_index_task_plan_id failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_optimize_index_task_plan_id failed")
 	}
 	return uuid, nil
 }
@@ -235,14 +196,7 @@ func (t *OptimizeIndexTask) ReadVersion() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := t.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	version := b.optimizeIndexTaskReadVersion(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return callPinned(t.b, func() uint64 { return t.b.optimizeIndexTaskReadVersion(handle) })
 }
 
 // Group returns the task's merge group.
@@ -252,14 +206,7 @@ func (t *OptimizeIndexTask) Group() (uint32, error) {
 		return 0, ErrClosed
 	}
 
-	b := t.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	group := b.optimizeIndexTaskGroup(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return group, nil
+	return callPinned(t.b, func() uint32 { return t.b.optimizeIndexTaskGroup(handle) })
 }
 
 // FragmentCount returns the number of source fragments.
@@ -269,14 +216,7 @@ func (t *OptimizeIndexTask) FragmentCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := t.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndexTaskFragmentCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(t.b, func() uint64 { return t.b.optimizeIndexTaskFragmentCount(handle) })
 }
 
 // FragmentIDAt returns one source fragment id.
@@ -291,10 +231,7 @@ func (t *OptimizeIndexTask) FragmentIDAt(index uint64) (uint32, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexTaskFragmentIDAt(handle, index, &fragmentID); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return 0, nativeErr
-		}
-		return 0, fmt.Errorf("ffi: lance_optimize_index_task_fragment_id_at failed without setting an error")
+		return 0, b.takeErrorOr("lance_optimize_index_task_fragment_id_at failed")
 	}
 	return fragmentID, nil
 }
@@ -329,14 +266,7 @@ func (t *OptimizeIndexTask) OldSegmentCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := t.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndexTaskOldSegmentCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(t.b, func() uint64 { return t.b.optimizeIndexTaskOldSegmentCount(handle) })
 }
 
 // OldSegmentAt returns an owned copy of one old segment's metadata.
@@ -374,10 +304,7 @@ func (t *OptimizeIndexTask) NumIndicesToMerge() (compaction.Optional[uint64], er
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexTaskNumIndicesToMerge(handle, &hasValue, &value); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return compaction.Unset[uint64](), nativeErr
-		}
-		return compaction.Unset[uint64](), fmt.Errorf("ffi: lance_optimize_index_task_num_indices_to_merge failed without setting an error")
+		return compaction.Unset[uint64](), b.takeErrorOr("lance_optimize_index_task_num_indices_to_merge failed")
 	}
 	if !hasValue {
 		return compaction.None[uint64](), nil
@@ -397,10 +324,7 @@ func (t *OptimizeIndexTask) EnablePartitionRebalancing() (bool, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexTaskEnablePartitionRebalancing(handle, &value); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return false, nativeErr
-		}
-		return false, fmt.Errorf("ffi: lance_optimize_index_task_enable_partition_rebalancing failed without setting an error")
+		return false, b.takeErrorOr("lance_optimize_index_task_enable_partition_rebalancing failed")
 	}
 	return value, nil
 }
@@ -417,10 +341,7 @@ func (t *OptimizeIndexTask) Retrain() (bool, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexTaskRetrain(handle, &value); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return false, nativeErr
-		}
-		return false, fmt.Errorf("ffi: lance_optimize_index_task_retrain failed without setting an error")
+		return false, b.takeErrorOr("lance_optimize_index_task_retrain failed")
 	}
 	return value, nil
 }
@@ -446,10 +367,7 @@ func (t *OptimizeIndexTask) Execute(dataset *Dataset) (*IndexSegmentResult, erro
 	defer runtime.UnlockOSThread()
 	rc := b.optimizeIndexTaskExecute(datasetHandle, taskHandle, &result)
 	if rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_task_execute failed without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_index_task_execute failed")
 	}
 	if result == 0 {
 		return nil, nil
@@ -469,10 +387,7 @@ func (t *OptimizeIndexTask) JSON() (string, error) {
 	defer runtime.UnlockOSThread()
 	ptr := b.optimizeIndexTaskJSON(handle)
 	if ptr == nil {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return "", nativeErr
-		}
-		return "", fmt.Errorf("ffi: lance_optimize_index_task_json returned NULL without setting an error")
+		return "", b.takeErrorOr("lance_optimize_index_task_json returned NULL")
 	}
 	value := goString(ptr)
 	b.freeString(ptr)
@@ -493,10 +408,7 @@ func OptimizeIndexTaskFromJSON(data string) (*OptimizeIndexTask, error) {
 	defer runtime.UnlockOSThread()
 	task := b.optimizeIndexTaskFromJSON(data)
 	if task == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_task_from_json returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_index_task_from_json returned NULL")
 	}
 	return &OptimizeIndexTask{b: b, handle: task}, nil
 }
@@ -536,10 +448,7 @@ func (m *OptimizeIndexMerge) PlanID() ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexMergePlanID(handle, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_index_merge_plan_id failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_optimize_index_merge_plan_id failed")
 	}
 	return uuid, nil
 }
@@ -551,14 +460,7 @@ func (m *OptimizeIndexMerge) ReadVersion() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := m.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	version := b.optimizeIndexMergeReadVersion(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return callPinned(m.b, func() uint64 { return m.b.optimizeIndexMergeReadVersion(handle) })
 }
 
 // Group returns the merge group.
@@ -568,14 +470,7 @@ func (m *OptimizeIndexMerge) Group() (uint32, error) {
 		return 0, ErrClosed
 	}
 
-	b := m.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	group := b.optimizeIndexMergeGroup(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return group, nil
+	return callPinned(m.b, func() uint32 { return m.b.optimizeIndexMergeGroup(handle) })
 }
 
 // OldSegmentCount returns the number of old segments this merge folds into
@@ -586,14 +481,7 @@ func (m *OptimizeIndexMerge) OldSegmentCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := m.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndexMergeOldSegmentCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(m.b, func() uint64 { return m.b.optimizeIndexMergeOldSegmentCount(handle) })
 }
 
 // OldSegmentAt returns an owned copy of one old segment's metadata.
@@ -625,14 +513,7 @@ func (m *OptimizeIndexMerge) ReplaceCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := m.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.optimizeIndexMergeReplaceCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(m.b, func() uint64 { return m.b.optimizeIndexMergeReplaceCount(handle) })
 }
 
 // ReplaceUUIDAt returns one replaced segment's UUID.
@@ -647,10 +528,7 @@ func (m *OptimizeIndexMerge) ReplaceUUIDAt(index uint64) ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.optimizeIndexMergeReplaceUUIDAt(handle, index, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_optimize_index_merge_replace_uuid_at failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_optimize_index_merge_replace_uuid_at failed")
 	}
 	return uuid, nil
 }
@@ -688,10 +566,7 @@ func (m *OptimizeIndexMerge) Execute(dataset *Dataset, results []*IndexSegmentRe
 	rc := b.optimizeIndexMergeExecute(datasetHandle, mergeHandle, handles, uint64(len(handles)), &out)
 	runtime.KeepAlive(handles)
 	if rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_merge_execute failed without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_index_merge_execute failed")
 	}
 	if out == 0 {
 		return nil, nil
@@ -711,10 +586,7 @@ func (m *OptimizeIndexMerge) JSON() (string, error) {
 	defer runtime.UnlockOSThread()
 	ptr := b.optimizeIndexMergeJSON(handle)
 	if ptr == nil {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return "", nativeErr
-		}
-		return "", fmt.Errorf("ffi: lance_optimize_index_merge_json returned NULL without setting an error")
+		return "", b.takeErrorOr("lance_optimize_index_merge_json returned NULL")
 	}
 	value := goString(ptr)
 	b.freeString(ptr)
@@ -735,10 +607,7 @@ func OptimizeIndexMergeFromJSON(data string) (*OptimizeIndexMerge, error) {
 	defer runtime.UnlockOSThread()
 	merge := b.optimizeIndexMergeFromJSON(data)
 	if merge == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_optimize_index_merge_from_json returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_optimize_index_merge_from_json returned NULL")
 	}
 	return &OptimizeIndexMerge{b: b, handle: merge}, nil
 }
@@ -778,10 +647,7 @@ func (r *IndexSegmentResult) PlanID() ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.indexSegmentResultPlanID(handle, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_index_segment_result_plan_id failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_index_segment_result_plan_id failed")
 	}
 	return uuid, nil
 }
@@ -793,14 +659,7 @@ func (r *IndexSegmentResult) ReadVersion() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := r.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	version := b.indexSegmentResultReadVersion(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return version, nil
+	return callPinned(r.b, func() uint64 { return r.b.indexSegmentResultReadVersion(handle) })
 }
 
 // Group returns the result's merge group.
@@ -810,14 +669,7 @@ func (r *IndexSegmentResult) Group() (uint32, error) {
 		return 0, ErrClosed
 	}
 
-	b := r.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	group := b.indexSegmentResultGroup(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return group, nil
+	return callPinned(r.b, func() uint32 { return r.b.indexSegmentResultGroup(handle) })
 }
 
 // Segment returns an owned copy of the produced segment metadata.
@@ -849,14 +701,7 @@ func (r *IndexSegmentResult) ReplaceCount() (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	b := r.b
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	count := b.indexSegmentResultReplaceCount(handle)
-	if err := b.takeError(); err != nil {
-		return 0, err
-	}
-	return count, nil
+	return callPinned(r.b, func() uint64 { return r.b.indexSegmentResultReplaceCount(handle) })
 }
 
 // ReplaceUUIDAt returns one replaced segment's UUID.
@@ -871,10 +716,7 @@ func (r *IndexSegmentResult) ReplaceUUIDAt(index uint64) ([16]byte, error) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	if rc := b.indexSegmentResultReplaceUUIDAt(handle, index, &uuid[0]); rc != 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return [16]byte{}, nativeErr
-		}
-		return [16]byte{}, fmt.Errorf("ffi: lance_index_segment_result_replace_uuid_at failed without setting an error")
+		return [16]byte{}, b.takeErrorOr("lance_index_segment_result_replace_uuid_at failed")
 	}
 	return uuid, nil
 }
@@ -891,10 +733,7 @@ func (r *IndexSegmentResult) JSON() (string, error) {
 	defer runtime.UnlockOSThread()
 	ptr := b.indexSegmentResultJSON(handle)
 	if ptr == nil {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return "", nativeErr
-		}
-		return "", fmt.Errorf("ffi: lance_index_segment_result_json returned NULL without setting an error")
+		return "", b.takeErrorOr("lance_index_segment_result_json returned NULL")
 	}
 	value := goString(ptr)
 	b.freeString(ptr)
@@ -915,10 +754,7 @@ func IndexSegmentResultFromJSON(data string) (*IndexSegmentResult, error) {
 	defer runtime.UnlockOSThread()
 	result := b.indexSegmentResultFromJSON(data)
 	if result == 0 {
-		if nativeErr := b.takeError(); nativeErr != nil {
-			return nil, nativeErr
-		}
-		return nil, fmt.Errorf("ffi: lance_index_segment_result_from_json returned NULL without setting an error")
+		return nil, b.takeErrorOr("lance_index_segment_result_from_json returned NULL")
 	}
 	return &IndexSegmentResult{b: b, handle: result}, nil
 }

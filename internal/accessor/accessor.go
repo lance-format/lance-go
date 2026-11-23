@@ -104,13 +104,6 @@ func NewStaticPresence(initial map[string]string, hasInitial bool, wrapError fun
 	return newOwned(native, "", wrapError), nil
 }
 
-// NewStatic creates a static accessor. A nil or empty map means Some(empty),
-// matching the historical file StorageOptions behavior; use a nil accessor for
-// native None.
-func NewStatic(values map[string]string, wrapError func(op, uri string, err error) error) (*Accessor, error) {
-	return NewStaticPresence(values, true, wrapError)
-}
-
 // NewFromProvider adopts a provider created by native namespace bindings. The
 // temporary provider handle is closed after the accessor retains its native
 // Arc. Initial options are not accepted here; the namespace provider supplies
@@ -196,12 +189,15 @@ func (a *Accessor) Snapshot() (map[string]string, bool, error) {
 
 // Close releases the caller's accessor handle and waits for in-flight local
 // acquisitions. Native datasets and stores retain their own references, so
-// they do not block Close and remain usable afterwards.
-func (a *Accessor) Close() {
+// they do not block Close and remain usable afterwards. The current
+// implementation always returns nil; the error result exists so the public
+// wrapper implements io.Closer.
+func (a *Accessor) Close() error {
 	if a == nil || a.life == nil {
-		return
+		return nil
 	}
 	a.life.Close()
+	return nil
 }
 
 // Acquire pins the accessor for one native call. The release function must be

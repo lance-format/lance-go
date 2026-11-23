@@ -162,26 +162,38 @@ module declares no requirements and contains only `embed` data.
 
 ## 2. Build, check, and record native acceptance
 
+The `go -C internal/tools` commands in this section run the tool from the
+`internal/tools` module directory. Pass absolute paths for `-out`, `-pin`,
+`-root`, `-module`, `-library`, `-header`, `-header-manifest` and
+`LANCE_C_HEADER`; a relative value resolves under `internal/tools`, not the
+repository root.
+
 When the pin is a published `lance-c` release, acquire the exact published
 bytes instead of rebuilding:
 
 ```sh
 : "${TARGET:?target as GOOS/GOARCH, for example linux/amd64}"
-: "${RELEASE_OUT:?new output directory}"
-go run ./internal/tools/fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
+: "${RELEASE_OUT:?absolute new output directory}"
+go -C internal/tools run ./fetch-lance-c-release -target "$TARGET" -out "$RELEASE_OUT"
 NATIVE_LIB=$(find "$RELEASE_OUT" -type f \( -name liblance_c.so -o -name liblance_c.dylib \) -print -quit)
 NATIVE_HEADER="$RELEASE_OUT/include/lance/lance.h"
+NATIVE_ABI_HEADER="$(./scripts/abi-checker-input.sh "$RELEASE_OUT/acquisition.txt")"
 ```
 
-The tool verifies the published per-asset checksum, the pinned header hash, and
-the target machine. It also compares the library with `UncompressedSHA256` in
-the artifact module that this target's generated selector imports, resolved
-through the Go proxy and checksum database. After a pin bump the adopted modules
-still describe the previous commit, so that independent check is inactive until
-new modules are published and adopted; candidate packaging proceeds from the
-acquired bytes. Release archives are already stripped, so pass the library
-directly to the generator in step 3. Build from source only when the pin has no
-matching release archive.
+The tool verifies the published per-asset checksum, the pinned header identity,
+and the target machine. A legacy archive ships only `include/lance/lance.h` and
+is checked against `upstreamHeaderSHA256`. For a split archive, the tool extracts
+every public `include/lance/*.h` (excluding `lance.hpp`) and requires an
+independent composite identity through `-expected-header-identity`,
+`-expected-header-manifest`, or the optional `upstreamHeaderIdentitySHA256` pin
+constant. It also compares the library with `UncompressedSHA256` in the artifact
+module that this target's generated selector imports, resolved through the Go
+proxy and checksum database. After a pin bump the adopted modules still describe
+the previous commit, so that independent check is inactive until new modules are
+published and adopted; candidate packaging proceeds from the acquired bytes.
+Release archives are already stripped, so pass the library directly to the
+generator in step 3. Build from source only when the pin has no matching release
+archive.
 
 For a source build on Linux or macOS, build from the pinned commit into an
 output directory outside the checkout:
@@ -214,10 +226,17 @@ NATIVE_LIB=$(cd "$(dirname "$NATIVE_LIB")" && printf '%s/%s\n' "$(pwd -P)" "$(ba
 Windows needs its own native DLL build and runtime evidence. The Unix build and
 ELF/Mach-O checker below do not validate PE imports, architecture, or execution.
 
-Check the bindings against the installed header:
+Check the bindings against the installed header. `scripts/abi-checker-input.sh`
+selects the recorded file for a legacy archive or the recorded directory for a
+split archive; the legacy file is still what `check-native-library.sh` and the
+generator consume:
 
 ```sh
-LANCE_C_HEADER="$NATIVE_HEADER" go run ./internal/tools/check-abi-symbols
+LANCE_C_HEADER="$NATIVE_ABI_HEADER" go -C internal/tools run ./check-abi-symbols
+# split install: also pass the identity recorded by the acquisition tool
+go -C internal/tools run ./check-abi-symbols \
+  -header "$NATIVE_ABI_HEADER" \
+  -header-identity "$(sed -n 's/^header_identity_sha256=//p' "$RELEASE_OUT/acquisition.txt")"
 ```
 
 Run the maintained native-library checker:
@@ -284,7 +303,7 @@ outside the checkout. The generator remains `scripts/sync-lance-c.sh`; the
 static-origin packager consumes its `module/` output for each target:
 
 ```sh
-: "${ARTIFACT_OUT:?new output directory outside the checkout}"
+: "${ARTIFACT_OUT:?absolute new output directory outside the checkout}"
 scripts/sync-lance-c.sh \
   --library "$NATIVE_LIB" \
   --header "$NATIVE_HEADER" \
@@ -320,7 +339,7 @@ pin, and module path. It also checks that `Payload []byte` embeds that exact
 archive and that the module contains only the allowed data files:
 
 ```sh
-go run ./internal/tools/verify-lance-c-artifact \
+go -C internal/tools run ./verify-lance-c-artifact \
   -module "$ARTIFACT_OUT/module" \
   -library "$NATIVE_LIB" \
   -target "$TARGET" \

@@ -40,7 +40,9 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
-          cache-dependency-path: go.sum
+          cache-dependency-path: |
+            go.sum
+            internal/tools/go.sum
 
       - name: Check formatting
         run: |
@@ -57,24 +59,34 @@ jobs:
           set -euo pipefail
           go mod tidy -diff
           go mod verify
+          go -C internal/tools mod tidy -diff
+          go -C internal/tools mod verify
 
       - name: Vet
         run: |
           set -euo pipefail
           go vet ./...
           go vet -tags lance_external_lib ./...
+          go -C internal/tools vet ./...
 
       - name: Build
         run: |
           set -euo pipefail
           go build ./...
           go build -tags lance_external_lib ./...
+          go -C internal/tools build ./...
 
       - name: Test
         run: |
           set -euo pipefail
           go test ./... -count=1
           go test -tags lance_external_lib ./... -count=1
+          go -C internal/tools test ./... -count=1
+
+      - name: Test public-consumer harness
+        run: |
+          set -euo pipefail
+          python3 -B scripts/public-consumer/verify_test.py -v
 
       - name: Test bundled linux/amd64 public path
         run: |
@@ -137,25 +149,25 @@ jobs:
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/lance-c-release"
-          go run ./internal/tools/fetch-lance-c-release \
+          go -C internal/tools run ./fetch-lance-c-release \
             -target linux/amd64 \
             -out "$out" | tee "$RUNNER_TEMP/lance-c-acquisition.txt"
           record="$out/acquisition.txt"
           library="$(sed -n 's/^library=//p' "$record")"
-          header="$(sed -n 's/^header=//p' "$record")"
-          if [[ -z $library || -z $header ]]; then
-            echo "acquisition record did not report the library and header" >&2
+          abi_header="$(./scripts/abi-checker-input.sh "$record")"
+          if [[ -z $library || -z $abi_header ]]; then
+            echo "acquisition record did not report the library and ABI header input" >&2
             exit 1
           fi
           echo "path=$library" >> "$GITHUB_OUTPUT"
-          echo "header=$header" >> "$GITHUB_OUTPUT"
+          echo "abi_header=$abi_header" >> "$GITHUB_OUTPUT"
 
       - name: Check ABI against published header
         env:
-          LANCE_C_HEADER: ${{ steps.lance-c.outputs.header }}
+          LANCE_C_HEADER: ${{ steps.lance-c.outputs.abi_header }}
         run: |
           set -euo pipefail
-          go run ./internal/tools/check-abi-symbols
+          go -C internal/tools run ./check-abi-symbols
 
       - name: Test against published library
         env:

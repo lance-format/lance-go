@@ -1,3 +1,20 @@
+// Command sync-lance-c-gen generates one lance-c artifact module and its
+// bundled selector from an already-built shared library.
+//
+// The supported entry point is the pin-aware script, which reads
+// internal/ffi/upstream.go and supplies the provenance flags this command
+// requires:
+//
+//	scripts/sync-lance-c.sh \
+//	  --library /path/to/liblance_c.so \
+//	  --header /path/to/lance.h \
+//	  --target linux/amd64 \
+//	  --out /tmp/artifact
+//
+// A direct invocation must also provide -upstream-repo, -upstream-commit and
+// -header-sha256. The command runs from the internal/tools module directory,
+// so pass absolute paths for -library, -header and -out; relative values
+// resolve under internal/tools rather than the caller's directory.
 package main
 
 import (
@@ -11,15 +28,15 @@ import (
 
 func main() {
 	var opts artifactgen.Options
-	flag.StringVar(&opts.LibraryPath, "library", "", "path to the already-built liblance_c shared library")
-	flag.StringVar(&opts.HeaderPath, "header", "", "path to the matching lance.h")
+	flag.StringVar(&opts.LibraryPath, "library", "", "path to the already-built liblance_c shared library (absolute path; relative values resolve from the internal/tools module directory)")
+	flag.StringVar(&opts.HeaderPath, "header", "", "path to the matching lance.h (absolute path; relative values resolve from the internal/tools module directory)")
 	flag.StringVar(&opts.Target, "target", "", "target as GOOS/GOARCH (linux/amd64, linux/arm64, darwin/arm64, windows/amd64, or windows/arm64)")
-	flag.StringVar(&opts.OutDir, "out", "", "new output directory to publish (must not exist)")
+	flag.StringVar(&opts.OutDir, "out", "", "new output directory to publish (must not exist; absolute path; relative values resolve from the internal/tools module directory)")
 	flag.StringVar(&opts.ModulePath, "module-path", "", "generated artifact module path (default: go.lance.org/liblance/<goos>-<goarch>)")
 	flag.StringVar(&opts.SelectorPackage, "selector-package", "bundled", "package name for the generated selector (copied into internal/bundled)")
-	flag.StringVar(&opts.UpstreamRepo, "upstream-repo", "", "lance-c repository recorded as provenance")
-	flag.StringVar(&opts.UpstreamCommit, "upstream-commit", "", "lance-c commit recorded as provenance")
-	flag.StringVar(&opts.HeaderSHA256, "header-sha256", "", "pinned SHA-256 of the header")
+	flag.StringVar(&opts.UpstreamRepo, "upstream-repo", "", "lance-c repository recorded as provenance (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
+	flag.StringVar(&opts.UpstreamCommit, "upstream-commit", "", "lance-c commit recorded as provenance (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
+	flag.StringVar(&opts.HeaderSHA256, "header-sha256", "", "pinned SHA-256 of the header (required for direct invocation; scripts/sync-lance-c.sh supplies the pin)")
 	flag.Parse()
 
 	if flag.NArg() != 0 {
