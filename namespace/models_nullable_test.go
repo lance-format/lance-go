@@ -330,7 +330,7 @@ func TestNullableModelsResetReusedDestinations(t *testing.T) {
 		modelName := reflect.TypeOf(model).Elem().Name()
 		modelNames = append(modelNames, modelName)
 
-		fields := nullableFields(t, reflect.ValueOf(model).Elem())
+		fields := nullableFields(reflect.ValueOf(model).Elem())
 		if len(fields) == 0 {
 			t.Fatalf("%s has no Nullable field", modelName)
 		}
@@ -382,8 +382,7 @@ func present(t *testing.T, field reflect.Value) bool {
 	return !zeroer.IsZero()
 }
 
-func nullableFields(t *testing.T, model reflect.Value) []int {
-	t.Helper()
+func nullableFields(model reflect.Value) []int {
 	var indexes []int
 	for i := 0; i < model.NumField(); i++ {
 		if isNullableField(model.Type().Field(i).Type) {

@@ -240,17 +240,18 @@ temporary cache root, so it does not read or write the user's cache.
 
 ### Namespace serialization property test
 
-`FuzzNullableModelRoundTrip` covers the absent, null and populated states for
-every namespace model with a `Nullable` field. The normal test run executes its
-seed corpus, which reuses the pinned encoding and decoding cases:
+`FuzzNullableModelRoundTrip` builds a canonical document for every namespace
+model and `Nullable` field in the absent, null and populated states, then checks
+the first decode against that independent input. The normal test run executes
+the deterministic seed corpus:
 
 ```console
 go test ./namespace -run '^FuzzNullableModelRoundTrip$' -count=1
 go test ./namespace -run '^$' -fuzz '^FuzzNullableModelRoundTrip$' -fuzztime=30s
 ```
 
-Documents that do not decode into a model are skipped, so the target checks
-valid serialization behavior rather than parser hardening.
+The fuzz parameters only select supported model shapes and values, so the target
+checks valid serialization behavior rather than parser hardening.
 
 On Windows, the same package tests run with `CGO_ENABLED=0`; set
 `LANCE_LIB_PATH` to a real `lance_c.dll` to run native tests. The native Windows
