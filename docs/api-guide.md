@@ -2,7 +2,7 @@
 
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
-This guide describes the `main` branch and the public Go APIs it contains. The latest published tag is `v0.1.0`, which bundles lance-c v0.2.0. APIs added after that tag are marked **main only** below; they are not available from the v0.1.0 module.
+This guide describes the `main` branch and the public Go APIs it contains. The latest stable tag is `v0.1.0`, which bundles lance-c v0.2.0. The `v0.1.1-preview.1` preview keeps that API and bundles lance-c v0.2.1-beta.1; APIs added after `v0.1.0` are marked with their preview version below and are not available from the `v0.1.0` module.
 
 ## Read a dataset
 
@@ -101,7 +101,8 @@ snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
 
 `Dataset.URI()` returns the fully qualified URI native resolved when the
-snapshot was produced (**main only**). For a namespace dataset it is the
+snapshot was produced (available from `v0.1.1-preview.1`). For a namespace
+dataset it is the
 resolved `describe_table` location, not the `$`-joined table identifier used in
 error diagnostics. Every returned snapshot reports its own native URI; for
 example, a created branch includes its branch path. The Go string is captured
@@ -178,7 +179,11 @@ fragment API does not expose; they return `ErrNotSupported`. For filtering,
 use the ordinary scanner setters after fragment selection and retain native
 validation semantics. `WithFragmentIDs` replaces the fragment scan's initial
 metadata selection, including its staged deletions. `Take` uses fragment-local
-logical row indices. `Delete` stages a deletion and returns a new scannable
+logical row indices. With no column arguments it returns the full logical
+schema; with an explicit empty column list (`fragment.Take(ctx, indices,
+[]string{}...)`) it returns one zero-column batch whose row count is the number
+of requested indices. That empty-projection shape follows lance-c
+v0.2.1-beta.1; earlier native libraries rejected the same call. `Delete` stages a deletion and returns a new scannable
 fragment; build a Delete operation from it and commit the transaction to
 publish the deletion. Detached fragments cloned from an Append operation expose
 metadata and data-file information but reject logical schema and data access.
@@ -789,7 +794,8 @@ generation and exact intersection checks.
 
 The Go API and the native library are versioned separately. RTree support was
 introduced with `v0.1.0-preview.2`; the `v0.1.0-preview.1` API and bundle
-predate it. The example below runs on a current default bundle. Use an explicit
+predate it. `v0.1.0` and `v0.1.1-preview.1` both bundle RTree-capable native
+libraries. The example below runs on a current default bundle. Use an explicit
 RTree-capable `LANCE_LIB_PATH` library only when testing an older SDK or
 library. The README release mapping and the
 [artifact record](../artifacts/README.md) identify the exact native pin for the

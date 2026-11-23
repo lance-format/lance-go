@@ -1,42 +1,32 @@
 # Public-consumer acceptance for one published Unix target.
 #
-# Each job resolves the exact repository revision from the public Go module
-# proxy, builds standalone consumers outside the checkout, and exercises the
-# public default, namespace-only, and external-library contracts. It does not
-# rebuild native code, publish modules, or activate platform selectors.
+# Each job resolves one exact release tag from the public Go module proxy,
+# builds standalone consumers outside the checkout, and exercises the public
+# default, namespace-only, and external-library contracts. It does not rebuild
+# native code, publish modules, or activate platform selectors.
 #
-# A pull request uses the exact head commit. Manual dispatch accepts one exact
-# full commit SHA or checked-out tag. The root module must already be publicly
-# resolvable from proxy.golang.org at that revision.
+# This lane runs only when a root v* release tag is pushed, or by manual
+# dispatch with that tag. It never accepts a commit SHA or pseudo-version:
+# exact-head CI covers the checkout/local-source consumers instead.
 name: Unix public consumers
 
 on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Exact root revision (full commit SHA or tag) to resolve from proxy.golang.org"
+        description: "Exact official release tag (for example v0.1.1-preview.1) to resolve from proxy.golang.org"
         required: true
         type: string
-  pull_request:
-    paths:
-      - ".github/workflows/unix-public-consumers.yml"
-      - "scripts/public-consumer/**"
-      - "internal/tools/public-consumer/**"
-      - "artifacts/**"
-      - "internal/ffi/**"
-      - "internal/loader/**"
-      - "internal/bundled/**"
-      - "namespace/**"
-      - "examples/roundtrip/**"
-      - "go.mod"
-      - "go.sum"
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CGO_ENABLED: "0"
@@ -78,16 +68,37 @@ jobs:
       TARGET_GOARCH: ${{ matrix.goarch }}
       EXPECTED_UNAME: ${{ matrix.uname }}
       LIBRARY_NAME: ${{ matrix.library_name }}
-      ROOT_REVISION: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
-      SOURCE_COMMIT: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+      ROOT_REVISION: ${{ github.event_name == 'push' && github.ref_name || inputs.revision }}
+      SOURCE_COMMIT: ""
     steps:
       - name: Check out exact source revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.revision }}
+          repository: ${{ github.repository }}
+          ref: ${{ github.event_name == 'push' && github.ref_name || inputs.revision }}
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Require an official release tag
+        run: |
+          set -euo pipefail
+          case "$ROOT_REVISION" in
+            v[0-9]*) ;;
+            *)
+              echo "public consumers only run for an official release tag, got: $ROOT_REVISION" >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$ROOT_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "public consumers do not accept a commit SHA: $ROOT_REVISION" >&2
+            exit 1
+          fi
+          head_commit="$(git rev-parse HEAD)"
+          tag_commits="$(git ls-remote --tags origin "refs/tags/$ROOT_REVISION" "refs/tags/$ROOT_REVISION^{}" | awk '{print $1}')"
+          if ! printf '%s\n' "$tag_commits" | grep -Fxq "$head_commit"; then
+            echo "checked-out HEAD $head_commit is not the tag $ROOT_REVISION" >&2
+            exit 1
+          fi
 
       - name: Set up Go 1.23 from go.mod
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
