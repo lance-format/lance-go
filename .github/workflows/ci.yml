@@ -83,6 +83,11 @@ jobs:
           go test -tags lance_external_lib ./... -count=1
           go -C internal/tools test ./... -count=1
 
+      - name: Test public-consumer harness
+        run: |
+          set -euo pipefail
+          python3 -B scripts/public-consumer/verify_test.py -v
+
       - name: Test bundled linux/amd64 public path
         run: |
           set -euo pipefail

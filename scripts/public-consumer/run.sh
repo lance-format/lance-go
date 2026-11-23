@@ -761,7 +761,6 @@ resolve_root() {
       --module "$ROOT_MODULE" \
       --version "$ROOT_VERSION" \
       --source-commit "$SOURCE_COMMIT" \
-      --nested-module scripts/go-module-origin/generator \
       --out "$EVIDENCE_DIR/root-archive.json"; then
     fail "root archive does not match the checked-out source tree"
   fi

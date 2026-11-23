@@ -635,7 +635,7 @@ function Assert-OnlySelectedArtifactZip([string]$LabelPrefix) {
     }
 }
 
-function Assert-RootArchive([string]$Zip, [string]$Label, [string[]]$NestedModules) {
+function Assert-RootArchive([string]$Zip, [string]$Label) {
     $out = Join-Path $script:EvidenceDir ("verify-root-archive-" + ($Label -replace '/', '-') + ".json")
     $arguments = @(
         $script:Verify, 'archive',
@@ -646,9 +646,6 @@ function Assert-RootArchive([string]$Zip, [string]$Label, [string[]]$NestedModul
         '--source-commit', $script:SourceHead,
         '--out', $out
     )
-    foreach ($module in $NestedModules) {
-        $arguments += @('--nested-module', $module)
-    }
     $null = Invoke-Python $arguments $script:CommandsLog
     $report = Read-JsonFile $out
     Write-Summary "$Label.root_archive_files=$($report.expected_files)"
@@ -689,7 +686,7 @@ function Enter-ColdTargetPhase($Mode) {
     Write-Summary "$($Mode.Name).cold_cache_scope=empty_after_setup"
 }
 
-function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
+function Resolve-ColdRoot($Mode, [string]$SetupZip) {
     $jsonPath = Join-Path $Mode.Dir 'cold-root-download.json'
     $null = Invoke-GoCapture $Mode.Consumer @('mod', 'download', '-json', ($script:RootModule + '@' + $script:RootVersion)) $jsonPath $script:CommandsLog
     $json = Read-JsonFile $jsonPath
@@ -709,7 +706,7 @@ function Resolve-ColdRoot($Mode, [string]$SetupZip, [string[]]$NestedModules) {
     Assert-Equal "$($Mode.Name) root go.mod bytes at setup and cold target caches" (Get-FileSha256 $script:SetupRootGoMod) (Get-FileSha256 $goMod)
     Save-ModuleCacheSnapshot "$($Mode.Name)/cold/root-resolve" $Mode.ModCache
     Assert-RootZip "$($Mode.Name)/cold/root-resolve"
-    Assert-RootArchive $zip ("$($Mode.Name)-cold") $NestedModules
+    Assert-RootArchive $zip ("$($Mode.Name)-cold")
     return $zip
 }
 
@@ -1474,11 +1471,7 @@ try {
     }
     Write-Summary "required_windows_artifact=$windowsArtifactPath@$($script:RequiredWindows.Version)"
 
-    $nested = New-Object System.Collections.Generic.List[string]
-    if (Test-Path -LiteralPath (Join-Path $script:RepoDir 'scripts/go-module-origin/generator/go.mod')) {
-        $nested.Add('scripts/go-module-origin/generator')
-    }
-    Assert-RootArchive $rootZip 'default-setup' $nested.ToArray()
+    Assert-RootArchive $rootZip 'default-setup'
 
     $null = Invoke-Go $default.Consumer @('get', ($RootModule + '@' + $script:RootVersion)) $script:CommandsLog
     Save-ModuleCacheSnapshot 'default/setup/go-get' $default.SetupModCache
@@ -1487,7 +1480,7 @@ try {
     Assert-SetupArtifactZips 'default' 'default/setup/'
 
     Enter-ColdTargetPhase $default
-    $null = Resolve-ColdRoot $default $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $default $rootZip
 
     $defaultBinary = Join-Path $default.Dir 'roundtrip.exe'
     $null = Invoke-Go $default.Consumer @('build', '-o', $defaultBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog
@@ -1541,7 +1534,7 @@ try {
     Assert-SetupArtifactZips 'namespace' 'namespace/setup/'
 
     Enter-ColdTargetPhase $namespace
-    $null = Resolve-ColdRoot $namespace $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $namespace $rootZip
 
     $namespaceBinary = Join-Path $namespace.Dir 'namespace-consumer.exe'
     $null = Invoke-Go $namespace.Consumer @('build', '-o', $namespaceBinary, '.') $script:CommandsLog
@@ -1585,7 +1578,7 @@ try {
     Assert-SetupArtifactZips 'external' 'external/setup/'
 
     Enter-ColdTargetPhase $external
-    $null = Resolve-ColdRoot $external $rootZip $nested.ToArray()
+    $null = Resolve-ColdRoot $external $rootZip
 
     $externalBinary = Join-Path $external.Dir 'roundtrip-external.exe'
     $null = Invoke-Go $external.Consumer @('build', '-tags', 'lance_external_lib', '-o', $externalBinary, ($RootModule + '/examples/roundtrip')) $script:CommandsLog

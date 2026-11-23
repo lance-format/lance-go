@@ -13,6 +13,10 @@
 //	  -library /path/to/liblance_c.so \
 //	  -target linux/amd64 \
 //	  -module-path go.lance.org/liblance/staging/linux-amd64
+//
+// The command runs from the internal/tools module directory. Pass absolute
+// paths for -module, -library and -pin; relative values resolve under
+// internal/tools rather than the caller's directory.
 package main
 
 import (
@@ -38,9 +42,9 @@ import (
 )
 
 func main() {
-	moduleDir := flag.String("module", "", "generated module directory to verify")
-	libraryPath := flag.String("library", "", "native library the module was packaged from")
-	pinPath := flag.String("pin", "", "pin file with the upstream provenance constants (default: <repository root>/internal/ffi/upstream.go)")
+	moduleDir := flag.String("module", "", "generated module directory to verify (absolute path; relative values resolve from the internal/tools module directory)")
+	libraryPath := flag.String("library", "", "native library the module was packaged from (absolute path; relative values resolve from the internal/tools module directory)")
+	pinPath := flag.String("pin", "", "pin file with the upstream provenance constants (absolute path; relative values resolve from the internal/tools module directory; default: <repository root>/internal/ffi/upstream.go)")
 	target := flag.String("target", "", "expected target as GOOS/GOARCH")
 	modulePath := flag.String("module-path", "", "expected module path in module/go.mod")
 	flag.Parse()

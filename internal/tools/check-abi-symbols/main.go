@@ -4,7 +4,11 @@
 // The header is not vendored. Export it from the pinned upstream checkout:
 //
 //	git -C /path/to/lance-c show ef465b43f79f8a8a6fd82938bdeeb3b28758b8ca:include/lance/lance.h > lance.h
-//	LANCE_C_HEADER=./lance.h go -C internal/tools run ./check-abi-symbols
+//	LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
+//
+// The command runs from the internal/tools module directory. Pass absolute
+// paths for -header and -root; relative values resolve under internal/tools
+// rather than the caller's directory.
 //
 // It checks that every bound symbol exists, that Go and C agree on arity and
 // on value/pointer classification, that every function field in the bindings
@@ -33,8 +37,8 @@ import (
 )
 
 func main() {
-	headerPath := flag.String("header", os.Getenv("LANCE_C_HEADER"), "path to include/lance/lance.h from the pinned lance-c commit (default: $LANCE_C_HEADER)")
-	root := flag.String("root", "", "lance-go repository root (default: discovered from the current directory)")
+	headerPath := flag.String("header", os.Getenv("LANCE_C_HEADER"), "path to include/lance/lance.h from the pinned lance-c commit (absolute path; relative values resolve from the internal/tools module directory; default: $LANCE_C_HEADER)")
+	root := flag.String("root", "", "lance-go repository root (absolute path; relative values resolve from the internal/tools module directory; default: discovered from the current directory)")
 	flag.Parse()
 
 	if *root == "" {

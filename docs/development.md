@@ -119,7 +119,7 @@ version at runtime. Provenance is checked at build time instead:
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
 git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER=./lance.h go -C internal/tools run ./check-abi-symbols
+LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
 ```
 
 Packaging verifies the header against this pin; a library built from a different
@@ -270,7 +270,10 @@ currently `github.com/klauspost/compress` and `github.com/ulikunitz/xz` — neve
 enter the root module graph or the published root module ZIP. Run its commands
 from the repository root with `go -C internal/tools run ./<command>`; the tools
 locate the repository root from their working directory, and `-root` or `-pin`
-still override it. The public-consumer fixture programs live in
+still override it. `go -C` makes `internal/tools` the tool process's working
+directory, so pass absolute paths for `-root`, `-pin`, `-header`, `-out`,
+`-module`, `-library` and `LANCE_C_HEADER`; relative values resolve there, not
+in the caller's directory. The public-consumer fixture programs live in
 `scripts/public-consumer/consumer-src/` because they deliberately compile
 against the published root SDK rather than the working tree.
 
