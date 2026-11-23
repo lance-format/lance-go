@@ -159,9 +159,23 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   (`DatasetAlreadyExists`) after native conflict verification. In every route
   the original `*namespace.Error` is unavailable, so namespace sentinels do not
   match. This change does not infer a category from native message text.
+- Every exported root and `file` handle follows one `Close` contract: a nil or
+  zero-value receiver is a no-op, and an absent receiver returns nil where
+  `Close` returns an error. `Dataset.Close` and `Scanner.Close` no longer panic
+  on a nil receiver, other zero-value root handles no longer panic, and
+  `SegmentBuilder.Close` returns nil instead of `ErrInvalidArgument`. Repeated
+  and concurrent calls wait for the single native teardown, and operations that
+  require the released handle report `ErrClosed`.
+- Empty native metadata arrays no longer produce invalid Go pointers.
+  `FileMetadata.Columns` and the related borrowed metadata getters check the
+  count before exposing an array address, so zero-column files and empty
+  column or statistics collections can be read safely under Go 1.26 stack
+  scanning. The exported types and copies are unchanged.
 
 ### Migration from v0.2.0
 
+- The module and import paths stay `github.com/lance-format/lance-go`; existing
+  imports keep resolving.
 - **Go 1.26 or newer is required.** The root module declares `go 1.26.0`, and
   artifact modules published from this commit onward declare the same directive;
   the immutable `v0.2.0-preview.1` companions keep `go 1.23.0` and remain
@@ -189,6 +203,14 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   explicit; keep that distinction. Closing the accessor does not invalidate
   native readers, writers or sessions that already opened, and the provider
   stays caller-owned.
+- **Close contract:** closing a nil or zero-value handle is now a no-op, and an
+  absent receiver returns nil where `Close` returns an error. `Dataset.Close`
+  and `Scanner.Close` no longer panic on nil, other zero-value root handles no
+  longer panic, and `SegmentBuilder.Close` returns nil instead of
+  `ErrInvalidArgument` (the other `SegmentBuilder` methods still reject an
+  absent builder). Repeated and concurrent calls wait for the single native
+  teardown; operations that need the released handle report `ErrClosed`. See
+  [Resource lifetime](docs/api-guide.md#resource-lifetime).
 - `namespace.ErrorCodeTableColumnNotFound` (12) now classifies as not found in
   the `namespace` package: `namespace.IsNotFound` returns true and the error
   matches `namespace.ErrNotFound`. In `v0.2.0` `IsNotFound` returned false and

@@ -2,9 +2,11 @@
 #
 # One entry per line: <package>: <exact apidiff change>.
 # This file records the approved v0.3.0 migrations. The accompanying review
-# material is the "Migrating accessor ownership from v0.2.0" section in
-# docs/api-guide.md (#121), the guide's "Options" section, and the v0.3.0
-# changelog's option-constructor and add-columns migration entries (#103):
+# material is the "Migrating accessor ownership from v0.2.0" (#121) and
+# "Resource lifetime" (#125) sections in docs/api-guide.md, the guide's
+# "Options" section, and the v0.3.0 changelog's Close, option-constructor and
+# add-columns migration entries. The per-group notes below cover the remaining
+# groups:
 # - Close() now returns error and implements io.Closer, and file.StorageOptions
 #   is now an alias for lance.StorageOptionsAccessor, so the constructors and
 #   the reader/writer/session option fields use the root accessor type.
