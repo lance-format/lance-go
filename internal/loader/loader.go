@@ -46,6 +46,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 )
 
 // EnvLibPath names the environment variable that points at the liblance_c
@@ -114,8 +115,11 @@ type State struct {
 }
 
 var (
-	mu     sync.Mutex
-	cached *Library
+	mu sync.Mutex
+
+	// cached publishes a successfully opened library. Warm calls read it
+	// without mu; failures are never stored, so a later call retries discovery.
+	cached atomic.Pointer[Library]
 )
 
 // Library is a loaded lance-c shared library.
@@ -127,20 +131,25 @@ type Library struct {
 }
 
 // Load returns the process-wide lance-c library, opening it on first use.
-// Failed attempts are not cached; a later call retries discovery.
+// After a successful load, later calls take a lock-free fast path. Failed
+// attempts are not cached; a later call retries discovery.
 func Load() (*Library, error) {
+	if lib := cached.Load(); lib != nil {
+		return lib, nil
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
 
-	if cached != nil {
-		return cached, nil
+	if lib := cached.Load(); lib != nil {
+		return lib, nil
 	}
 
 	lib, err := open()
 	if err != nil {
 		return nil, err
 	}
-	cached = lib
+	cached.Store(lib)
 	return lib, nil
 }
 
@@ -155,9 +164,7 @@ func (l *Library) Path() string {
 // not inspect the environment, extract a bundle, resolve a symbol, or retry a
 // previous failure.
 func Observe() State {
-	mu.Lock()
-	defer mu.Unlock()
-	return cached.state()
+	return cached.Load().state()
 }
 
 func (l *Library) state() State {
@@ -212,7 +219,5 @@ func openFromSystemPath() (*Library, error) {
 // resetForTest clears the cached handle without unloading it. Tests use it to
 // exercise discovery more than once in a single process.
 func resetForTest() {
-	mu.Lock()
-	cached = nil
-	mu.Unlock()
+	cached.Store(nil)
 }

@@ -154,3 +154,25 @@ func TestLoadConcurrentSingleInstance(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadReturnsPublishedLibraryWithoutReopening pins the fast path: once a
+// library is published, Load returns it without running discovery again. A
+// Load that reopened here would fail because this environment has no library.
+func TestLoadReturnsPublishedLibraryWithoutReopening(t *testing.T) {
+	resetForTest()
+	t.Cleanup(resetForTest)
+
+	published := &Library{path: "/cache/lance-go/liblance_c.so", source: SourceBundle}
+	cached.Store(published)
+
+	lib, err := Load()
+	if err != nil {
+		t.Fatalf("Load after publish: %v", err)
+	}
+	if lib != published {
+		t.Fatalf("Load returned a new library instead of the published one")
+	}
+	if state := Observe(); !state.Loaded || state.Path != published.path {
+		t.Fatalf("Observe after publish = %+v", state)
+	}
+}
