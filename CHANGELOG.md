@@ -54,9 +54,10 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
 - `Dataset.ListIndices`, `DescribeIndices` and `IndexSegments` return
   `*lance.Error` matching `ErrInternal` when native metadata JSON cannot be
   decoded; the decode failure is reachable through `errors.Unwrap`.
-- `file.NewStorageOptionsWithProvider` and `file.NewStorageOptionsFromAccessor`
-  return `*lance.Error` matching `ErrInvalidArgument` for a nil provider, a nil
-  accessor, and an accessor not owned by the root package.
+- `file.NewStorageOptionsWithProvider` returns `*lance.Error` matching
+  `ErrInvalidArgument` for a nil provider, and
+  `file.NewStorageOptionsFromAccessor` does the same for a nil accessor. A
+  non-nil zero accessor is returned unchanged and behaves as already closed.
 
 ### Migration from v0.2.0
 

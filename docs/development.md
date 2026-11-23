@@ -203,7 +203,7 @@ evidence.
 
 Standard Go benchmarks cover the Arrow C Data import and export paths, handle
 registration, the warm in-process loader fast path and `Scanner.Records`
-streaming. They use the Go 1.23 minimum and normal public inputs:
+streaming. They use the Go 1.26 minimum and normal public inputs:
 
 ```console
 CGO_ENABLED=0 go test -run '^$' -bench . -benchmem ./...
