@@ -1,12 +1,18 @@
 package ffi
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/lance-format/lance-go/internal/loader"
 )
@@ -309,17 +315,45 @@ func TestLoadReturnsPublishedBindingsWithoutRebinding(t *testing.T) {
 }
 
 // TestLoadRetriesAfterFailure verifies that a failed binding attempt is not
-// published and the next call runs discovery again. The two attempts fail with
-// different errors because LANCE_LIB_PATH changes between them.
+// published and the next call runs discovery again. It runs in a subprocess
+// because loader.Load caches a successful library for the process lifetime;
+// an in-process test cannot clear that state from outside the loader package.
 func TestLoadRetriesAfterFailure(t *testing.T) {
-	previous := bound.Load()
-	bound.Store(nil)
-	t.Cleanup(func() {
-		bound.Store(previous)
-	})
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("locate test executable: %v", err)
+	}
 
-	dir := t.TempDir()
-	t.Setenv(loader.EnvLibPath, dir)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestLoadRetriesHelper$")
+	cmd.Env = append(os.Environ(),
+		loadRetryHelperEnv+"=1",
+		"LANCE_FFI_LOAD_RETRY_DIR="+t.TempDir(),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("retry helper failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "retry helper ok") {
+		t.Fatalf("retry helper output = %q", out)
+	}
+}
+
+const loadRetryHelperEnv = "LANCE_FFI_LOAD_RETRY_HELPER"
+
+// TestLoadRetriesHelper is the subprocess entry point for
+// TestLoadRetriesAfterFailure. It does nothing in a normal test run.
+func TestLoadRetriesHelper(t *testing.T) {
+	if os.Getenv(loadRetryHelperEnv) != "1" {
+		return
+	}
+
+	dir := os.Getenv("LANCE_FFI_LOAD_RETRY_DIR")
+	if err := os.Setenv(loader.EnvLibPath, dir); err != nil {
+		t.Fatalf("set %s: %v", loader.EnvLibPath, err)
+	}
 	if _, err := load(); err == nil {
 		t.Fatal("load succeeded with a directory as LANCE_LIB_PATH")
 	} else if errors.Is(err, fs.ErrNotExist) {
@@ -327,11 +361,14 @@ func TestLoadRetriesAfterFailure(t *testing.T) {
 	}
 
 	missing := filepath.Join(dir, "missing-liblance_c.so")
-	t.Setenv(loader.EnvLibPath, missing)
+	if err := os.Setenv(loader.EnvLibPath, missing); err != nil {
+		t.Fatalf("set %s: %v", loader.EnvLibPath, err)
+	}
 	if _, err := load(); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("second load error = %v, want fs.ErrNotExist after retry", err)
 	}
 	if bound.Load() != nil {
 		t.Fatal("failed binding attempt was published")
 	}
+	fmt.Println("retry helper ok")
 }
