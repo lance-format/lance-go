@@ -122,6 +122,16 @@ func TestStreamReaderPropagatesReaderError(t *testing.T) {
 	if ok || err == nil {
 		t.Fatalf("second Next = %v, %v; want error", ok, err)
 	}
+	var ffiErr *Error
+	if !errors.As(err, &ffiErr) {
+		t.Fatalf("error = %T (%v), want *ffi.Error", err, err)
+	}
+	if ffiErr.Code != CodeIO {
+		t.Fatalf("error code = %v, want %v", ffiErr.Code, CodeIO)
+	}
+	if strings.HasPrefix(err.Error(), "ffi:") {
+		t.Fatalf("error leaks internal ffi prefix: %v", err)
+	}
 	if !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("error = %v, want source error text", err)
 	}

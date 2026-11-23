@@ -1,7 +1,6 @@
 package ffi
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -27,12 +26,12 @@ type StreamReader struct {
 // cleared so the caller cannot release it a second time.
 func NewStreamReader(stream *cdata.ArrowArrayStream) (*StreamReader, error) {
 	if stream == nil {
-		return nil, fmt.Errorf("ffi: native Arrow stream must not be nil")
+		return nil, internalf("native Arrow stream must not be nil")
 	}
 	if stream.Release == 0 || stream.GetSchema == 0 || stream.GetNext == 0 {
 		cdata.ReleaseStream(stream)
 		stream.Release = 0
-		return nil, fmt.Errorf("ffi: native Arrow stream is missing required callbacks")
+		return nil, internalf("native Arrow stream is missing required callbacks")
 	}
 
 	owned := new(cdata.ArrowArrayStream)
@@ -54,14 +53,14 @@ func (r *StreamReader) loadSchema() error {
 		}
 		err := streamError(r.stream, "get_schema")
 		if err == nil {
-			err = fmt.Errorf("ffi: Arrow stream get_schema failed without setting an error")
+			err = internalf("Arrow stream get_schema failed without setting an error")
 		}
 		return err
 	}
 	defer cdata.ReleaseSchema(&raw)
 	schema, err := cdata.ImportSchema(&raw)
 	if err != nil {
-		return fmt.Errorf("ffi: import Arrow stream schema: %w", err)
+		return internalf("import Arrow stream schema: %v", err)
 	}
 	r.schema = schema
 	return nil
@@ -78,7 +77,7 @@ func (r *StreamReader) Next() (arrow.RecordBatch, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.released {
-		return nil, false, fmt.Errorf("ffi: Arrow stream reader is released")
+		return nil, false, ErrClosed
 	}
 	if r.err != nil {
 		return nil, false, r.err
@@ -94,7 +93,7 @@ func (r *StreamReader) Next() (arrow.RecordBatch, bool, error) {
 		}
 		r.err = streamError(r.stream, "get_next")
 		if r.err == nil {
-			r.err = fmt.Errorf("ffi: Arrow stream get_next failed without setting an error")
+			r.err = internalf("Arrow stream get_next failed without setting an error")
 		}
 		return nil, false, r.err
 	}
@@ -104,7 +103,7 @@ func (r *StreamReader) Next() (arrow.RecordBatch, bool, error) {
 	}
 	batch, err := cdata.ImportRecordBatch(&raw, r.schema)
 	if err != nil {
-		r.err = fmt.Errorf("ffi: import Arrow stream batch: %w", err)
+		r.err = internalf("import Arrow stream batch: %v", err)
 		return nil, false, r.err
 	}
 	return batch, true, nil

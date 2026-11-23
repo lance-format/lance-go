@@ -198,8 +198,8 @@ func (d *Dataset) ListIndices() ([]index.Summary, error) {
 		return nil, err
 	}
 	var indices []index.Summary
-	if err := json.Unmarshal(raw, &indices); err != nil {
-		return nil, fmt.Errorf("lance: list indices %s: decode native JSON: %w", d.uri, err)
+	if err := decodeNativeJSON("list indices", d.uri, raw, &indices); err != nil {
+		return nil, err
 	}
 	return indices, nil
 }
@@ -213,8 +213,8 @@ func (d *Dataset) DescribeIndices() ([]index.Description, error) {
 		return nil, err
 	}
 	var indices []index.Description
-	if err := json.Unmarshal(raw, &indices); err != nil {
-		return nil, fmt.Errorf("lance: describe indices %s: decode native JSON: %w", d.uri, err)
+	if err := decodeNativeJSON("describe indices", d.uri, raw, &indices); err != nil {
+		return nil, err
 	}
 	return indices, nil
 }
@@ -245,8 +245,8 @@ func (d *Dataset) IndexSegments() ([]index.SegmentListing, error) {
 		return nil, err
 	}
 	var segments []index.SegmentListing
-	if err := json.Unmarshal(raw, &segments); err != nil {
-		return nil, fmt.Errorf("lance: index segments %s: decode native JSON: %w", d.uri, err)
+	if err := decodeNativeJSON("index segments", d.uri, raw, &segments); err != nil {
+		return nil, err
 	}
 	return segments, nil
 }
@@ -313,6 +313,22 @@ func (d *Dataset) indexJSON(op string, read func(*ffi.Dataset) ([]byte, error)) 
 		return nil, wrapError(op, d.uri, err)
 	}
 	return raw, nil
+}
+
+// decodeNativeJSON decodes metadata JSON produced by native code. A decode
+// failure means native and binding disagree on the payload shape, so it is an
+// internal error; the decode failure stays reachable through errors.Unwrap.
+func decodeNativeJSON(op, uri string, raw []byte, out any) error {
+	if err := json.Unmarshal(raw, out); err != nil {
+		return &Error{
+			Op:      op,
+			URI:     uri,
+			Code:    CodeInternal,
+			Message: "decode native JSON: " + err.Error(),
+			cause:   err,
+		}
+	}
+	return nil
 }
 
 func ffiVectorIndexOptions(options index.VectorOptions) *ffi.VectorIndexOptions {
