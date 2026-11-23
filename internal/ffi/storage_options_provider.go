@@ -385,6 +385,9 @@ func newStorageOptionsAccessorWithPresence(b *bindings, initial map[string]strin
 		}
 	}
 
+	defer keyList.release()
+	defer valueList.release()
+
 	var initialPtr *storageOptionsInput
 	if hasInitial {
 		initialPtr = &raw
@@ -392,12 +395,6 @@ func newStorageOptionsAccessorWithPresence(b *bindings, initial map[string]strin
 
 	runtime.LockOSThread()
 	handle := b.storageAccessorNew(initialPtr, provider)
-	if keyList != nil {
-		keyList.release()
-	}
-	if valueList != nil {
-		valueList.release()
-	}
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()

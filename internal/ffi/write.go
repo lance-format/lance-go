@@ -87,8 +87,8 @@ func WriteWithAccessor(uri string, reader array.RecordReader, opts WriteOptions,
 }
 
 // buildWriteParameters converts public write options into the native layout
-// shared by URI writes and namespace writes. The returned string list must stay
-// alive for the duration of the native call.
+// shared by URI writes and namespace writes. Ownership of the returned string
+// list transfers to the caller, which must release it after the native call.
 func buildWriteParameters(opts WriteOptions) (writeOptions, *cStringList, error) {
 	if opts.Mode < WriteModeCreate || opts.Mode > WriteModeOverwrite {
 		return writeOptions{}, nil, fmt.Errorf("ffi: invalid write mode %d", opts.Mode)

@@ -43,6 +43,8 @@ type fileReaderOptions struct {
 	InlineScheduling        int32
 }
 
+// fileReaderOptionsRelease hands back the pins acquired for file reader
+// options. release must run after the native call that consumed them.
 type fileReaderOptionsRelease struct {
 	columns *cStringList
 }
@@ -113,6 +115,8 @@ type fileWriterOptions struct {
 	Version              *byte
 }
 
+// fileWriterOptionsRelease hands back the pins acquired for file writer
+// options. release must run after the native call that consumed them.
 type fileWriterOptionsRelease struct {
 	version *cStringList
 }

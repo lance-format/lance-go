@@ -420,12 +420,11 @@ func (f *Fragment) CountRows(filter *string) (uint64, error) {
 		filterList = list
 	}
 
+	defer filterList.release()
+
 	var rows uint64
 	runtime.LockOSThread()
 	rc := f.b.fragmentCountRows(handleValue, filterList.first(), &rows)
-	if filterList != nil {
-		filterList.release()
-	}
 	if rc != 0 {
 		nativeErr := f.b.takeError()
 		runtime.UnlockOSThread()

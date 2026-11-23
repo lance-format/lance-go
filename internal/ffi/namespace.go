@@ -455,6 +455,8 @@ func (n *Namespace) CommitNamespaceURI(tableIDJSON, uri string, tx *Transaction,
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
+	defer versionList.release()
 	var sessionHandle uintptr
 	if session != nil {
 		sessionHandle = session.NativeHandle()
@@ -471,8 +473,6 @@ func (n *Namespace) CommitNamespaceURI(tableIDJSON, uri string, tx *Transaction,
 		sessionHandle,
 		&out,
 	)
-	storageList.release()
-	versionList.release()
 	runtime.KeepAlive(tableIDJSON)
 	runtime.KeepAlive(uri)
 	runtime.KeepAlive(raw)

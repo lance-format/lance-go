@@ -1,7 +1,6 @@
 package ffi
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -110,6 +109,7 @@ func TestCStringPairsAlternateAndTerminate(t *testing.T) {
 }
 
 func TestCStringListReleaseIsIdempotent(t *testing.T) {
+	baseline := pinBaseline()
 	list, err := newCStringList([]string{"alpha"})
 	if err != nil {
 		t.Fatalf("newCStringList: %v", err)
@@ -118,11 +118,7 @@ func TestCStringListReleaseIsIdempotent(t *testing.T) {
 	list.release()
 	var nilList *cStringList
 	nilList.release()
-
-	// A leaked pin makes the pinner finalizer panic during collection, so this
-	// also guards that release dropped every pin.
-	runtime.GC()
-	runtime.GC()
+	assertNoNewPins(t, baseline)
 }
 
 func TestStorageOptionListSortsKeys(t *testing.T) {
@@ -169,23 +165,8 @@ func TestBuildSessionCacheSpec(t *testing.T) {
 	}
 	keep.release()
 
-	if _, keep, err := buildSessionCacheSpec(CacheSpec{Kind: CacheSpecKind(42)}); err == nil {
-		t.Fatal("unknown cache spec kind was accepted")
-	} else {
-		keep.release()
-	}
-
-	// A failed config build must release the lists it already pinned.
-	if _, keep, err := buildSessionCacheSpec(CacheSpec{
-		Kind:        CacheSpecConfig,
-		BackendKind: "moka",
-		Options:     map[string]string{"": "value"},
-	}); err == nil {
-		t.Fatal("empty cache option key was accepted")
-	} else {
-		keep.release()
-	}
-	runtime.GC()
+	// Failed constructions are covered by
+	// TestBuildSessionCacheSpecReleasesPartialOwnership.
 }
 
 func TestOpenDatasetWithOptionsRejectsNULBeforeNative(t *testing.T) {

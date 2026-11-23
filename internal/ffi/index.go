@@ -148,6 +148,9 @@ type PrewarmOptions struct {
 	HasSelection bool
 }
 
+// buildStringMap builds a native string map. Ownership of the returned lists
+// transfers to the caller, which must release them after the native call; a
+// failed build releases whatever it already pinned.
 func buildStringMap(options map[string]string) (*stringMap, []*cStringList, error) {
 	if len(options) == 0 {
 		return nil, nil, nil

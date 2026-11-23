@@ -1214,6 +1214,8 @@ func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOp
 	if err != nil {
 		return nil, err
 	}
+	defer storageList.release()
+	defer versionList.release()
 	if err := validateCString(uri); err != nil {
 		return nil, err
 	}
@@ -1239,8 +1241,6 @@ func commit(uri string, tx *Transaction, opts CommitOptions, accessor *StorageOp
 	} else {
 		rc = tx.b.transactionCommit(uri, handle, raw, storageList.ptrs, session, &out)
 	}
-	storageList.release()
-	versionList.release()
 	runtime.KeepAlive(raw)
 	if rc != 0 {
 		nativeErr := tx.b.takeError()
@@ -1318,6 +1318,8 @@ func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *S
 	if err != nil {
 		return nil, nil, err
 	}
+	defer storageList.release()
+	defer versionList.release()
 	session := uintptr(0)
 	if opts.Session != nil {
 		session = opts.Session.nativeHandle()
@@ -1340,8 +1342,6 @@ func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *S
 	} else {
 		rc = b.transactionCommitBatch(uri, handles, uint64(len(handles)), raw, storageList.ptrs, session, &outDataset, &outTransaction)
 	}
-	storageList.release()
-	versionList.release()
 	runtime.KeepAlive(raw)
 	if rc != 0 {
 		nativeErr := b.takeError()
@@ -1360,6 +1360,9 @@ func commitBatch(uri string, txs []*Transaction, opts CommitOptions, accessor *S
 	return ds, wrapTransaction(b, outTransaction), nil
 }
 
+// buildCommitOptions builds the native commit options. Ownership of the two
+// returned string lists transfers to the caller, which must release them after
+// the native call; a failed build releases whatever it already pinned.
 func buildCommitOptions(opts CommitOptions) (*commitOptions, *cStringList, *cStringList, error) {
 	raw := &commitOptions{}
 	if opts.UseStableRowIDs != nil {
@@ -1399,18 +1402,21 @@ func buildCommitOptions(opts CommitOptions) (*commitOptions, *cStringList, *cStr
 	raw.SkipAutoCleanup = opts.SkipAutoCleanup
 
 	versionList := &cStringList{}
+	fail := func(err error) (*commitOptions, *cStringList, *cStringList, error) {
+		versionList.release()
+		return nil, nil, nil, err
+	}
 	if opts.DataStorageVersion != nil {
 		list, err := newCStringList([]string{*opts.DataStorageVersion})
 		if err != nil {
-			return nil, nil, nil, err
+			return fail(err)
 		}
 		versionList = list
 		raw.DataStorageVersion = list.first()
 	}
 	storageList, err := storageOptionList(opts.StorageOptions)
 	if err != nil {
-		versionList.release()
-		return nil, nil, nil, err
+		return fail(err)
 	}
 	return raw, storageList, versionList, nil
 }
@@ -1626,12 +1632,12 @@ func newCStringPairs(keys, values []string) (*cStringList, error) {
 		}
 		list.bufs[i*2] = keyBuf
 		list.bufs[i*2+1] = valueBuf
-		list.pin.Pin(&list.bufs[i*2][0])
-		list.pin.Pin(&list.bufs[i*2+1][0])
+		list.pinPointer(&list.bufs[i*2][0])
+		list.pinPointer(&list.bufs[i*2+1][0])
 		list.ptrs[i*2] = &list.bufs[i*2][0]
 		list.ptrs[i*2+1] = &list.bufs[i*2+1][0]
 	}
-	list.pin.Pin(&list.ptrs[0])
+	list.pinPointer(&list.ptrs[0])
 	return list, nil
 }
 

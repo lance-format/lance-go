@@ -97,16 +97,15 @@ func newSessionWithCacheSpecs(b *bindings, indexCache, metadataCache CacheSpec) 
 	if err != nil {
 		return nil, err
 	}
+	defer indexKeep.release()
 	metadataRaw, metadataKeep, err := buildSessionCacheSpec(metadataCache)
 	if err != nil {
-		indexKeep.release()
 		return nil, err
 	}
+	defer metadataKeep.release()
 
 	runtime.LockOSThread()
 	handle := b.sessionNewWithCacheSpecs(&indexRaw, &metadataRaw)
-	indexKeep.release()
-	metadataKeep.release()
 	if handle == 0 {
 		nativeErr := b.takeError()
 		runtime.UnlockOSThread()
@@ -132,17 +131,19 @@ func (r cacheSpecRelease) release() {
 	}
 }
 
-func buildSessionCacheSpec(spec CacheSpec) (raw sessionCacheSpec, keep cacheSpecRelease, err error) {
+// buildSessionCacheSpec builds the native cache spec. Ownership of the
+// returned pins transfers to the caller, which must release them after the
+// native call; a failed build releases whatever it already pinned.
+func buildSessionCacheSpec(spec CacheSpec) (sessionCacheSpec, cacheSpecRelease, error) {
+	var raw sessionCacheSpec
 	raw.Kind = int32(spec.Kind)
+	var keep cacheSpecRelease
 	// The caller releases keep only after the native constructor returns.
-	// Release on the error paths here so a failed build never drops pinned
-	// buffers.
-	failed := true
-	defer func() {
-		if failed {
-			keep.release()
-		}
-	}()
+	// Release every partially built list on the error paths here.
+	fail := func(err error) (sessionCacheSpec, cacheSpecRelease, error) {
+		keep.release()
+		return sessionCacheSpec{}, cacheSpecRelease{}, err
+	}
 
 	switch spec.Kind {
 	case CacheSpecDefault:
@@ -150,21 +151,21 @@ func buildSessionCacheSpec(spec CacheSpec) (raw sessionCacheSpec, keep cacheSpec
 		raw.SizeBytes = spec.SizeBytes
 	case CacheSpecURI:
 		if spec.URI == "" {
-			return sessionCacheSpec{}, keep, fmt.Errorf("ffi: cache spec URI must not be empty")
+			return fail(fmt.Errorf("ffi: cache spec URI must not be empty"))
 		}
 		list, err := newCStringList([]string{spec.URI})
 		if err != nil {
-			return sessionCacheSpec{}, keep, err
+			return fail(err)
 		}
 		raw.BackendURI = list.first()
 		keep.values = append(keep.values, list)
 	case CacheSpecConfig:
 		if spec.BackendKind == "" {
-			return sessionCacheSpec{}, keep, fmt.Errorf("ffi: cache spec backend kind must not be empty")
+			return fail(fmt.Errorf("ffi: cache spec backend kind must not be empty"))
 		}
 		kindList, err := newCStringList([]string{spec.BackendKind})
 		if err != nil {
-			return sessionCacheSpec{}, keep, err
+			return fail(err)
 		}
 		raw.BackendKind = kindList.first()
 		keep.values = append(keep.values, kindList)
@@ -178,28 +179,28 @@ func buildSessionCacheSpec(spec CacheSpec) (raw sessionCacheSpec, keep cacheSpec
 			values := make([]string, 0, len(keys))
 			for _, key := range keys {
 				if key == "" {
-					return sessionCacheSpec{}, keep, fmt.Errorf("ffi: cache spec option key must not be empty")
+					return fail(fmt.Errorf("ffi: cache spec option key must not be empty"))
 				}
 				values = append(values, spec.Options[key])
 			}
 
 			keyList, err := newCStringList(keys)
 			if err != nil {
-				return sessionCacheSpec{}, keep, err
+				return fail(err)
 			}
+			keep.values = append(keep.values, keyList)
 			valueList, err := newCStringList(values)
 			if err != nil {
-				return sessionCacheSpec{}, keep, err
+				return fail(err)
 			}
+			keep.values = append(keep.values, valueList)
 			raw.OptionKeys = keyList.data()
 			raw.OptionValues = valueList.data()
 			raw.OptionCount = uint64(len(keys))
-			keep.values = append(keep.values, keyList, valueList)
 		}
 	default:
-		return sessionCacheSpec{}, keep, fmt.Errorf("ffi: unknown cache spec kind %d", spec.Kind)
+		return fail(fmt.Errorf("ffi: unknown cache spec kind %d", spec.Kind))
 	}
-	failed = false
 	return raw, keep, nil
 }
 

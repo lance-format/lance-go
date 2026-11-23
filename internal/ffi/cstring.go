@@ -3,12 +3,16 @@ package ffi
 import (
 	"fmt"
 	"runtime"
+	"sync/atomic"
 )
 
 // cStringList owns NUL-terminated copies of Go strings and the pointer array
 // used for C array parameters. The backing buffers and the array itself are
 // pinned so native code may keep their addresses for the duration of a call:
-// release must run after the native call returns, directly or through defer.
+// release must run after the native call returns. Ownership is registered as
+// soon as an object is pinned, so a failed partial construction cannot leak a
+// pin.
+//
 // A nil list pointer array is passed as NULL to C.
 //
 // A cStringList must not be copied after construction.
@@ -16,6 +20,20 @@ type cStringList struct {
 	ptrs []*byte
 	bufs [][]byte
 	pin  runtime.Pinner
+	pins int
+}
+
+// pinnedObjects counts the objects currently pinned by live cStringList
+// values. Tests compare it with a baseline to prove that an exit path released
+// its pins; a missing unpin otherwise only surfaces as a fatal runtime.Pinner
+// panic from a finalizer.
+var pinnedObjects atomic.Int64
+
+// pinPointer pins one object and records it for release.
+func (l *cStringList) pinPointer(pointer any) {
+	l.pin.Pin(pointer)
+	l.pins++
+	pinnedObjects.Add(1)
 }
 
 func newCStringList(values []string) (*cStringList, error) {
@@ -34,10 +52,10 @@ func newCStringList(values []string) (*cStringList, error) {
 			return nil, err
 		}
 		list.bufs[i] = buf
-		list.pin.Pin(&list.bufs[i][0])
+		list.pinPointer(&list.bufs[i][0])
 		list.ptrs[i] = &list.bufs[i][0]
 	}
-	list.pin.Pin(&list.ptrs[0])
+	list.pinPointer(&list.ptrs[0])
 	return list, nil
 }
 
@@ -63,10 +81,10 @@ func newNullableCStringList(values []*string) (*cStringList, error) {
 			return nil, err
 		}
 		list.bufs[i] = buf
-		list.pin.Pin(&list.bufs[i][0])
+		list.pinPointer(&list.bufs[i][0])
 		list.ptrs[i] = &list.bufs[i][0]
 	}
-	list.pin.Pin(&list.ptrs[0])
+	list.pinPointer(&list.ptrs[0])
 	return list, nil
 }
 
@@ -89,7 +107,7 @@ func newPresentCStringList(values []string) (*cStringList, error) {
 	}
 	if list.ptrs == nil {
 		list.ptrs = []*byte{nil}
-		list.pin.Pin(&list.ptrs[0])
+		list.pinPointer(&list.ptrs[0])
 	}
 	return list, nil
 }
@@ -116,10 +134,12 @@ func (l *cStringList) data() **byte {
 // the native call that consumed them returns. It is safe to call repeatedly,
 // including on a nil list.
 func (l *cStringList) release() {
-	if l == nil {
+	if l == nil || l.pins == 0 {
 		return
 	}
 	l.pin.Unpin()
+	pinnedObjects.Add(int64(-l.pins))
+	l.pins = 0
 }
 
 func cStringBuffer(value string) ([]byte, error) {

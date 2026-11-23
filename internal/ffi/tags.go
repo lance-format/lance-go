@@ -129,9 +129,9 @@ func (d *Dataset) ReplaceTagMetadata(name string, metadata map[string]string) er
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
+	defer list.release()
 	var values []*byte
 	if list != nil {
-		defer list.release()
 		values = list.ptrs
 	}
 	if rc := b.datasetTagReplaceMetadata(handle, name, values); rc != 0 {
