@@ -195,8 +195,8 @@ func TestHandleCloseNilZeroAndDuplicate(t *testing.T) {
 		{"BlobDescriptorBuilder/zero", (&BlobDescriptorBuilder{}).Close},
 		{"Session/nil", (*Session)(nil).Close},
 		{"Session/zero", (&Session{}).Close},
-		{"StorageOptionsAccessor/nil", func() error { (*StorageOptionsAccessor)(nil).Close(); return nil }},
-		{"StorageOptionsAccessor/zero", func() error { (&StorageOptionsAccessor{}).Close(); return nil }},
+		{"StorageOptionsAccessor/nil", (*StorageOptionsAccessor)(nil).Close},
+		{"StorageOptionsAccessor/zero", (&StorageOptionsAccessor{}).Close},
 		{"CommitLock/nil", (*CommitLock)(nil).Close},
 		{"CommitLock/zero", (&CommitLock{}).Close},
 	}

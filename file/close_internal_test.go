@@ -121,11 +121,6 @@ func TestHandleCloseWaitsForConcurrentCallers(t *testing.T) {
 			handle.res = res
 			return handle.Close
 		}},
-		{"StorageOptions", func(res *lifetime.Resource) func() error {
-			handle := &StorageOptions{}
-			handle.res = res
-			return handle.Close
-		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,8 +150,6 @@ func TestHandleCloseNilAndZeroValue(t *testing.T) {
 		{"Metadata/zero", (&Metadata{}).Close},
 		{"Statistics/nil", (*Statistics)(nil).Close},
 		{"Statistics/zero", (&Statistics{}).Close},
-		{"StorageOptions/nil", (*StorageOptions)(nil).Close},
-		{"StorageOptions/zero", (&StorageOptions{}).Close},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
