@@ -1255,7 +1255,12 @@ zero. Scalar zero values documented as defaults keep that meaning.
 
 Dataset, scanner, writer, session and transaction operations return
 `*lance.Error` for failures reported by native code and for argument
-validation. The value carries:
+validation. Record readers returned by dataset blob reads and by the `file`
+package report iteration failures from `Err()` the same way. A native Arrow
+stream failure classifies as `ErrIO` because the C Data Interface carries only
+the error text; schema and batch import failures classify as `ErrInternal`.
+Native metadata JSON that cannot be decoded reports `CodeInternal`, and its
+decode failure remains reachable through `errors.Unwrap`. The value carries:
 
 - `Op`: the operation name, such as `open`, `delete` or `scan`;
 - `URI`: the dataset or namespace identifier when one is available;
