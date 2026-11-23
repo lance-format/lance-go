@@ -9,12 +9,92 @@ per-target library checksums. Versions follow Semantic Versioning; within
 and necessary breaking changes move to the next minor release with migration
 notes.
 
-## [v0.2.0] - Unreleased
+## [v0.3.0] - Unreleased
 
-`v0.2.0` is the next minor release. It bundles `lance-c v0.2.1-beta.3` through
-the static `go.lance.org/liblance/<target>@v0.2.0-preview.1` modules and keeps
-the published 0.1 Go APIs source compatible, except for the reflection identity
-change described below.
+`v0.3.0` is the next minor release. It raises the module minimum to Go 1.26 and
+collects the minor-release API changes. No `v0.3.0` tag exists yet.
+
+### Changed
+
+- `StorageOptionsAccessor.Close()` now returns an `error` and implements
+  `io.Closer`. `defer accessor.Close()` keeps working; code that used the
+  method as a `func()` value or interface needs `func() error`. Close is
+  idempotent, waits for in-flight local snapshot calls, and does not wait for
+  native datasets, readers, writers, sessions or stores that retained their own
+  reference; those remain usable afterwards.
+- `file.StorageOptions` is now a type alias for
+  `lance.StorageOptionsAccessor`, so raw-file APIs share the root accessor and
+  its single native lifecycle. Pass the root accessor directly to
+  `ReaderOptions`, `WriterOptions` or `SessionOptions` and close it once.
+  `file.NewStorageOptions` still treats a nil or empty map as an explicit empty
+  option set, while a nil `*StorageOptions` selects native defaults.
+- `file.NewStorageOptionsWithProvider` treats a nil initial map as native None
+  until the provider resolves, and a non-nil map, including an empty one, as an
+  explicit initial set. The provider remains caller-owned; the SDK never calls
+  its Close method and keeps it reachable until native releases the final owner.
+- Invalid static options, such as an empty option key, keep their v0.2.0
+  `*lance.Error` identity (Op `"storage options"`). An invalid initial map
+  passed to `file.NewStorageOptionsWithProvider` now returns a direct
+  `*lance.Error` with Op `"storage options"` instead of the previous wrapped
+  error with Op `"create storage options accessor"` and nested prefixes.
+  `errors.Is(err, lance.ErrInvalidArgument)` still holds.
+- The root module no longer requires `github.com/ulikunitz/xz`; maintainer
+  tools now live in the nested `internal/tools` module. Code that imported
+  `github.com/ulikunitz/xz` only through the root module's graph must require it
+  directly.
+
+### Fixed
+
+- `Err()` on record readers from `Dataset.ReadBlobs`/`ReadBlobRanges` and
+  `file.Reader.ReadAll`/`ReadRange`/`ReadIndices` returns `*lance.Error`
+  instead of raw native text. Native Arrow stream failures match `ErrIO`; Arrow
+  schema and batch import failures match `ErrInternal`; the internal `ffi:`
+  prefix no longer leaks. `Fragment.Take` and `Dataset.TakeRows` receive the
+  same typed import failures.
+- `Dataset.ListIndices`, `DescribeIndices` and `IndexSegments` return
+  `*lance.Error` matching `ErrInternal` when native metadata JSON cannot be
+  decoded; the decode failure is reachable through `errors.Unwrap`.
+- `file.NewStorageOptionsWithProvider` returns `*lance.Error` matching
+  `ErrInvalidArgument` for a nil provider, and
+  `file.NewStorageOptionsFromAccessor` does the same for a nil accessor. A
+  non-nil zero accessor is returned unchanged and behaves as already closed.
+
+### Migration from v0.2.0
+
+- **Go 1.26 or newer is required.** The root module declares `go 1.26.0`, and
+  artifact modules published from this commit onward declare the same directive;
+  the immutable `v0.2.0-preview.1` companions keep `go 1.23.0` and remain
+  buildable. CI tests Go 1.26 and Go 1.27. With `GOTOOLCHAIN=local`, an older
+  toolchain stops with `go.mod requires go >= 1.26.0`; the default
+  `GOTOOLCHAIN=auto` downloads a toolchain that satisfies the directive. `v0.2.0`
+  keeps its published `go 1.23.0` directive and still builds with Go 1.23. See
+  [Go version support](README.md#go-version-support).
+- `lance.Error` gains a private cause field so a classified failure can keep
+  its underlying Go error reachable through `errors.Unwrap`. `errors.Is`,
+  `errors.As` and keyed literals are unchanged; positional literals no longer
+  compile. This compiles:
+  `lance.Error{Op: "open", URI: uri, Code: lance.CodeNotFound, Message: "..."}`.
+  This does not: `lance.Error{"open", uri, lance.CodeNotFound, "..."}`.
+- Reader iteration failures that previously arrived as unstructured text now
+  classify as `ErrIO`; code that matched on `"ffi:"` should switch to
+  `errors.Is(err, lance.ErrIO)` or `errors.As(err, &lanceErr)`.
+- **Storage options:** `StorageOptionsAccessor.Close()` returns `error` to
+  satisfy `io.Closer`; deferred calls are unchanged, but method values and
+  interfaces typed as `func()` need `func() error`. `file.StorageOptions` is a
+  type alias for `lance.StorageOptionsAccessor`, so reflection and `%T` now
+  report the root type, and callers should pass the root accessor directly.
+  `NewStorageOptionsFromAccessor` is deprecated and returns the same accessor.
+  A nil initial map still means native None, while a non-nil empty map is
+  explicit; keep that distinction. Closing the accessor does not invalidate
+  native readers, writers or sessions that already opened, and the provider
+  stays caller-owned.
+
+## [v0.2.0] - 2026-11-23
+
+`v0.2.0` is the current stable minor release. It bundles `lance-c v0.2.1-beta.3`
+through the static `go.lance.org/liblance/<target>@v0.2.0-preview.1` modules and
+keeps the published 0.1 Go APIs source compatible, except for the reflection
+identity change described below.
 
 ### Added
 

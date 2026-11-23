@@ -18,7 +18,7 @@ list_key="modules/go.lance.org/liblance/linux-amd64/@v/list"
 mkdir -p "$origin/modules/go.lance.org/liblance/linux-amd64/@v" "$origin/liblance"
 printf 'v0.0.1\n' > "$origin/$list_key"
 printf '{"Version":"v0.0.1","Time":"2026-11-23T06:10:00Z"}\n' > "$origin/modules/go.lance.org/liblance/linux-amd64/@v/v0.0.1.info"
-printf 'module go.lance.org/liblance/linux-amd64\n\ngo 1.23.0\n' > "$origin/modules/go.lance.org/liblance/linux-amd64/@v/v0.0.1.mod"
+printf 'module go.lance.org/liblance/linux-amd64\n\ngo 1.26.0\n' > "$origin/modules/go.lance.org/liblance/linux-amd64/@v/v0.0.1.mod"
 printf '<!doctype html><meta name="go-import" content="go.lance.org/liblance/linux-amd64 mod https://go.lance.org/modules">\n' > "$origin/liblance/linux-amd64"
 python3 - "$origin" "$list_key" <<'PY'
 import hashlib
@@ -81,7 +81,7 @@ after=$(grep -c '^PUT ' "$log")
 
 # Restore the immutable file and update the list to v0.0.2; the older version
 # must remain.
-printf 'module go.lance.org/liblance/linux-amd64\n\ngo 1.23.0\n' > "$work/store/modules/go.lance.org/liblance/linux-amd64/@v/v0.0.1.mod"
+printf 'module go.lance.org/liblance/linux-amd64\n\ngo 1.26.0\n' > "$work/store/modules/go.lance.org/liblance/linux-amd64/@v/v0.0.1.mod"
 printf 'v0.0.2\n' > "$origin/$list_key"
 python3 - "$origin/manifest.json" <<'PY'
 import hashlib

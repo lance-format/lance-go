@@ -8,7 +8,7 @@ proxy="$work/proxy"
 module=go.lance.org/liblance/linux-amd64
 version=v0.0.1
 mkdir -p "$proxy/$module/@v"
-printf 'module %s\n\ngo 1.23.0\n' "$module" > "$work/go.mod"
+printf 'module %s\n\ngo 1.26.0\n' "$module" > "$work/go.mod"
 cp "$work/go.mod" "$proxy/$module/@v/$version.mod"
 printf '{"Version":"%s","Time":"2026-11-23T06:10:00Z"}\n' "$version" > "$proxy/$module/@v/$version.info"
 python3 - "$work/go.mod" "$proxy/$module/@v/$version.zip" "$module" "$version" <<'PY'
