@@ -234,3 +234,43 @@ func TestIndexSegmentMetadataCallsAfterCloseReportClosed(t *testing.T) {
 		t.Fatalf("Clone after Close = %v, want ErrClosed", err)
 	}
 }
+
+// TestIndexSegmentMetadataCloseWaitsForInflightAccess pins the metadata
+// access/closure contract: Close starts teardown but cannot complete until the
+// borrowed native call releases the resource.
+func TestIndexSegmentMetadataCloseWaitsForInflightAccess(t *testing.T) {
+	metadata := newIndexSegmentMetadata(&ffi.SegmentMetadata{})
+	if !metadata.res.acquire() {
+		t.Fatal("could not acquire the metadata resource")
+	}
+
+	waiting := observeResourceCloseWait(metadata.res)
+	closed := make(chan error, 1)
+	go func() { closed <- metadata.Close() }()
+	select {
+	case <-waiting:
+	case err := <-closed:
+		metadata.res.release()
+		t.Fatalf("Close returned %v before the in-flight access released", err)
+	case <-time.After(5 * time.Second):
+		metadata.res.release()
+		t.Fatal("Close did not wait for the in-flight access")
+	}
+
+	select {
+	case err := <-closed:
+		metadata.res.release()
+		t.Fatalf("Close returned %v before the in-flight access released", err)
+	default:
+	}
+
+	metadata.res.release()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return after the access released")
+	}
+}
