@@ -1,8 +1,6 @@
 package file
 
 import (
-	"fmt"
-
 	"github.com/lance-format/lance-go"
 	"github.com/lance-format/lance-go/internal/accessor"
 	"github.com/lance-format/lance-go/internal/ffi"
@@ -42,7 +40,7 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 	}
 	owned, err := lance.NewStorageOptionsAccessor(values, nil)
 	if err != nil {
-		return nil, wrapError("storage options", "", err)
+		return nil, err
 	}
 	return owned, nil
 }
@@ -58,11 +56,11 @@ func NewStorageOptions(values map[string]string) (*StorageOptions, error) {
 // reused by another accessor.
 func NewStorageOptionsWithProvider(initial map[string]string, provider lance.StorageOptionsProvider) (*StorageOptions, error) {
 	if provider == nil {
-		return nil, fmt.Errorf("storage options provider must not be nil")
+		return nil, invalidError("storage options", "", "storage options provider must not be nil")
 	}
 	owned, err := lance.NewStorageOptionsAccessor(initial, provider)
 	if err != nil {
-		return nil, wrapError("storage options", "", err)
+		return nil, err
 	}
 	return owned, nil
 }
@@ -78,7 +76,7 @@ func NewStorageOptionsWithProvider(initial map[string]string, provider lance.Sto
 // SessionOptions.
 func NewStorageOptionsFromAccessor(owned *lance.StorageOptionsAccessor) (*StorageOptions, error) {
 	if owned == nil {
-		return nil, fmt.Errorf("storage options accessor must not be nil")
+		return nil, invalidError("storage options", "", "storage options accessor must not be nil")
 	}
 	return owned, nil
 }

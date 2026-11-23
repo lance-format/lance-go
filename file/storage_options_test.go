@@ -171,6 +171,9 @@ func TestRawFileStorageOptionsStaticPresence(t *testing.T) {
 			t.Fatalf("close storage options %v: %v", values, err)
 		}
 	}
+	if _, err := file.NewStorageOptions(map[string]string{"": "x"}); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("empty storage option key error = %v, want ErrInvalidArgument", err)
+	}
 }
 
 func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
@@ -351,8 +354,8 @@ func TestRawFileStorageOptionsFromZeroRootAccessor(t *testing.T) {
 	requireNative(t)
 	ctx := context.Background()
 
-	if _, err := file.NewStorageOptionsFromAccessor(nil); err == nil {
-		t.Fatal("nil root accessor was accepted")
+	if _, err := file.NewStorageOptionsFromAccessor(nil); !errors.Is(err, lance.ErrInvalidArgument) {
+		t.Fatalf("nil root accessor error = %v, want ErrInvalidArgument", err)
 	}
 	zero := &lance.StorageOptionsAccessor{}
 	storage, err := file.NewStorageOptionsFromAccessor(zero)
