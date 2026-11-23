@@ -2,9 +2,13 @@ package ffi
 
 import (
 	"errors"
+	"io/fs"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"testing"
+
+	"github.com/lance-format/lance-go/internal/loader"
 )
 
 func TestTakeErrorReadsCodeThenMessageThenFrees(t *testing.T) {
@@ -301,5 +305,33 @@ func TestLoadReturnsPublishedBindingsWithoutRebinding(t *testing.T) {
 	}
 	if got != published {
 		t.Fatalf("load returned a new binding table instead of the published one")
+	}
+}
+
+// TestLoadRetriesAfterFailure verifies that a failed binding attempt is not
+// published and the next call runs discovery again. The two attempts fail with
+// different errors because LANCE_LIB_PATH changes between them.
+func TestLoadRetriesAfterFailure(t *testing.T) {
+	previous := bound.Load()
+	bound.Store(nil)
+	t.Cleanup(func() {
+		bound.Store(previous)
+	})
+
+	dir := t.TempDir()
+	t.Setenv(loader.EnvLibPath, dir)
+	if _, err := load(); err == nil {
+		t.Fatal("load succeeded with a directory as LANCE_LIB_PATH")
+	} else if errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("first load error = %v, want a non-ENOENT file-type error", err)
+	}
+
+	missing := filepath.Join(dir, "missing-liblance_c.so")
+	t.Setenv(loader.EnvLibPath, missing)
+	if _, err := load(); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("second load error = %v, want fs.ErrNotExist after retry", err)
+	}
+	if bound.Load() != nil {
+		t.Fatal("failed binding attempt was published")
 	}
 }

@@ -36,7 +36,11 @@ by exact size and
 SHA-256 before `dlopen`. Extraction writes a temporary file, verifies the
 decompressed size and hash, syncs it, and publishes it with an atomic rename
 under a cross-process lock. A corrupt regular entry is replaced; failed
-extraction publishes nothing.
+extraction publishes nothing. Sibling `<uncompressed-sha256>` directories are
+retained on purpose: the entry lock covers verification, repair and
+publication, and ends before the returned path is opened, so it cannot prove
+that another process or an older SDK has finished with an entry. Reclamation
+is an explicit operator decision, not an automatic loader policy.
 
 All artifact module downloads happen through Go module resolution and the
 build; the loader itself does not use the network. A default build embeds the selected

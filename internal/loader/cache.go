@@ -30,6 +30,12 @@ var errCacheMismatch = errors.New("cached library does not match bundle metadata
 // shared lock, takes the exclusive lock, and verifies again before repairing
 // or publishing: another process may have completed the entry while this one
 // waited.
+//
+// Sibling <uncompressed-sha256> directories are retained by default. The entry
+// lock coordinates verification, repair and publication only; it is released
+// before the returned path is opened, so it cannot prove that another process
+// or an older SDK has finished using an entry. Reclaiming old entries is an
+// explicit operator decision, not an automatic cache policy.
 func (b *Bundle) cachedLibrary() (string, error) {
 	if err := b.validate(); err != nil {
 		return "", err
