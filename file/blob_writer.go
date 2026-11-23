@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
 
@@ -12,6 +13,10 @@ import (
 // PackedBlobWriter writes one packed blob sidecar. It is safe for concurrent
 // use. Close waits for in-flight calls and is idempotent.
 type PackedBlobWriter struct {
+	// opMu serializes native calls on this writer; writers mutate shared native
+	// state. Close coordination stays in res, so teardown remains single and
+	// still waits for the operation holding opMu.
+	opMu   sync.Mutex
 	res    *lifetime.Resource
 	native *ffi.PackedBlobWriter
 	path   string
@@ -46,10 +51,15 @@ func newPackedBlobWriter(native *ffi.PackedBlobWriter, path string) *PackedBlobW
 }
 
 func (w *PackedBlobWriter) acquire(op string) (*ffi.PackedBlobWriter, func(), error) {
+	w.opMu.Lock()
 	if w.res == nil || !w.res.Acquire() {
+		w.opMu.Unlock()
 		return nil, nil, closedError(op, w.path)
 	}
-	return w.native, w.res.Release, nil
+	return w.native, func() {
+		w.res.Release()
+		w.opMu.Unlock()
+	}, nil
 }
 
 // BlobID returns the native blob id.
@@ -154,6 +164,10 @@ func (w *PackedBlobWriter) Close() error {
 // DedicatedBlobWriter writes one dedicated blob sidecar. It is safe for
 // concurrent use. Close waits for in-flight calls and is idempotent.
 type DedicatedBlobWriter struct {
+	// opMu serializes native calls on this writer; writers mutate shared native
+	// state. Close coordination stays in res, so teardown remains single and
+	// still waits for the operation holding opMu.
+	opMu   sync.Mutex
 	res    *lifetime.Resource
 	native *ffi.DedicatedBlobWriter
 	path   string
@@ -189,10 +203,15 @@ func newDedicatedBlobWriter(native *ffi.DedicatedBlobWriter, path string) *Dedic
 }
 
 func (w *DedicatedBlobWriter) acquire(op string) (*ffi.DedicatedBlobWriter, func(), error) {
+	w.opMu.Lock()
 	if w.res == nil || !w.res.Acquire() {
+		w.opMu.Unlock()
 		return nil, nil, closedError(op, w.path)
 	}
-	return w.native, w.res.Release, nil
+	return w.native, func() {
+		w.res.Release()
+		w.opMu.Unlock()
+	}, nil
 }
 
 // BlobID returns the native blob id.
