@@ -15,7 +15,7 @@ benchmark does not prove that native memory cannot leak.
 
 - Linux. Process RSS comes from `/proc/self/smaps_rollup`; on other operating
   systems the command returns an unsupported error instead of reporting zero.
-- Go 1.23 or newer.
+- Go 1.26 or newer.
 - A loadable `liblance_c`: the default bundled `linux/amd64` artifact, or an
   external library selected with `LANCE_LIB_PATH`.
 - No cgo. Build and run with `CGO_ENABLED=0`.

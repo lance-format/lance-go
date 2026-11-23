@@ -93,6 +93,11 @@ checkout or publish it before the exact modules exist. Update together:
 - `scripts/verify-quickstart.sh` version, module and version pins, published
   module archive size, and expected library size and SHA-256. Keep the module
   archive size separate from the compressed native payload.
+- Go version declarations when the supported minimum changes: `go.mod`, the Go
+  matrices in `.github/workflows/ci.yml` and `windows.yml`, the artifact module
+  generators, the public-consumer toolchain assertions, and the version support
+  text in README and `docs/development.md`. State the minimum and the tested Go
+  versions in the release notes and migration notes.
 
 The release handoff owns the beta/preview version wording; a docs-only change
 does not weaken the runtime acceptance requirements below.
@@ -157,8 +162,10 @@ module version.
 ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
 ```
 
-The root module and the generated artifact module use Go 1.23.0. The artifact
-module declares no requirements and contains only `embed` data.
+The root module, the nested `internal/tools` module and the generated artifact
+module use Go 1.26.0. The artifact module declares no requirements and contains
+only `embed` data. Already published artifact modules keep the directive they
+were published with.
 
 ## 2. Build, check, and record native acceptance
 
@@ -540,6 +547,7 @@ The evidence record must identify the exact objects:
 
 ```text
 root:             commit, tag, module path
+go:               module minimum and tested Go versions
 artifact:         static module path and version, go.sum entries, proxy/sumdb identity
 native:           repository, commit, tag or explicit absence, header SHA-256
 library:          bytes, SHA-256, packaging source

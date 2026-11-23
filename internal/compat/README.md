@@ -61,7 +61,7 @@ than changing that result's provenance.
 Run the suite on a host with all four toolchains. Do not run it on the Adam
 static-inspection host.
 
-- Go 1.23 or newer, with the repository's existing Arrow v18.4.1 dependency.
+- Go 1.26 or newer, with the repository's existing Arrow v18.4.1 dependency.
 - Python 3.10 or newer.
 - Java 11 or newer and Maven. Pass `--add-opens=java.base/java.nio=ALL-UNNAMED`
   to the JVM as shown below; Arrow requires access to direct buffers on JDK 17.

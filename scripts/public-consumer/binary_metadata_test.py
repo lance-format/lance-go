@@ -45,7 +45,7 @@ BUILD_LINES = [
 
 
 def metadata_text(lines):
-    return "fixture-binary: go1.23.0\n" + "".join(
+    return "fixture-binary: go1.26.0\n" + "".join(
         "\t%s\n" % line for line in lines
     )
 

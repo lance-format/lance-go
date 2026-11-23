@@ -27,7 +27,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-const goModVersion = "1.23.0"
+const goModVersion = "1.26.0"
 
 var supportedTargets = []targetSpec{
 	{goos: "linux", goarch: "amd64", libraryName: "liblance_c.so"},

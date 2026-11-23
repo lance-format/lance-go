@@ -170,7 +170,7 @@ func buildModule(out, candidateDir, modulePath, target, version, timeValue strin
 	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
 		return err
 	}
-	goMod := []byte("module " + modulePath + "\n\ngo 1.23.0\n")
+	goMod := []byte("module " + modulePath + "\n\ngo 1.26.0\n")
 	if err := os.WriteFile(filepath.Join(moduleDir, version+".mod"), goMod, 0o644); err != nil {
 		return err
 	}

@@ -94,6 +94,21 @@ assert_file_identity() {
   [[ $actual_hash == "$hash" ]] || fail "$label sha256 $actual_hash != $hash"
 }
 
+go_directive_at_most() {
+  local directive=$1 ceiling=$2
+  awk -v d="$directive" -v c="$ceiling" 'BEGIN {
+    if (split(d, a, ".") < 2 || split(c, b, ".") < 2) exit 2
+    for (i = 1; i <= 3; i++) {
+      if (a[i] == "") a[i] = 0
+      if (b[i] == "") b[i] = 0
+    }
+    exit !(a[1] + 0 < b[1] + 0 ||
+           (a[1] + 0 == b[1] + 0 &&
+            (a[2] + 0 < b[2] + 0 ||
+             (a[2] + 0 == b[2] + 0 && a[3] + 0 <= b[3] + 0))))
+  }'
+}
+
 json_value() {
   python3 - "$1" "$2" <<'PY'
 import json
@@ -326,7 +341,15 @@ verify_artifact_module() {
   module_path=$(awk '$1 == "module" { print $2; exit }' "$gomod")
   [[ $module_path == "$path" ]] || fail "$label module path is $module_path, want $path"
   gomod_go=$(awk '$1 == "go" { print $2; exit }' "$gomod")
-  [[ $gomod_go == 1.23.* ]] || fail "$label go.mod go version is $gomod_go"
+  [[ $gomod_go =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || fail "$label go.mod go version is '$gomod_go'"
+  local sdk_go
+  sdk_go=$(awk '$1 == "go" { print $2; exit }' "$REPO_DIR/go.mod")
+  [[ $sdk_go =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || fail "checkout go.mod go version is '$sdk_go'"
+  # Companion artifact modules are immutable: one published by an older SDK may
+  # declare an older directive. A directive newer than the SDK floor would stop
+  # consumers at that floor from building, so reject only that direction.
+  go_directive_at_most "$gomod_go" "$sdk_go" ||
+    fail "$label go.mod go version $gomod_go is newer than the SDK floor $sdk_go"
   if grep -Eq '^[[:space:]]*(replace|exclude)[[:space:]]' "$gomod"; then
     fail "$label go.mod contains a replace or exclude directive"
   fi
@@ -617,7 +640,7 @@ probe_cache_root() {
   cat > "$dir/go.mod" <<'EOF'
 module public-consumer-cache-probe
 
-go 1.23.0
+go 1.26.0
 EOF
   cat > "$dir/main.go" <<'EOF'
 package main
@@ -786,7 +809,7 @@ resolve_root() {
 verify_root_go_mod() {
   local gomod_go
   gomod_go=$(awk '$1 == "go" { print $2; exit }' "$ROOT_GOMOD")
-  [[ $gomod_go == 1.23.* ]] || fail "root go.mod go version is $gomod_go"
+  [[ $gomod_go == 1.26.* ]] || fail "root go.mod go version is $gomod_go"
   if grep -Eq '^[[:space:]]*(replace|exclude)[[:space:]]' "$ROOT_GOMOD"; then
     fail "root go.mod contains a replace or exclude directive"
   fi
@@ -804,7 +827,7 @@ assert_go_environment() {
   goversion=$(go_env_value GOVERSION)
   host_goos=$(go_env_value GOOS)
   host_goarch=$(go_env_value GOARCH)
-  [[ $goversion == go1.23.* ]] || fail "toolchain is $goversion, want go1.23.x"
+  [[ $goversion == go1.26.* ]] || fail "toolchain is $goversion, want go1.26.x"
   [[ $host_goos == "$TARGET_GOOS" ]] || fail "Go host GOOS is $host_goos"
   [[ $host_goarch == "$TARGET_GOARCH" ]] || fail "Go host GOARCH is $host_goarch"
   [[ $(go_env_value CGO_ENABLED) == 0 ]] || fail "CGO_ENABLED is not 0"
