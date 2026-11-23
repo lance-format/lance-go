@@ -65,10 +65,8 @@ func newBenchmarkRecordBatch(b *testing.B) (arrow.RecordBatch, *arrow.Schema) {
 func BenchmarkExportRecordBatch(b *testing.B) {
 	batch, _ := newBenchmarkRecordBatch(b)
 	b.ReportAllocs()
-	b.ReportMetric(benchmarkBatchRows, "rows/op")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		var exported ArrowArray
 		if err := ExportRecordBatch(batch, &exported); err != nil {
 			b.Fatalf("ExportRecordBatch: %v", err)
@@ -78,6 +76,7 @@ func BenchmarkExportRecordBatch(b *testing.B) {
 			b.Fatal("exported record batch was not released")
 		}
 	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
 }
 
 // BenchmarkImportRecordBatch measures importing a C record batch produced from
@@ -87,10 +86,8 @@ func BenchmarkExportRecordBatch(b *testing.B) {
 func BenchmarkImportRecordBatch(b *testing.B) {
 	batch, schema := newBenchmarkRecordBatch(b)
 	b.ReportAllocs()
-	b.ReportMetric(benchmarkBatchRows, "rows/op")
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		b.StopTimer()
 		var source ArrowArray
 		if err := ExportRecordBatch(batch, &source); err != nil {
@@ -108,4 +105,42 @@ func BenchmarkImportRecordBatch(b *testing.B) {
 			b.Fatalf("imported rows = %d, want %d", rows, benchmarkBatchRows)
 		}
 	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
+}
+
+// BenchmarkCopyBorrowedRecordBatch measures the copy path used when a borrowed
+// producer batch must become Go-owned, as in batch UDF input. Exporting the
+// producer structure and schema runs outside the timed region; the copy and
+// the caller's releases are measured.
+func BenchmarkCopyBorrowedRecordBatch(b *testing.B) {
+	batch, schema := newBenchmarkRecordBatch(b)
+	b.ReportAllocs()
+
+	for b.Loop() {
+		b.StopTimer()
+		var source ArrowArray
+		if err := ExportRecordBatch(batch, &source); err != nil {
+			b.Fatalf("ExportRecordBatch: %v", err)
+		}
+		var sourceSchema ArrowSchema
+		if err := ExportSchema(schema, &sourceSchema); err != nil {
+			ReleaseArray(&source)
+			b.Fatalf("ExportSchema: %v", err)
+		}
+		b.StartTimer()
+
+		copied, err := CopyBorrowedRecordBatch(&source, &sourceSchema)
+		ReleaseSchema(&sourceSchema)
+		if err != nil {
+			ReleaseArray(&source)
+			b.Fatalf("CopyBorrowedRecordBatch: %v", err)
+		}
+		rows := copied.NumRows()
+		copied.Release()
+		ReleaseArray(&source)
+		if rows != benchmarkBatchRows {
+			b.Fatalf("copied rows = %d, want %d", rows, benchmarkBatchRows)
+		}
+	}
+	b.ReportMetric(benchmarkBatchRows, "rows/op")
 }

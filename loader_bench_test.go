@@ -8,17 +8,16 @@ import (
 
 // BenchmarkLoaderWarmLoad measures repeated in-process Load calls after the
 // library has been opened once. This is the fast path every FFI call reaches:
-// one mutex acquisition and a cached pointer.
+// an atomic pointer load, with the mutex taken only around the first open.
 //
-// Cache extraction and digest verification are a different phase of the
-// loader, measured separately from warm calls so hash and lock costs do not
-// blur together (issue #98).
+// Cache extraction and digest verification are a different phase. They run in
+// internal/loader's BenchmarkBundleWarmCacheVerify, which measures a warm cache
+// hit under the shared lock, so hash and lock costs do not blur together.
 func BenchmarkLoaderWarmLoad(b *testing.B) {
 	requireNative(b)
 	b.ReportAllocs()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, err := loader.Load(); err != nil {
 			b.Fatalf("Load: %v", err)
 		}

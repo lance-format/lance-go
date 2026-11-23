@@ -9,8 +9,7 @@ func BenchmarkNewGetTake(b *testing.B) {
 	value := new(int)
 	b.ReportAllocs()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		id := New(value)
 		if _, ok := Get(id); !ok {
 			b.Fatalf("Get(%d) missed a registered handle", id)
@@ -32,7 +31,6 @@ func BenchmarkParallelNewGetTake(b *testing.B) {
 	before := Len()
 	b.ReportAllocs()
 
-	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		value := new(int)
 		for pb.Next() {
