@@ -59,6 +59,21 @@ func writeFFIFixture(t *testing.T, source string) string {
 	return root
 }
 
+func writeFFIFixtureFiles(t *testing.T, files map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	dir := filepath.Join(root, "internal", "ffi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("create fixture: %v", err)
+	}
+	for name, source := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(source), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	return root
+}
+
 func parseFixture(t *testing.T) (*bindingsModel, map[string]cFunc) {
 	t.Helper()
 	_, model, err := parseGo(writeFFIFixture(t, optionalFixture))
@@ -262,5 +277,98 @@ func TestOptionalCountsExcludeAbsentSignatures(t *testing.T) {
 	}
 	if note := optionalAbsentNote(0); note != "" {
 		t.Fatalf("optionalAbsentNote(0) = %q, want empty", note)
+	}
+}
+
+// A registration nested inside another block is not the supported directly
+// paired form; a deeper walk would otherwise misread it as guarded.
+func TestParseOptionalRejectsNestedRegistrationForm(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}`,
+		`	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		if true {
+			purego.RegisterFunc(&b.opt.optionalCall, addr)
+		}
+	}`,
+		1)
+
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "unsupported registration form") {
+		t.Fatalf("parseGo error = %v, want a nested registration form to be rejected", err)
+	}
+}
+
+// Shadowing the address inside the guard body is ambiguous and unsupported.
+func TestParseOptionalRejectsShadowedAddress(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}`,
+		`	if addr, err := lib.Lookup("lance_optional"); err == nil {
+		addr := addr
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}`,
+		1)
+
+	_, _, err := parseGo(writeFFIFixture(t, source))
+	if err == nil || !strings.Contains(err.Error(), "unsupported registration form") {
+		t.Fatalf("parseGo error = %v, want a shadowed address binding to be rejected", err)
+	}
+}
+
+// Two bindings fields can share a group type; one registration must not cover
+// both instance paths.
+func TestVerifyRequiresCoveragePerBindingsPath(t *testing.T) {
+	source := strings.Replace(optionalFixture,
+		`type bindings struct {
+	required func(handle uintptr) int32
+	opt      optionalGroup
+}`,
+		`type bindings struct {
+	required func(handle uintptr) int32
+	optA     optionalGroup
+	optB     optionalGroup
+}`,
+		1)
+	source = strings.ReplaceAll(source, "b.opt.", "b.optA.")
+
+	_, model, err := parseGo(writeFFIFixture(t, source))
+	if err != nil {
+		t.Fatalf("parseGo: %v", err)
+	}
+	header, err := parseHeader([]byte(optionalHeader))
+	if err != nil {
+		t.Fatalf("parseHeader: %v", err)
+	}
+
+	err = verify(&pin{}, model, header)
+	if err == nil {
+		t.Fatal("verify accepted coverage for one of two bindings instance paths")
+	}
+	for _, want := range []string{"optB.optionalCall", "optB.additionalCall"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("verify error = %v, want %q", err, want)
+		}
+	}
+}
+
+// Target-field uniqueness is a package-wide property, not a per-file one.
+func TestParseGoRejectsDuplicateOptionalFieldAcrossFiles(t *testing.T) {
+	extra := `package ffi
+
+func bindExtra(lib symbolSource, b *bindings) {
+	if addr, err := lib.Lookup("lance_extra"); err == nil {
+		purego.RegisterFunc(&b.opt.optionalCall, addr)
+	}
+}
+`
+	_, _, err := parseGo(writeFFIFixtureFiles(t, map[string]string{
+		"bindings.go": optionalFixture,
+		"extra.go":    extra,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "registered more than once across package files") {
+		t.Fatalf("parseGo error = %v, want a cross-file duplicate field to be rejected", err)
 	}
 }

@@ -257,6 +257,18 @@ func parseGo(root string) (*pin, *bindingsModel, error) {
 		}
 		model.optional = append(model.optional, optional...)
 	}
+	seenOptionalSymbols := make(map[string]bool, len(model.optional))
+	seenOptionalFields := make(map[string]bool, len(model.optional))
+	for _, sym := range model.optional {
+		if seenOptionalSymbols[sym.name] {
+			return nil, nil, fmt.Errorf("optional symbol %s is bound more than once across package files", sym.name)
+		}
+		seenOptionalSymbols[sym.name] = true
+		if seenOptionalFields[sym.field] {
+			return nil, nil, fmt.Errorf("optional field %s is registered more than once across package files", sym.field)
+		}
+		seenOptionalFields[sym.field] = true
+	}
 
 	upstream.repo = constants["upstreamRepo"]
 	upstream.release = constants["upstreamRelease"]
@@ -385,25 +397,29 @@ func parseLookupGuard(ifStmt *ast.IfStmt, registrations map[*ast.CallExpr]string
 		return nil, fmt.Errorf("optional symbol %s is not guarded by a successful lib.Lookup (want %s == nil)", symbol, errIdent.Name)
 	}
 
-	var found []*ast.CallExpr
-	ast.Inspect(ifStmt.Body, func(n ast.Node) bool {
-		register, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		if _, ok := registrations[register]; ok {
-			found = append(found, register)
-		}
-		return true
-	})
-	if len(found) != 1 {
-		return nil, fmt.Errorf("optional symbol %s registers %d fields, want 1", symbol, len(found))
+	// Only a directly paired registration is supported: the body must be one
+	// purego.RegisterFunc statement using the address from the if-init. This
+	// rejects nested blocks, extra statements and shadowed address bindings
+	// that a deeper syntax walk could misread.
+	if len(ifStmt.Body.List) != 1 {
+		return nil, fmt.Errorf("optional symbol %s uses an unsupported registration form; want one purego.RegisterFunc statement", symbol)
 	}
-	registration := found[0]
+	exprStmt, ok := ifStmt.Body.List[0].(*ast.ExprStmt)
+	if !ok {
+		return nil, fmt.Errorf("optional symbol %s uses an unsupported registration form; want one purego.RegisterFunc statement", symbol)
+	}
+	registration, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return nil, fmt.Errorf("optional symbol %s uses an unsupported registration form; want one purego.RegisterFunc statement", symbol)
+	}
+	field, ok := registrations[registration]
+	if !ok {
+		return nil, fmt.Errorf("optional symbol %s does not register a bindings field", symbol)
+	}
 	if !callArgIsIdent(registration, 1, addrIdent.Name) {
-		return nil, fmt.Errorf("optional symbol %s registers %s from an address other than %s", symbol, registrations[registration], addrIdent.Name)
+		return nil, fmt.Errorf("optional symbol %s registers %s from an address other than %s", symbol, field, addrIdent.Name)
 	}
-	return &lookupGuard{symbol: symbol, field: registrations[registration], call: registration}, nil
+	return &lookupGuard{symbol: symbol, field: field, call: registration}, nil
 }
 
 // isNilErrCondition reports whether cond is "err == nil" in either order.
@@ -720,7 +736,7 @@ func verifyOptional(model *bindingsModel, header map[string]cFunc) error {
 	}
 
 	seen := make(map[string]bool, len(model.optional))
-	covered := make(map[string]map[string]bool)
+	covered := make(map[string]bool, len(model.optional))
 	for _, sym := range model.optional {
 		if required[sym.name] {
 			return fmt.Errorf("symbol %s is bound both as required and as optional", sym.name)
@@ -742,10 +758,7 @@ func verifyOptional(model *bindingsModel, header map[string]cFunc) error {
 		if !ok {
 			return fmt.Errorf("optional symbol %s points at bindings field %s, which is not a function field", sym.name, sym.field)
 		}
-		if covered[typeName] == nil {
-			covered[typeName] = map[string]bool{}
-		}
-		covered[typeName][fieldName] = true
+		covered[sym.field] = true
 
 		cFuncType, ok := header[sym.name]
 		if !ok {
@@ -756,24 +769,22 @@ func verifyOptional(model *bindingsModel, header map[string]cFunc) error {
 		}
 	}
 
-	// Enumerate the nested groups declared on bindings instead of only the
+	// Enumerate every declared bindings instance path instead of only the
 	// groups that happened to register something. Otherwise deleting every
-	// registration of a group would silently drop its fields from the check.
+	// registration of a group would silently drop its fields from the check,
+	// and two fields sharing a group type would cover each other.
+	var uncovered []string
 	for groupField, typeName := range model.nested {
-		fields := model.groups[typeName]
-		if len(fields) == 0 {
-			continue
-		}
-		var uncovered []string
-		for field := range fields {
-			if !covered[typeName][field] {
-				uncovered = append(uncovered, field)
+		for fieldName := range model.groups[typeName] {
+			path := groupField + "." + fieldName
+			if !covered[path] {
+				uncovered = append(uncovered, path)
 			}
 		}
-		if len(uncovered) > 0 {
-			sort.Strings(uncovered)
-			return fmt.Errorf("optional group %s (%s) has function field(s) %s without a lib.Lookup binding", groupField, typeName, strings.Join(uncovered, ", "))
-		}
+	}
+	if len(uncovered) > 0 {
+		sort.Strings(uncovered)
+		return fmt.Errorf("optional bindings do not cover function field(s) %s without a lib.Lookup binding", strings.Join(uncovered, ", "))
 	}
 	return nil
 }
