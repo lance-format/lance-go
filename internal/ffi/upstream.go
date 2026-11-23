@@ -8,8 +8,9 @@ package ffi
 // local development may instead build upstreamCommit from source with the same
 // header.
 //
-// There is no version symbol in the pinned lance-c ABI, so these values cannot
-// be verified at runtime. They document intent and give the release
+// The pinned lance-c ABI reports only its binding release through
+// lance_c_version(), not this commit or header, so these values cannot be
+// verified at runtime. They document intent and give the release
 // acquisition tool, internal/tools/check-abi-symbols, and
 // scripts/build-lance-c.sh a single source of truth.
 const (

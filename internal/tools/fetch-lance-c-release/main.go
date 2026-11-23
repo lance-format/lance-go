@@ -39,10 +39,10 @@
 // republished yet records the independent check as inactive; candidate
 // packaging still uses the acquired bytes.
 //
-// lance-c exposes no runtime version symbol, so the library bytes cannot prove
-// the commit that built them. The published per-asset checksum, the adopted
-// module identity, the pinned header hash, and the target machine check are the
-// available identity chain.
+// lance-c reports its binding release through lance_c_version(), but that
+// string cannot prove the commit that built the library bytes. The published
+// per-asset checksum, the adopted module identity, the pinned header hash, and
+// the target machine check are the available identity chain.
 package main
 
 import (

@@ -36,8 +36,9 @@ The output directory contains:
 
 The commit and header hash recorded in the generated module are read from
 internal/ffi/upstream.go. The header is verified against that pin. A library
-built from a different commit is not detected because lance-c exposes no
-runtime version symbol; provide a library and header from the pinned commit.
+built from a different commit is not detected, because `lance_c_version()`
+reports only the binding release; provide a library and header from the pinned
+commit.
 EOF
 }
 

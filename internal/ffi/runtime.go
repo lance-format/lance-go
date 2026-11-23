@@ -3,8 +3,8 @@ package ffi
 import "github.com/lance-format/lance-go/internal/loader"
 
 // PinnedLibrary is the lance-c build this package was compiled against. The
-// values are build-time metadata; lance-c has no runtime version symbol, so a
-// loaded library cannot be verified against them.
+// values are build-time metadata; lance_c_version() reports only the binding
+// release, so a loaded library cannot be verified against them.
 type PinnedLibrary struct {
 	Repository   string
 	Release      string

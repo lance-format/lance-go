@@ -43,9 +43,10 @@ verifies.
 | `windows/amd64` | `lance_c.dll.zst` | 99,988,834 | `d4c51d7f6bd7fba506b64d7569bcd99dd7a30351c9320b59b771ccba450c75cd` | 405,414,912 | `49544bd8d9d5bf2069a53cd3c43ccd0643a6a3767c2510058b13bc21ca2990d5` |
 | `windows/arm64` | `lance_c.dll.zst` | 90,011,278 | `4b3f3e87f02c90bfdb47d89536416d8ed9c3ecbded8243d2f35e359ce16c62b1` | 331,538,432 | `091179ddb272c47d426fe1a334c4059fc1c17072874dc600a7e6696509a243f8` |
 
-`lance-c` exposes no runtime version symbol, so the library bytes cannot prove
-which commit built them. The commit and header hash in `artifact.go` are
-packaging claims made by the release pipeline; the Go package does not report or
+`lance-c` reports its binding release through `lance_c_version()`, which returns
+`0.2.1-beta.3` for this pin, but that string does not identify the Git commit,
+the header or the built bytes. The commit and header hash in `artifact.go` are
+packaging claims made by the release pipeline; the Go package does not bind or
 check them at runtime. What is verifiable is that the payload decompresses to
 those bytes, that the module version resolves through the public proxy and
 checksum database, and that the bytes match the official release archive:

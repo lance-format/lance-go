@@ -46,5 +46,5 @@ func main() {
 		result.Metadata.CompressedSize, result.Metadata.CompressedSHA256)
 	fmt.Printf("  provenance claim: lance-c commit %s, header sha256 %s\n",
 		result.Metadata.UpstreamCommit, result.Metadata.HeaderSHA256)
-	fmt.Println("provenance is recorded by the packaging process; lance-c has no runtime version symbol")
+	fmt.Println("provenance is recorded by the packaging process; lance_c_version() reports the binding release, not the commit or header")
 }

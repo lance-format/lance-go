@@ -310,8 +310,9 @@ ORIGIN_DIR="$ORIGIN_OUT" scripts/test-go-module-origin.sh
 
 The generated module path, target, library name, compressed and uncompressed
 sizes and hashes, native commit, and header hash must match the build record.
-The commit and header hash are packaging claims: `lance-c` has no runtime version
-symbol, so the loader cannot prove them from the shared library.
+The commit and header hash are packaging claims: `lance_c_version()` reports
+only the binding release, so the loader cannot prove them from the shared
+library.
 
 The maintained verifier checks the payload hash and size, decompresses it,
 compares it byte-for-byte with the library, and checks the uncompressed hash,
