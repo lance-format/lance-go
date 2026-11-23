@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       revision:
-        description: "Exact official release tag (for example v0.2.0-preview.1) to resolve from proxy.golang.org"
+        description: "Exact official release tag (for example v0.2.0) to resolve from proxy.golang.org"
         required: true
         type: string
   push:

@@ -32,9 +32,8 @@
 // stores that retained their own reference.
 //
 // [Session], [CacheStats], [StorageOptionsAccessor], [StorageOptionsProvider]
-// and [ForceStorageOptionsProvider] are aliases of internal implementation
-// types; each declaration links to the aliased type that documents its methods,
-// fields and interface signatures.
+// and [ForceStorageOptionsProvider] are declared in this package, so go doc and
+// pkg.go.dev index their methods, fields and interface signatures directly.
 //
 // # Errors
 //

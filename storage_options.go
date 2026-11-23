@@ -1,6 +1,8 @@
 package lance
 
 import (
+	"context"
+
 	"github.com/lance-format/lance-go/internal/accessor"
 	"github.com/lance-format/lance-go/internal/ffi"
 	"github.com/lance-format/lance-go/namespace"
@@ -41,9 +43,10 @@ import (
 //		log.Fatal(err)
 //	}
 //	defer accessor.Close()
-//
-// Its methods are documented on the alias target: [accessor.Provider].
-type StorageOptionsProvider = accessor.Provider
+type StorageOptionsProvider interface {
+	StorageOptionsProviderID() string
+	FetchStorageOptions(ctx context.Context) (map[string]string, error)
+}
 
 // ForceStorageOptionsProvider optionally handles an explicit force refresh.
 // Without it, native force fetch falls back to StorageOptionsProvider.
@@ -54,8 +57,9 @@ type StorageOptionsProvider = accessor.Provider
 //
 // It has the same nil-versus-empty and concurrency contract as
 // StorageOptionsProvider.FetchStorageOptions.
-// The method is documented on the alias target: [accessor.ForceProvider].
-type ForceStorageOptionsProvider = accessor.ForceProvider
+type ForceStorageOptionsProvider interface {
+	ForceFetchStorageOptions(ctx context.Context) (map[string]string, error)
+}
 
 // StorageOptionsAccessor is a reusable owned accessor for dynamic storage
 // options. It may be supplied to Open, Write, WriteUncommitted,
@@ -83,19 +87,63 @@ type ForceStorageOptionsProvider = accessor.ForceProvider
 // own reference. Callers own the provider value passed to
 // NewStorageOptionsAccessor; the accessor does not call a Go provider Close
 // method.
-// Its methods are documented on the alias target: [accessor.Accessor].
-type StorageOptionsAccessor = accessor.Accessor
+type StorageOptionsAccessor struct {
+	core *accessor.Accessor
+}
+
+// init installs the private implementation lookup used by package file.
+// The public type must stay in this package for go doc indexing, and file
+// cannot read its unexported field directly.
+func init() {
+	accessor.SetResolver(func(owner any) (*accessor.Accessor, bool) {
+		owned, ok := owner.(*StorageOptionsAccessor)
+		if !ok || owned == nil || owned.core == nil {
+			return nil, false
+		}
+		return owned.core, true
+	})
+}
+
+// ProviderID returns the native identity of the provider, or an empty string
+// for a purely static accessor.
+func (a *StorageOptionsAccessor) ProviderID() string {
+	if a == nil || a.core == nil {
+		return ""
+	}
+	return a.core.ProviderID()
+}
+
+// Snapshot returns the currently resolved options. A nil map with hasOptions
+// false means native None; a non-nil empty map with true means Some(empty).
+// The map is an independent copy and may be mutated by the caller. Native
+// wraps provider fetch failures as IO errors while retaining their messages.
+func (a *StorageOptionsAccessor) Snapshot() (map[string]string, bool, error) {
+	if a == nil || a.core == nil {
+		return nil, false, ffi.ErrClosed
+	}
+	return a.core.Snapshot()
+}
+
+// Close releases the caller's accessor handle and waits for in-flight local
+// acquisitions. Native datasets and stores retain their own references, so
+// they do not block Close and remain usable afterwards.
+func (a *StorageOptionsAccessor) Close() {
+	if a == nil || a.core == nil {
+		return
+	}
+	a.core.Close()
+}
 
 // NewStorageOptionsAccessor creates a reusable accessor. A nil initial map
 // means native None; a non-nil map, including an empty one, means Some(initial).
 // Native uses valid initial options without fetching. After expiration, provider
 // options replace the initial set; a nil result falls back to the initial set.
 func NewStorageOptionsAccessor(initial map[string]string, provider StorageOptionsProvider) (*StorageOptionsAccessor, error) {
-	created, err := accessor.New(initial, provider, wrapError)
+	core, err := accessor.New(initial, provider, wrapError)
 	if err != nil {
 		return nil, wrapError("create storage options accessor", "", err)
 	}
-	return created, nil
+	return &StorageOptionsAccessor{core: core}, nil
 }
 
 // NewNamespaceStorageOptionsAccessor creates a table-scoped accessor backed by
@@ -121,11 +169,11 @@ func NewNamespaceStorageOptionsAccessor(ns namespace.Namespace, tableID []string
 	if err != nil {
 		return nil, wrapError("create namespace storage options provider", "", err)
 	}
-	created, err := accessor.NewFromProvider(provider, wrapError)
+	core, err := accessor.NewFromProvider(provider, wrapError)
 	if err != nil {
 		return nil, wrapError("create namespace storage options accessor", "", err)
 	}
-	return created, nil
+	return &StorageOptionsAccessor{core: core}, nil
 }
 
 // acquireStorageOptionsAccessor pins a caller-owned accessor for one native
@@ -134,7 +182,10 @@ func acquireStorageOptionsAccessor(op, uri string, options *StorageOptionsAccess
 	if options == nil {
 		return nil, func() {}, nil
 	}
-	native, release, ok := accessor.Acquire(options)
+	if options.core == nil {
+		return nil, nil, closedError(op, uri)
+	}
+	native, release, ok := accessor.Acquire(options.core)
 	if !ok {
 		return nil, nil, closedError(op, uri)
 	}

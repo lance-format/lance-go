@@ -146,3 +146,44 @@ func TestRawFileSessionStorageOptionsAccessorAndOverrides(t *testing.T) {
 		t.Fatalf("session read ids = %v, want 4 rows", ids)
 	}
 }
+
+func TestRawFileStorageOptionsFromRootAccessor(t *testing.T) {
+	requireNative(t)
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "root-accessor.lance")
+	schema := testSchema()
+	batch := testBatch(t, schema)
+	defer batch.Release()
+
+	owned, err := lance.NewStorageOptionsAccessor(nil, fileAccessorProvider{id: "test/file-root-accessor"})
+	if err != nil {
+		t.Fatalf("new root accessor: %v", err)
+	}
+	storage, err := file.NewStorageOptionsFromAccessor(owned)
+	if err != nil {
+		owned.Close()
+		t.Fatalf("adopt root accessor: %v", err)
+	}
+	writer, err := file.Create(ctx, path, schema, &file.WriterOptions{StorageOptions: storage})
+	if err != nil {
+		storage.Close()
+		t.Fatalf("create writer: %v", err)
+	}
+	if err := writer.Write(ctx, batch); err != nil {
+		writer.Close()
+		storage.Close()
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := writer.Finish(ctx); err != nil {
+		writer.Close()
+		storage.Close()
+		t.Fatalf("finish: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		storage.Close()
+		t.Fatalf("close writer: %v", err)
+	}
+	if err := storage.Close(); err != nil {
+		t.Fatalf("close adopted storage options: %v", err)
+	}
+}

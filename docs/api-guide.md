@@ -3,7 +3,7 @@
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
 This guide describes the `main` branch and the public Go APIs it contains. The
-latest stable tag is `v0.1.1`, which bundles `lance-c v0.2.1-beta.3`.
+latest stable tag is `v0.2.0`, which bundles `lance-c v0.2.1-beta.3`.
 
 ## Read a dataset
 
@@ -100,6 +100,10 @@ A `Dataset` is a snapshot safe for concurrent reads. Close it when finished;
 `Close` waits for in-flight operations. `WithVersion` selects a historical
 snapshot, and `WithSession` shares a `Session`'s native caches across datasets.
 Close sessions explicitly; datasets already opened from a session remain valid.
+`v0.2.0` declares `Session`, `CacheStats` and the storage-options types directly
+in the root package, so their members appear in `go doc` and pkg.go.dev. Source
+that uses them remains compatible; reflection now reports the root package
+identity.
 
 `Dataset.URI()` returns the fully qualified URI native resolved when the
 snapshot was produced. For a namespace dataset it is the

@@ -1,6 +1,7 @@
 // Package session owns shared native Lance session lifetimes. The root lance
-// package exposes this type through an alias, and the file package borrows the
-// native handle without exposing it in the public API.
+// package declares the public Session wrapper and forwards to this package;
+// sibling packages resolve that private state through From without adding a
+// public bridge method.
 package session
 
 import (
@@ -41,6 +42,26 @@ func New(native *ffi.Session, wrapError func(op, uri string, err error) error, c
 		closedError: closedError,
 	}
 	return s
+}
+
+// resolve maps a public owner to its private Session. The root lance package
+// installs it during initialization, because only that package can read the
+// unexported field that holds the implementation.
+var resolve func(owner any) (*Session, bool)
+
+// SetResolver installs the private access path used by sibling packages that
+// accept a public root type. It is called once by package lance during init.
+func SetResolver(fn func(owner any) (*Session, bool)) {
+	resolve = fn
+}
+
+// From returns the implementation behind owner. It is only for packages in this
+// module; it reports false when owner was not created by the root package.
+func From(owner any) (*Session, bool) {
+	if resolve == nil {
+		return nil, false
+	}
+	return resolve(owner)
 }
 
 // Acquire pins s for the duration of one native call. The returned release

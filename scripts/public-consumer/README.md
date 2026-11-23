@@ -21,7 +21,7 @@ resolving a PR head through the proxy.
 Run on the matching native host from the repository checkout:
 
 ```sh
-ROOT_REVISION=v0.1.1 \
+ROOT_REVISION=v0.2.0 \
 SOURCE_COMMIT=<optional-full-sha> \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \

@@ -3,7 +3,9 @@
 //
 // The native accessor caches, expires and refreshes options. Go callbacks only
 // translate one fetch request; they do not run a refresh loop or keep a second
-// credential cache.
+// credential cache. The root lance package declares the public wrapper types and
+// forwards to this package; sibling packages resolve that private state through
+// From without adding a public bridge method.
 package accessor
 
 import (
@@ -143,6 +145,26 @@ func newOwned(native *ffi.StorageOptionsAccessor, providerID string, wrapError f
 		providerID: providerID,
 		wrapError:  wrapError,
 	}
+}
+
+// resolve maps a public owner to its private Accessor. The root lance package
+// installs it during initialization, because only that package can read the
+// unexported field that holds the implementation.
+var resolve func(owner any) (*Accessor, bool)
+
+// SetResolver installs the private access path used by sibling packages that
+// accept a public root type. It is called once by package lance during init.
+func SetResolver(fn func(owner any) (*Accessor, bool)) {
+	resolve = fn
+}
+
+// From returns the implementation behind owner. It is only for packages in this
+// module; it reports false when owner was not created by the root package.
+func From(owner any) (*Accessor, bool) {
+	if resolve == nil {
+		return nil, false
+	}
+	return resolve(owner)
 }
 
 // ProviderID returns the native identity of the provider, or an empty string
