@@ -26,16 +26,16 @@ type ColumnAlteration struct {
 }
 
 // AddColumnsSQL returns a new Dataset with columns computed by SQL
-// expressions. An optional batchSize controls the backfill batch size; zero
-// uses Lance's default.
-func (d *Dataset) AddColumnsSQL(ctx context.Context, columns []SQLColumn, batchSize ...uint64) (*Dataset, error) {
+// expressions. WithAddColumnsBatchSize controls the backfill batch size; zero,
+// the value used when the option is absent, selects Lance's default.
+func (d *Dataset) AddColumnsSQL(ctx context.Context, columns []SQLColumn, opts ...AddColumnsOption) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
 	if len(columns) == 0 {
 		return nil, invalidError("add columns SQL", d.uri, "at least one column is required")
 	}
-	size, err := optionalBatchSize(batchSize)
+	config, err := parseAddColumnsOptions(opts)
 	if err != nil {
 		return nil, invalidError("add columns SQL", d.uri, "%v", err)
 	}
@@ -56,7 +56,7 @@ func (d *Dataset) AddColumnsSQL(ctx context.Context, columns []SQLColumn, batchS
 		nativeColumns[i] = ffi.SQLColumn{Name: column.Name, Expression: column.Expression}
 	}
 	next, err := d.mutate("add columns SQL", func(native *ffi.Dataset) error {
-		return native.AddColumnsSQL(nativeColumns, size)
+		return native.AddColumnsSQL(nativeColumns, config.batchSize)
 	})
 	if err != nil {
 		return nil, err
@@ -101,21 +101,21 @@ func (d *Dataset) AddColumnsNulls(ctx context.Context, schema *arrow.Schema) (*D
 // source must contain the same number of rows as the dataset and its column
 // names must not collide with existing columns. source is borrowed but may be
 // advanced while the native call runs; release it after this method returns.
-// An optional batchSize controls the backfill batch size; zero uses Lance's
-// default.
-func (d *Dataset) AddColumnsStream(ctx context.Context, source array.RecordReader, batchSize ...uint64) (*Dataset, error) {
+// WithAddColumnsBatchSize controls the backfill batch size; zero, the value
+// used when the option is absent, selects Lance's default.
+func (d *Dataset) AddColumnsStream(ctx context.Context, source array.RecordReader, opts ...AddColumnsOption) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
 	}
 	if source == nil {
 		return nil, invalidError("add columns stream", d.uri, "source record reader must not be nil")
 	}
-	size, err := optionalBatchSize(batchSize)
+	config, err := parseAddColumnsOptions(opts)
 	if err != nil {
 		return nil, invalidError("add columns stream", d.uri, "%v", err)
 	}
 	next, err := d.mutate("add columns stream", func(native *ffi.Dataset) error {
-		return native.AddColumnsStream(source, size)
+		return native.AddColumnsStream(source, config.batchSize)
 	})
 	if err != nil {
 		return nil, err
@@ -197,15 +197,4 @@ func (d *Dataset) DropColumns(ctx context.Context, columns ...string) (*Dataset,
 		return nil, err
 	}
 	return next, nil
-}
-
-func optionalBatchSize(values []uint64) (uint64, error) {
-	switch len(values) {
-	case 0:
-		return 0, nil
-	case 1:
-		return values[0], nil
-	default:
-		return 0, &Error{Code: CodeInvalidArgument, Message: "batch size may be specified at most once"}
-	}
 }

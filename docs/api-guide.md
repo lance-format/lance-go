@@ -26,8 +26,38 @@ authoritative source for the version you build against; the subpackages are
   [Full-text search](#full-text-search), [Distributed index segments](#distributed-index-segments),
   [Index optimization](#index-optimization)
 - Maintain: [Compaction and cleanup](#compaction-and-cleanup)
-- Reference: [Runtime diagnostics](#runtime-diagnostics), [Optional values](#optional-values),
+- Reference: [Options](#options), [Runtime diagnostics](#runtime-diagnostics), [Optional values](#optional-values),
   [Errors](#errors), [Context cancellation](#context-cancellation)
+
+## Options
+
+Every entry point is configured with values produced by `With...`
+constructors. Each operation accepts its own interface — `OpenOption`,
+`WriteOption`, `CommitOption`, `BranchOption`, `TransactionOption` and
+`AddColumnsOption` — and the interfaces have unexported methods, so only values
+from this package can be passed.
+
+Options that more than one operation supports use one shared constructor.
+`WithSession` returns a `SessionOption` accepted by `Open`, the write entry
+points and `CommitTransaction`. `WithStorageOptions` returns a
+`StorageOptionsOption` accepted by `Open`, writes, commits and `CreateBranch`.
+`WithStorageOptionsAccessor` returns a `StorageOptionsAccessorOption`,
+`WithCommitLock` returns a `CommitLockOption`, `WithSkipAutoCleanup` returns a
+`SkipAutoCleanupOption`, and `WithTransactionProperties` returns a
+`TransactionPropertiesOption`. The prefixed v0.2.0 spellings such as
+`WithWriteSession` and `WithCommitStorageOptions` no longer exist.
+
+Option values can be collected in slices and passed programmatically. A
+constructor stored as a function value must name the constructor's return type:
+
+```go
+var openSession func(*lance.Session) *lance.SessionOption = lance.WithSession
+```
+
+Namespace entry points and fragment creation share the option interface of
+their operation family but cannot express every value; they validate at call
+time and return `ErrInvalidArgument` for options such as
+`WithStorageOptionsAccessor` and `WithCommitLock`.
 
 ## Read a dataset
 
@@ -91,17 +121,16 @@ options structure. Fragment-create entry points remain on the older options
 structure.
 
 `NewCommitLock` creates an external commit lock from Go `Acquire`, `Release`
-and optional `Destroy` callbacks. `WithOpenCommitLock` routes opens,
-`WithWriteCommitLock` routes ordinary and staged writes, and `WithCommitLock`
-routes transaction commits through the lock. The callbacks run
+and optional `Destroy` callbacks. `WithCommitLock` routes opens, ordinary and
+staged writes, and transaction commits through the lock. The callbacks run
 synchronously on native worker threads and may be called concurrently.
 `Acquire` may return a nil lease for stateless coordination; an error with a
 non-nil lease transfers that partial lease to native code for a single
 `Destroy` without `Release`. `Release` may be called repeatedly and can
 report an error after native code has already published the commit. `Close`
 only drops the caller's owner; native datasets retain the lock they need.
-Namespace opens, writes, and commits reject their matching commit-lock
-options; fragment creation rejects `WithWriteCommitLock`.
+Namespace opens, writes, and commits reject `WithCommitLock`, and fragment
+creation rejects it as well.
 
 Row mutations and schema evolution return independent dataset snapshots; see
 [Mutations and schema evolution](#mutations-and-schema-evolution) for the
@@ -190,7 +219,7 @@ use `NewTransaction` and `CommitTransaction` to publish them. Closing metadata
 does not delete uncommitted files. `WithFragmentSchema` preserves native field
 IDs. Cleanup, stable row ID generation and transaction properties belong to
 publication; fragment creation rejects those settings. The fragment ABI accepts only static
-storage options, so `WithWriteStorageOptionsAccessor` and `WithWriteBranch` are
+storage options, so `WithStorageOptionsAccessor` and `WithWriteBranch` are
 also rejected before writing files. Use commit options for
 stable row IDs and cleanup policy. A failed write releases its retained reader
 reference but may have prefetched input; the caller still releases its reader.
@@ -220,7 +249,13 @@ metadata and data-file information but reject logical schema and data access.
 `AddColumnsBatchUDF` stage new columns; `MergeColumns` joins source columns;
 `UpdateColumns` stages row updates; `WriteColumns` and
 `WriteColumnWithVersion` stage replacement data files; and `DeleteRows` stages
-physical deletion offsets. These methods clone native fragment metadata and do
+physical deletion offsets. The `AddColumnsSQL` and `AddColumnsStream` methods on
+both `Dataset` and `Fragment` accept `WithAddColumnsBatchSize`. Dataset calls
+forward the value as the native `uint64` batch size, where zero selects the
+Lance default. Fragment calls preserve the native optional `uint32` batch size:
+omitting the option forwards `None`, while passing it forwards an explicit
+value, including zero, so the two cases stay distinguishable. These methods
+clone native fragment metadata and do
 not publish a version. Add-columns and merge return detached fragment metadata
 plus a complete `NativeSchema` with persistent field IDs. `UpdateColumns`
 returns an owned result carrying the detached fragment, modified field IDs and
@@ -369,7 +404,8 @@ defer final.Close()
 appends columns from an equal-length reader, and `AddColumnsBatchUDF` supports
 checkpointed batch mapping. `AlterColumns` changes a name, nullability or type;
 `DropColumns` removes columns. All return independent datasets and leave the
-receiver's schema and version unchanged.
+receiver's schema and version unchanged. The add-columns methods take
+`WithAddColumnsBatchSize`; without it, the backfill uses the Lance default.
 
 ## Compaction and cleanup
 
@@ -502,15 +538,14 @@ committed dataset, avoiding an error that could encourage duplicate writes.
 ## Storage options
 
 Static options and a dynamic accessor are mutually exclusive. Passing
-`WithStorageOptions` together with `WithStorageOptionsAccessor` (or the write
-and commit equivalents) returns `ErrInvalidArgument` regardless of option
-order.
+`WithStorageOptions` together with `WithStorageOptionsAccessor` returns
+`ErrInvalidArgument` regardless of option order on every entry point that
+accepts both.
 
 ### Static object-store options
 
 A static map is the simplest cloud configuration. Use `WithStorageOptions` for
-opens, `WithWriteStorageOptions` for writes, appends and overwrites, and
-`WithCommitStorageOptions` for transaction commits. The map is copied before
+opens, writes, appends, overwrites and transaction commits. The map is copied before
 the native call; the same keys work for dataset operations and, through the
 `file` package, for raw files.
 
@@ -522,7 +557,7 @@ storageOptions := map[string]string{
     "aws_region":            os.Getenv("AWS_REGION"),
 }
 created, err := lance.Create(ctx, "s3://bucket/prefix/data.lance", reader,
-    lance.WithWriteStorageOptions(storageOptions))
+    lance.WithStorageOptions(storageOptions))
 if err != nil {
     return err
 }
@@ -582,7 +617,7 @@ if err != nil {
 defer accessor.Close()
 
 ds, err := lance.Write(ctx, "data.lance", reader,
-    lance.WithWriteStorageOptionsAccessor(accessor))
+    lance.WithStorageOptionsAccessor(accessor))
 ```
 
 `StorageOptionsProviderID` is the native identity of the provider

@@ -72,6 +72,31 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   `namespace describe_table: namespace error TableNotFound: ...` for
   `*namespace.Error`, and the `lance-c` enumerator for `*namespace.NativeError`.
   Root namespace operations keep the native route's error; see below.
+- `OpenOption`, `WriteOption`, `CommitOption`, `BranchOption` and
+  `TransactionOption` are interfaces with unexported methods instead of
+  concrete function types. Per-operation constructors keep their return types;
+  `WithSession`, `WithStorageOptions`, `WithStorageOptionsAccessor`,
+  `WithCommitLock`, `WithSkipAutoCleanup` and `WithTransactionProperties`
+  return concrete option values accepted by every operation that supports them.
+- Shared option constructors replace the per-operation spellings:
+  `WithSession` replaces `WithWriteSession` and `WithCommitSession`;
+  `WithStorageOptions` replaces `WithWriteStorageOptions`,
+  `WithCommitStorageOptions` and `WithBranchStorageOptions`;
+  `WithStorageOptionsAccessor` replaces `WithWriteStorageOptionsAccessor` and
+  `WithCommitStorageOptionsAccessor`; `WithCommitLock` replaces
+  `WithOpenCommitLock` and `WithWriteCommitLock`; `WithSkipAutoCleanup`
+  replaces `WithCommitSkipAutoCleanup`; and `WithTransactionProperties`
+  replaces `WithWriteTransactionProperties`.
+- `Dataset.AddColumnsSQL`, `Dataset.AddColumnsStream`,
+  `Fragment.AddColumnsSQL` and `Fragment.AddColumnsStream` take
+  `AddColumnsOption` instead of `batchSize ...uint64`; use
+  `WithAddColumnsBatchSize(uint64)`. Dataset calls keep the native `uint64`
+  batch size, where zero selects the default. Fragment calls keep the native
+  optional `uint32`: omitting the option means `None`, while passing it,
+  including zero, means `Some(size)`. Repeating the option keeps the last
+  value.
+- `CreateBranch` rejects an explicit nil `BranchOption` with
+  `ErrInvalidArgument` instead of ignoring it.
 
 ### Fixed
 
@@ -170,6 +195,21 @@ if errors.Is(err, namespace.ErrNotFound) {
     // Covers the not-found codes, including TableColumnNotFound (12).
 }
 ```
+- **Option constructors:** the option types are interfaces, and the shared
+  constructors return `*SessionOption`, `*StorageOptionsOption`,
+  `*StorageOptionsAccessorOption`, `*CommitLockOption`,
+  `*SkipAutoCleanupOption` or `*TransactionPropertiesOption`. A shared
+  constructor stored as a function value must name the concrete return type:
+  `var f func(*lance.Session) *lance.SessionOption = lance.WithSession`.
+  Per-operation constructors keep their interface return types, and a nil
+  shared option value returns `ErrInvalidArgument`.
+- **Add-columns batch size:** replace `sizes ...uint64` forwards with
+  `[]lance.AddColumnsOption` and `WithAddColumnsBatchSize`. Dataset calls keep
+  the native `uint64` batch size and zero-as-default; Fragment calls keep the
+  native optional `uint32`, so omitting the option means `None` and passing it,
+  including zero, means `Some`. A Fragment value above `math.MaxUint32` is
+  rejected before the native call. `CreateBranch` now rejects an explicit nil
+  option.
 
 ## [v0.2.0] - 2026-11-23
 

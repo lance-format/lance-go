@@ -31,7 +31,7 @@ func TestWriteCleanupPolicyAcrossOptionPaths(t *testing.T) {
 		opts []lance.WriteOption
 	}{
 		{"default", nil},
-		{"session", []lance.WriteOption{lance.WithWriteSession(session)}},
+		{"session", []lance.WriteOption{lance.WithSession(session)}},
 		{"progress", []lance.WriteOption{lance.WithWriteParams(lance.WriteParams{
 			Progress: &lance.WriteProgress{WriteStats: func(lance.WriteStats) {}},
 		})}},
@@ -93,7 +93,7 @@ func TestNativeWriteOptionsCommitPaths(t *testing.T) {
 				KeepOriginalArray: ptr(false),
 			},
 		}),
-		lance.WithWriteTransactionProperties(map[string]string{"fixture": "native-create"}),
+		lance.WithTransactionProperties(map[string]string{"fixture": "native-create"}),
 	)
 	if err != nil {
 		t.Fatalf("Create with native options: %v", err)
@@ -559,8 +559,8 @@ func TestNativeWriteOptionsRetainedSessionAndAccessor(t *testing.T) {
 		t.Fatalf("NewStorageOptionsAccessor: %v", err)
 	}
 	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})),
-		lance.WithWriteSession(session),
-		lance.WithWriteStorageOptionsAccessor(accessor),
+		lance.WithSession(session),
+		lance.WithStorageOptionsAccessor(accessor),
 	)
 	if err != nil {
 		accessor.Close()

@@ -25,7 +25,7 @@ func TestOpenWithBaseStoreParamsValidatesAndOwnsAccessors(t *testing.T) {
 			},
 		}
 		config := openConfig{}
-		if err := WithBaseStoreParams(params)(&config); err != nil {
+		if err := WithBaseStoreParams(params).applyOpen(&config); err != nil {
 			t.Fatalf("WithBaseStoreParams: %v", err)
 		}
 		if config.baseStoreParams == nil {
@@ -62,7 +62,7 @@ func TestOpenWithBaseStoreParamsValidatesAndOwnsAccessors(t *testing.T) {
 
 	t.Run("nil and empty presence", func(t *testing.T) {
 		nilConfig := openConfig{}
-		if err := WithBaseStoreParams(nil)(&nilConfig); err != nil {
+		if err := WithBaseStoreParams(nil).applyOpen(&nilConfig); err != nil {
 			t.Fatalf("WithBaseStoreParams(nil): %v", err)
 		}
 		if nilConfig.baseStoreParams != nil {
@@ -70,7 +70,7 @@ func TestOpenWithBaseStoreParamsValidatesAndOwnsAccessors(t *testing.T) {
 		}
 
 		emptyConfig := openConfig{}
-		if err := WithBaseStoreParams(map[string]BaseStoreParams{})(&emptyConfig); err != nil {
+		if err := WithBaseStoreParams(map[string]BaseStoreParams{}).applyOpen(&emptyConfig); err != nil {
 			t.Fatalf("WithBaseStoreParams(empty): %v", err)
 		}
 		if emptyConfig.baseStoreParams == nil || len(emptyConfig.baseStoreParams) != 0 {
@@ -97,7 +97,7 @@ func TestOpenWithBaseStoreParamsValidatesAndOwnsAccessors(t *testing.T) {
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				err := WithBaseStoreParams(tc.params)(&openConfig{})
+				err := WithBaseStoreParams(tc.params).applyOpen(&openConfig{})
 				if err == nil || !strings.Contains(err.Error(), tc.want) {
 					t.Fatalf("error = %v, want containing %q", err, tc.want)
 				}
@@ -149,18 +149,18 @@ func TestOpenWithBaseStoreParamsValidatesAndOwnsAccessors(t *testing.T) {
 
 func TestOpenWithBaseStoreParamsRejectsCommitLock(t *testing.T) {
 	_, err := Open(context.Background(), "file:///unused",
-		WithOpenCommitLock(&CommitLock{}),
+		WithCommitLock(&CommitLock{}),
 		WithBaseStoreParams(map[string]BaseStoreParams{}),
 	)
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("base store params with commit lock = %v, want ErrInvalidArgument", err)
 	}
-	if !strings.Contains(err.Error(), "WithBaseStoreParams") || !strings.Contains(err.Error(), "WithOpenCommitLock") {
+	if !strings.Contains(err.Error(), "WithBaseStoreParams") || !strings.Contains(err.Error(), "WithCommitLock") {
 		t.Fatalf("combination error = %v, want both option names", err)
 	}
 
 	_, err = Open(context.Background(), "file:///unused",
-		WithOpenCommitLock(&CommitLock{}),
+		WithCommitLock(&CommitLock{}),
 		WithBaseStoreParams(nil),
 	)
 	if !errors.Is(err, ErrClosed) {

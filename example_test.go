@@ -392,7 +392,7 @@ func ExampleWriteToNamespace() {
 }
 
 // This example shows the static storage options used for S3, GCS or Azure.
-// The same map can be passed to WithWriteStorageOptions for writes. Credentials
+// The same map can be passed to WithStorageOptions for writes. Credentials
 // should come from the environment or a secret store, never from source code.
 func ExampleWithStorageOptions() {
 	storageOptions := map[string]string{

@@ -462,7 +462,7 @@ func TestDetachedAppendInspectionAndCommit(t *testing.T) {
 	dataset.Close()
 
 	appendRecord := makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})
-	tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, appendRecord), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteTransactionProperties(map[string]string{"source": "uncommitted"}))
+	tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, appendRecord), lance.WithWriteMode(lance.WriteModeAppend), lance.WithTransactionProperties(map[string]string{"source": "uncommitted"}))
 	if err != nil {
 		t.Fatalf("WriteUncommitted: %v", err)
 	}
@@ -740,7 +740,7 @@ func TestDetachedCommitReadback(t *testing.T) {
 	dataset.Close()
 
 	appendRecord := makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})
-	tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, appendRecord), lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteTransactionProperties(map[string]string{"detached": "yes"}))
+	tx, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, appendRecord), lance.WithWriteMode(lance.WriteModeAppend), lance.WithTransactionProperties(map[string]string{"detached": "yes"}))
 	if err != nil {
 		t.Fatalf("WriteUncommitted: %v", err)
 	}

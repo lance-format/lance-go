@@ -56,7 +56,7 @@ func run(uri, mode string, timeout time.Duration, storageOptions map[string]stri
 	var writeOptions []lance.WriteOption
 	if len(storageOptions) > 0 {
 		openOptions = append(openOptions, lance.WithStorageOptions(storageOptions))
-		writeOptions = append(writeOptions, lance.WithWriteStorageOptions(storageOptions))
+		writeOptions = append(writeOptions, lance.WithStorageOptions(storageOptions))
 	}
 
 	var dataset *lance.Dataset

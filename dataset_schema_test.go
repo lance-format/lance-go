@@ -153,7 +153,7 @@ func TestSchemaEvolutionColumnsMetadataAndConfig(t *testing.T) {
 
 	next, err = next.AddColumnsSQL(ctx, []lance.SQLColumn{
 		{Name: "double_id", Expression: "id * 2"},
-	}, 2)
+	}, lance.WithAddColumnsBatchSize(2))
 	if err != nil {
 		t.Fatalf("AddColumnsSQL: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestSchemaEvolutionColumnsMetadataAndConfig(t *testing.T) {
 		makeOneStringRecord(t, tagSchema, []string{"tag-1", "tag-2"}, []bool{true, true}),
 		makeOneStringRecord(t, tagSchema, []string{"tag-3", "tag-4"}, []bool{true, true}),
 	)}
-	next, err = next.AddColumnsStream(ctx, tagReader, 2)
+	next, err = next.AddColumnsStream(ctx, tagReader, lance.WithAddColumnsBatchSize(2))
 	if err != nil {
 		t.Fatalf("AddColumnsStream: %v", err)
 	}

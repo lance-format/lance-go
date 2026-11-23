@@ -2,8 +2,6 @@ package lance
 
 import (
 	"context"
-	"fmt"
-	"math"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -221,7 +219,11 @@ func (r *UpdateColumnsResult) uriOrEmpty() string {
 // AddColumnsSQL stages SQL-computed columns on a clone of this fragment. The
 // result fragment is detached metadata; publication remains an explicit
 // operation and transaction step.
-func (f *Fragment) AddColumnsSQL(ctx context.Context, columns []SQLColumn, batchSize ...uint64) (*Fragment, *NativeSchema, error) {
+//
+// WithAddColumnsBatchSize forwards the native optional uint32 batch size:
+// omitting the option forwards None, while passing it forwards the value
+// explicitly, including zero.
+func (f *Fragment) AddColumnsSQL(ctx context.Context, columns []SQLColumn, opts ...AddColumnsOption) (*Fragment, *NativeSchema, error) {
 	if f == nil || !f.res.acquire() {
 		return nil, nil, closedError("fragment add columns sql", f.uriOrEmpty())
 	}
@@ -229,7 +231,11 @@ func (f *Fragment) AddColumnsSQL(ctx context.Context, columns []SQLColumn, batch
 	if err := checkContext(ctx); err != nil {
 		return nil, nil, wrapError("fragment add columns sql", f.uri, err)
 	}
-	size, err := fragmentBatchSize(batchSize)
+	config, err := parseAddColumnsOptions(opts)
+	if err != nil {
+		return nil, nil, invalidError("fragment add columns sql", f.uri, "%v", err)
+	}
+	size, err := config.fragmentBatchSize()
 	if err != nil {
 		return nil, nil, invalidError("fragment add columns sql", f.uri, "%v", err)
 	}
@@ -266,7 +272,11 @@ func (f *Fragment) AddColumnsNulls(ctx context.Context, columns *arrow.Schema) (
 
 // AddColumnsStream stages columns read from source. Native consumes the
 // transferred stream exactly once; the caller retains ownership of source.
-func (f *Fragment) AddColumnsStream(ctx context.Context, source array.RecordReader, batchSize ...uint64) (*Fragment, *NativeSchema, error) {
+//
+// WithAddColumnsBatchSize forwards the native optional uint32 batch size:
+// omitting the option forwards None, while passing it forwards the value
+// explicitly, including zero.
+func (f *Fragment) AddColumnsStream(ctx context.Context, source array.RecordReader, opts ...AddColumnsOption) (*Fragment, *NativeSchema, error) {
 	if f == nil || !f.res.acquire() {
 		return nil, nil, closedError("fragment add columns stream", f.uriOrEmpty())
 	}
@@ -277,7 +287,11 @@ func (f *Fragment) AddColumnsStream(ctx context.Context, source array.RecordRead
 	if source == nil {
 		return nil, nil, invalidError("fragment add columns stream", f.uri, "source must not be nil")
 	}
-	size, err := fragmentBatchSize(batchSize)
+	config, err := parseAddColumnsOptions(opts)
+	if err != nil {
+		return nil, nil, invalidError("fragment add columns stream", f.uri, "%v", err)
+	}
+	size, err := config.fragmentBatchSize()
 	if err != nil {
 		return nil, nil, invalidError("fragment add columns stream", f.uri, "%v", err)
 	}
@@ -433,18 +447,4 @@ func (f *Fragment) DeleteRows(ctx context.Context, offsets []uint32) (*Fragment,
 		return nil, nil
 	}
 	return newFragment(native, f.uri), nil
-}
-
-func fragmentBatchSize(values []uint64) (*uint32, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	if len(values) > 1 {
-		return nil, fmt.Errorf("batch size accepts at most one value")
-	}
-	if values[0] > math.MaxUint32 {
-		return nil, fmt.Errorf("batch size %d exceeds uint32", values[0])
-	}
-	size := uint32(values[0])
-	return &size, nil
 }

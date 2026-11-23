@@ -23,7 +23,7 @@ func TestFragmentAddColumnsVariantsPublish(t *testing.T) {
 
 		updated, schema, err := fragment.AddColumnsSQL(ctx, []lance.SQLColumn{
 			{Name: "sql_value", Expression: "id * 2 + 1"},
-		}, 2)
+		}, lance.WithAddColumnsBatchSize(2))
 		if err != nil {
 			t.Fatalf("AddColumnsSQL: %v", err)
 		}
@@ -797,7 +797,7 @@ func TestFragmentMutationOwnershipAndErrors(t *testing.T) {
 	}
 
 	badReader := &releaseCountingReader{RecordReader: oneColumnInt32Reader(t, "too_early", []int32{1, 2, 3, 4})}
-	_, _, err = fragment.AddColumnsStream(ctx, badReader, 0)
+	_, _, err = fragment.AddColumnsStream(ctx, badReader, lance.WithAddColumnsBatchSize(0))
 	if !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("zero batch size stream error = %v, want ErrInvalidArgument", err)
 	}
@@ -805,9 +805,7 @@ func TestFragmentMutationOwnershipAndErrors(t *testing.T) {
 		t.Fatalf("early-failing stream released reader %d times, want 1", badReader.releases)
 	}
 
-	_, _, err = fragment.AddColumnsSQL(ctx, []lance.SQLColumn{{Name: "too_many", Expression: "1"}}, 1, 2)
-	_ = requireInvalidArgumentError(t, err, "batch size accepts at most one value")
-	_, _, err = fragment.AddColumnsSQL(ctx, []lance.SQLColumn{{Name: "too_large", Expression: "1"}}, uint64(math.MaxUint32)+1)
+	_, _, err = fragment.AddColumnsSQL(ctx, []lance.SQLColumn{{Name: "too_large", Expression: "1"}}, lance.WithAddColumnsBatchSize(uint64(math.MaxUint32)+1))
 	_ = requireInvalidArgumentError(t, err, "exceeds uint32")
 
 	snapshotScanner, err := dataset.Scan()

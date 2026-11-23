@@ -41,7 +41,7 @@ func TestCreateFragmentPublishesThroughAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	fragment, err := lance.CreateFragment(ctx, uri, 7, makeReader(t, schema, record), lance.WithWriteSession(session))
+	fragment, err := lance.CreateFragment(ctx, uri, 7, makeReader(t, schema, record), lance.WithSession(session))
 	if err != nil {
 		t.Fatalf("CreateFragment: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestFragmentCreateEmptyAndNativeErrors(t *testing.T) {
 		t.Fatalf("NewRecordReader: %v", err)
 	}
 	_, err = lance.CreateFragment(ctx, filepath.Join(dir, "properties.lance"), 1, propertyReader,
-		lance.WithWriteTransactionProperties(map[string]string{"source": "test"}))
+		lance.WithTransactionProperties(map[string]string{"source": "test"}))
 	if !errors.Is(err, lance.ErrInvalidArgument) {
 		propertyReader.Release()
 		t.Fatalf("CreateFragment with transaction properties error = %v, want ErrInvalidArgument", err)
@@ -935,8 +935,8 @@ func TestFragmentCreationRejectsUnsupportedOptions(t *testing.T) {
 		{"blob pack threshold", lance.WithWriteParams(lance.WriteParams{BlobPackFileSizeThreshold: ptr(uint64(0))}), "WriteParams.BlobPackFileSizeThreshold is not supported"},
 		{"file writer options", lance.WithWriteParams(lance.WriteParams{FileWriterOptions: &lance.DatasetFileWriterOptions{}}), "WriteParams.FileWriterOptions is not supported"},
 		{"progress", lance.WithWriteParams(lance.WriteParams{Progress: &lance.WriteProgress{}}), "WriteParams.Progress is not supported"},
-		{"transaction properties", lance.WithWriteTransactionProperties(nil), "WithWriteTransactionProperties is not supported"},
-		{"storage accessor", lance.WithWriteStorageOptionsAccessor(&lance.StorageOptionsAccessor{}), "WithWriteStorageOptionsAccessor is not supported"},
+		{"transaction properties", lance.WithTransactionProperties(nil), "WithTransactionProperties is not supported"},
+		{"storage accessor", lance.WithStorageOptionsAccessor(&lance.StorageOptionsAccessor{}), "WithStorageOptionsAccessor is not supported"},
 		{"namespace branch", lance.WithWriteBranch("branch"), "WithWriteBranch is valid only for WriteToNamespace"},
 	} {
 		for _, many := range []bool{false, true} {

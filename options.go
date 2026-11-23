@@ -54,41 +54,27 @@ type openConfig struct {
 	baseStoreParams        map[string]BaseStoreParams
 }
 
-// OpenOption configures Open.
-type OpenOption func(*openConfig) error
+// OpenOption configures Open and the namespace open entry points.
+//
+// OpenOption has an unexported method, so only values produced by this
+// package's With... constructors implement it. Shared constructors such as
+// WithSession return a concrete value that implements OpenOption wherever
+// Open supports the underlying capability.
+type OpenOption interface {
+	applyOpen(*openConfig) error
+}
+
+// openOptionFunc adapts per-operation option functions to OpenOption.
+type openOptionFunc func(*openConfig) error
+
+func (f openOptionFunc) applyOpen(config *openConfig) error { return f(config) }
 
 // WithVersion selects a dataset version. Zero selects the latest version.
 func WithVersion(version uint64) OpenOption {
-	return func(config *openConfig) error {
+	return openOptionFunc(func(config *openConfig) error {
 		config.version = version
 		return nil
-	}
-}
-
-// WithStorageOptions passes object-store options to Lance.
-func WithStorageOptions(options map[string]string) OpenOption {
-	return func(config *openConfig) error {
-		copied, err := cloneStorageOptions(options)
-		if err != nil {
-			return err
-		}
-		config.storageOptions = copied
-		config.storageOptionsSet = options != nil
-		return nil
-	}
-}
-
-// WithStorageOptionsAccessor supplies a reusable dynamic storage-options
-// accessor. It is mutually exclusive with WithStorageOptions and is safe to
-// close after Open returns; native datasets retain their own reference.
-func WithStorageOptionsAccessor(accessor *StorageOptionsAccessor) OpenOption {
-	return func(config *openConfig) error {
-		if accessor == nil {
-			return fmt.Errorf("storage options accessor must not be nil")
-		}
-		config.storageOptionsAccessor = accessor
-		return nil
-	}
+	})
 }
 
 // WithBaseStoreParams binds per-base storage parameters to exact base-path
@@ -108,31 +94,20 @@ func WithStorageOptionsAccessor(accessor *StorageOptionsAccessor) OpenOption {
 // Bindings are runtime-only; native does not persist them, so a later reopen
 // must supply them again.
 //
-// WithBaseStoreParams cannot be combined with WithOpenCommitLock because the
+// WithBaseStoreParams cannot be combined with WithCommitLock because the
 // per-base open entry has no commit-lock parameter. OpenFromNamespace also
 // rejects a non-nil map because namespace opens do not accept per-base store
 // parameters. Libraries that predate the optional symbol return
 // ErrNotSupported naming lance_dataset_open_with_base_store_params.
 func WithBaseStoreParams(params map[string]BaseStoreParams) OpenOption {
-	return func(config *openConfig) error {
+	return openOptionFunc(func(config *openConfig) error {
 		copied, err := cloneBaseStoreParams(params)
 		if err != nil {
 			return err
 		}
 		config.baseStoreParams = copied
 		return nil
-	}
-}
-
-// WithSession shares a session's caches with the dataset.
-func WithSession(session *Session) OpenOption {
-	return func(config *openConfig) error {
-		if session == nil {
-			return fmt.Errorf("session must not be nil")
-		}
-		config.session = session
-		return nil
-	}
+	})
 }
 
 // WriteMode selects create, append or overwrite behavior.
@@ -154,7 +129,7 @@ const (
 // TargetAllBases, BaseStoreParams, AllowExternalBlobOutsideBases,
 // ExternalBlobMode, BlobPackFileSizeThreshold, FileWriterOptions and Progress
 // instead of silently dropping them. A commit lock is supplied separately
-// with WithWriteCommitLock and does not change the presence semantics of these
+// with WithCommitLock and does not change the presence semantics of these
 // fields.
 type WriteParams struct {
 	MaxRowsPerFile     uint64
@@ -248,30 +223,44 @@ type writeConfig struct {
 	branch                   string
 }
 
-// WriteOption configures Write, Create, Append and Overwrite.
-type WriteOption func(*writeConfig) error
+// WriteOption configures Write, Create, Append, Overwrite, WriteUncommitted,
+// WriteToNamespace, CreateFragment and WriteFragments.
+//
+// WriteOption has an unexported method, so only values produced by this
+// package's With... constructors implement it. Shared constructors such as
+// WithSession return a concrete value that implements WriteOption wherever the
+// write entry point supports the underlying capability; entry points that
+// cannot express a value reject it with ErrInvalidArgument.
+type WriteOption interface {
+	applyWrite(*writeConfig) error
+}
+
+// writeOptionFunc adapts per-operation option functions to WriteOption.
+type writeOptionFunc func(*writeConfig) error
+
+func (f writeOptionFunc) applyWrite(config *writeConfig) error { return f(config) }
 
 // WithWriteMode selects the write mode.
 func WithWriteMode(mode WriteMode) WriteOption {
-	return func(config *writeConfig) error {
+	return writeOptionFunc(func(config *writeConfig) error {
 		if mode < WriteModeCreate || mode > WriteModeOverwrite {
 			return fmt.Errorf("invalid write mode %d", mode)
 		}
 		config.mode = mode
 		return nil
-	}
+	})
 }
 
 // WithWriteParams sets native write parameters.
 func WithWriteParams(params WriteParams) WriteOption {
-	return func(config *writeConfig) error {
+	return writeOptionFunc(func(config *writeConfig) error {
 		copied, err := cloneWriteParams(params)
 		if err != nil {
 			return err
 		}
 		config.params = copied
 		return nil
-	}
+	})
 }
 
 func cloneWriteParams(params WriteParams) (WriteParams, error) {
@@ -424,67 +413,26 @@ func (params WriteParams) firstNativeOptionField() string {
 
 // WithAutoCleanup configures old-version cleanup for create writes.
 func WithAutoCleanup(params AutoCleanupParams) WriteOption {
-	return func(config *writeConfig) error {
+	return writeOptionFunc(func(config *writeConfig) error {
 		if params.OlderThan < 0 {
 			return fmt.Errorf("auto-cleanup older-than duration must not be negative")
 		}
 		copied := params
 		config.autoCleanup = &copied
 		return nil
-	}
-}
-
-// WithSkipAutoCleanup disables native old-version cleanup.
-func WithSkipAutoCleanup(skip bool) WriteOption {
-	return func(config *writeConfig) error {
-		config.skipAutoCleanup = skip
-		return nil
-	}
-}
-
-// WithWriteSession pins the write to a session. It is valid for ordinary
-// writes, WriteUncommitted, WriteToNamespace, CreateFragment and WriteFragments.
-func WithWriteSession(session *Session) WriteOption {
-	return func(config *writeConfig) error {
-		if session == nil {
-			return fmt.Errorf("session must not be nil")
-		}
-		config.session = session
-		return nil
-	}
+	})
 }
 
 // WithWriteBranch selects a table branch for WriteToNamespace. It is invalid
 // for URI writes.
 func WithWriteBranch(branch string) WriteOption {
-	return func(config *writeConfig) error {
+	return writeOptionFunc(func(config *writeConfig) error {
 		if err := validateCString(branch); err != nil {
 			return fmt.Errorf("branch: %w", err)
 		}
 		config.branch = branch
 		return nil
-	}
-}
-
-// WithWriteTransactionProperties attaches properties to the transaction
-// created by an ordinary write or WriteUncommitted. Passing nil records a
-// present, empty map.
-func WithWriteTransactionProperties(properties map[string]string) WriteOption {
-	return func(config *writeConfig) error {
-		copied := make(map[string]string, len(properties))
-		for key, value := range properties {
-			if err := validateCString(key); err != nil {
-				return fmt.Errorf("transaction property key: %w", err)
-			}
-			if err := validateCString(value); err != nil {
-				return fmt.Errorf("transaction property %q: %w", key, err)
-			}
-			copied[key] = value
-		}
-		config.transactionProperties = copied
-		config.hasTransactionProperties = true
-		return nil
-	}
+	})
 }
 
 // WithFragmentSchema sets the schema used by CreateFragment and WriteFragments.
@@ -492,38 +440,88 @@ func WithWriteTransactionProperties(properties map[string]string) WriteOption {
 // schema. It is invalid for Write, Create, Append, Overwrite and
 // WriteUncommitted or WriteToNamespace.
 func WithFragmentSchema(schema *NativeSchema) WriteOption {
-	return func(config *writeConfig) error {
+	return writeOptionFunc(func(config *writeConfig) error {
 		if schema == nil {
 			return fmt.Errorf("schema must not be nil")
 		}
 		config.schema = schema
 		return nil
-	}
+	})
 }
 
-// WithWriteStorageOptions passes object-store options to the write.
-func WithWriteStorageOptions(options map[string]string) WriteOption {
-	return func(config *writeConfig) error {
-		copied, err := cloneStorageOptions(options)
-		if err != nil {
-			return err
-		}
-		config.storageOptions = copied
-		config.storageOptionsSet = options != nil
-		return nil
-	}
+// addColumnsConfig is shared by the Dataset and Fragment add-columns entry
+// points. The two native contracts treat the value differently:
+//
+//   - Dataset methods forward batchSize as the native uint64 batch size, where
+//     zero selects the Lance default and a value above math.MaxUint32 is
+//     rejected by native code.
+//   - Fragment methods forward batchSizeSet as presence and batchSize as the
+//     native optional uint32. Omitting every option forwards None; passing the
+//     option forwards Some(size), including zero.
+type addColumnsConfig struct {
+	batchSize    uint64
+	batchSizeSet bool
 }
 
-// WithWriteStorageOptionsAccessor supplies a reusable dynamic accessor for a
-// dataset write. It is mutually exclusive with WithWriteStorageOptions.
-func WithWriteStorageOptionsAccessor(accessor *StorageOptionsAccessor) WriteOption {
-	return func(config *writeConfig) error {
-		if accessor == nil {
-			return fmt.Errorf("storage options accessor must not be nil")
-		}
-		config.storageOptionsAccessor = accessor
+// AddColumnsOption configures AddColumnsSQL and AddColumnsStream on Dataset and
+// Fragment.
+//
+// AddColumnsOption has an unexported method, so only values produced by this
+// package's With... constructors implement it.
+type AddColumnsOption interface {
+	applyAddColumns(*addColumnsConfig) error
+}
+
+// addColumnsOptionFunc adapts per-operation option functions to
+// AddColumnsOption.
+type addColumnsOptionFunc func(*addColumnsConfig) error
+
+func (f addColumnsOptionFunc) applyAddColumns(config *addColumnsConfig) error { return f(config) }
+
+// WithAddColumnsBatchSize sets the batch size used to backfill added columns.
+//
+// Dataset.AddColumnsSQL and Dataset.AddColumnsStream forward the value as the
+// native uint64 batch size, where zero selects the Lance default. A value above
+// math.MaxUint32 is rejected by native code as invalid input.
+//
+// Fragment.AddColumnsSQL and Fragment.AddColumnsStream preserve the native
+// optional uint32 contract: omitting the option forwards None, while passing
+// the option forwards the value explicitly, including zero. A value above
+// math.MaxUint32 is rejected before the native call.
+//
+// Passing the option more than once keeps the last value.
+func WithAddColumnsBatchSize(size uint64) AddColumnsOption {
+	return addColumnsOptionFunc(func(config *addColumnsConfig) error {
+		config.batchSize = size
+		config.batchSizeSet = true
 		return nil
+	})
+}
+
+func parseAddColumnsOptions(opts []AddColumnsOption) (addColumnsConfig, error) {
+	var config addColumnsConfig
+	for _, option := range opts {
+		if option == nil {
+			return config, fmt.Errorf("nil AddColumnsOption")
+		}
+		if err := option.applyAddColumns(&config); err != nil {
+			return config, err
+		}
 	}
+	return config, nil
+}
+
+// fragmentBatchSize converts the shared configuration to the native optional
+// uint32 used by the Fragment add-columns entry points.
+func (config addColumnsConfig) fragmentBatchSize() (*uint32, error) {
+	if !config.batchSizeSet {
+		return nil, nil
+	}
+	if config.batchSize > math.MaxUint32 {
+		return nil, fmt.Errorf("batch size %d exceeds uint32", config.batchSize)
+	}
+	size := uint32(config.batchSize)
+	return &size, nil
 }
 
 // OrderDirection is an ascending or descending sort direction.

@@ -45,12 +45,12 @@ func Open(ctx context.Context, uri string, opts ...OpenOption) (*Dataset, error)
 		if option == nil {
 			return nil, invalidError("open", uri, "nil OpenOption")
 		}
-		if err := option(&config); err != nil {
+		if err := option.applyOpen(&config); err != nil {
 			return nil, invalidError("open", uri, "%v", err)
 		}
 	}
 	if config.baseStoreParams != nil && config.commitLock != nil {
-		return nil, invalidError("open", uri, "WithBaseStoreParams is not supported with WithOpenCommitLock; the per-base open entry has no commit-lock parameter")
+		return nil, invalidError("open", uri, "WithBaseStoreParams is not supported with WithCommitLock; the per-base open entry has no commit-lock parameter")
 	}
 
 	var storageAccessor *ffi.StorageOptionsAccessor

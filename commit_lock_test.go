@@ -61,7 +61,7 @@ func TestCommitLockWriteRetainsDatasetAfterOwnerClose(t *testing.T) {
 	counters := &commitLockCounters{}
 	lock := newCommitLock(t, counters)
 
-	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})), lance.WithWriteCommitLock(lock))
+	dataset, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1, 2}, []string{"a", "b"}, []bool{true, true})), lance.WithCommitLock(lock))
 	if err != nil {
 		t.Fatalf("Create with commit lock: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestCommitLockWriteRetainsDatasetAfterOwnerClose(t *testing.T) {
 		t.Fatalf("version = %d, want 1", got)
 	}
 	requireMutationRows(t, dataset, []int64{1, 2}, []string{"a", "b"})
-	opened, err := lance.Open(ctx, uri, lance.WithOpenCommitLock(lock))
+	opened, err := lance.Open(ctx, uri, lance.WithCommitLock(lock))
 	if err != nil {
 		t.Fatalf("Open with commit lock: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestCommitLockStagedAndBatchCommit(t *testing.T) {
 	lock := newCommitLock(t, counters)
 
 	staged, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{2}, []string{"b"}, []bool{true})),
-		lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteCommitLock(lock))
+		lance.WithWriteMode(lance.WriteModeAppend), lance.WithCommitLock(lock))
 	if err != nil {
 		t.Fatalf("WriteUncommitted: %v", err)
 	}
@@ -130,12 +130,12 @@ func TestCommitLockStagedAndBatchCommit(t *testing.T) {
 	staged.Close()
 
 	tx1, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{3}, []string{"c"}, []bool{true})),
-		lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteCommitLock(lock))
+		lance.WithWriteMode(lance.WriteModeAppend), lance.WithCommitLock(lock))
 	if err != nil {
 		t.Fatalf("WriteUncommitted tx1: %v", err)
 	}
 	tx2, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{4}, []string{"d"}, []bool{true})),
-		lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteCommitLock(lock))
+		lance.WithWriteMode(lance.WriteModeAppend), lance.WithCommitLock(lock))
 	if err != nil {
 		tx1.Close()
 		t.Fatalf("WriteUncommitted tx2: %v", err)
@@ -194,7 +194,7 @@ func TestCommitLockConflictReportsFailedRelease(t *testing.T) {
 	}
 	lock := newCommitLock(t, counters)
 	staged, err := lance.WriteUncommitted(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{3}, []string{"c"}, []bool{true})),
-		lance.WithWriteMode(lance.WriteModeAppend), lance.WithWriteCommitLock(lock))
+		lance.WithWriteMode(lance.WriteModeAppend), lance.WithCommitLock(lock))
 	if err != nil {
 		t.Fatalf("WriteUncommitted: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestCommitLockAcquireErrorsAreContained(t *testing.T) {
 		}
 		defer lock.Close()
 		uri := filepath.Join(t.TempDir(), "data.lance")
-		_, err = lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteCommitLock(lock))
+		_, err = lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithCommitLock(lock))
 		if err == nil {
 			t.Fatal("Create succeeded despite acquire error")
 		}
@@ -273,7 +273,7 @@ func TestCommitLockAcquireErrorsAreContained(t *testing.T) {
 		}
 		defer lock.Close()
 		uri := filepath.Join(t.TempDir(), "data.lance")
-		_, err = lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteCommitLock(lock))
+		_, err = lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithCommitLock(lock))
 		if err == nil {
 			t.Fatal("Create succeeded despite acquire panic")
 		}
@@ -291,7 +291,7 @@ func TestCommitLockReleaseErrorAfterPublication(t *testing.T) {
 	counters := &commitLockCounters{releaseErr: errors.New("injected release failure")}
 	lock := newCommitLock(t, counters)
 
-	_, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteCommitLock(lock))
+	_, err := lance.Create(ctx, uri, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithCommitLock(lock))
 	if err == nil {
 		t.Fatal("Create succeeded despite release error")
 	}
@@ -312,7 +312,7 @@ func TestCommitLockRejectedByFragmentCreation(t *testing.T) {
 	schema := testSchema()
 	lock := newCommitLock(t, &commitLockCounters{})
 	uri := filepath.Join(t.TempDir(), "data.lance")
-	_, err := lance.CreateFragment(ctx, uri, 1, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithWriteCommitLock(lock))
+	_, err := lance.CreateFragment(ctx, uri, 1, makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true})), lance.WithCommitLock(lock))
 	if !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("CreateFragment with commit lock = %v, want ErrInvalidArgument", err)
 	}
@@ -324,11 +324,11 @@ func TestCommitLockRejectedByNamespaceOperations(t *testing.T) {
 	schema := testSchema()
 	lock := newCommitLock(t, &commitLockCounters{})
 
-	if _, err := lance.OpenFromNamespace(ctx, nil, []string{"table"}, lance.WithOpenCommitLock(lock)); !errors.Is(err, lance.ErrInvalidArgument) {
+	if _, err := lance.OpenFromNamespace(ctx, nil, []string{"table"}, lance.WithCommitLock(lock)); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("OpenFromNamespace with commit lock = %v, want ErrInvalidArgument", err)
 	}
 	reader := makeReader(t, schema, makeRecord(t, schema, []int64{1}, []string{"a"}, []bool{true}))
-	if _, err := lance.WriteToNamespace(ctx, nil, []string{"table"}, reader, lance.WithWriteCommitLock(lock)); !errors.Is(err, lance.ErrInvalidArgument) {
+	if _, err := lance.WriteToNamespace(ctx, nil, []string{"table"}, reader, lance.WithCommitLock(lock)); !errors.Is(err, lance.ErrInvalidArgument) {
 		t.Fatalf("WriteToNamespace with commit lock = %v, want ErrInvalidArgument", err)
 	}
 
@@ -375,7 +375,7 @@ func TestCommitLockCloseWaitsForInflightWrite(t *testing.T) {
 	wrote := make(chan *lance.Dataset, 1)
 	writeErr := make(chan error, 1)
 	go func() {
-		ds, err := lance.Create(ctx, uri, reader, lance.WithWriteCommitLock(lock))
+		ds, err := lance.Create(ctx, uri, reader, lance.WithCommitLock(lock))
 		if err != nil {
 			writeErr <- err
 			return

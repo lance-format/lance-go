@@ -3,10 +3,14 @@
 # One entry per line: <package>: <exact apidiff change>.
 # This file records the approved v0.3.0 migrations. The accompanying review
 # material is the "Migrating accessor ownership from v0.2.0" section in
-# docs/api-guide.md (#121): Close() now returns error and implements io.Closer,
-# and file.StorageOptions is now an alias for lance.StorageOptionsAccessor, so
-# the constructors and the reader/writer/session option fields use the root
-# accessor type.
+# docs/api-guide.md (#121), the guide's "Options" section, and the v0.3.0
+# changelog's option-constructor and add-columns migration entries (#103):
+# - Close() now returns error and implements io.Closer, and file.StorageOptions
+#   is now an alias for lance.StorageOptionsAccessor, so the constructors and
+#   the reader/writer/session option fields use the root accessor type.
+# - OpenOption, WriteOption, CommitOption, BranchOption and TransactionOption
+#   are interfaces, shared constructors return concrete option values, and the
+#   add-columns methods take AddColumnsOption.
 #
 # This file belongs to an approved minor release only. A patch line must not
 # add one. It stops applying when a new stable tag becomes the comparison base.
@@ -18,3 +22,29 @@ file: ReaderOptions.StorageOptions: changed from *StorageOptions to *StorageOpti
 file: SessionOptions.StorageOptions: changed from *StorageOptions to *StorageOptions
 file: StorageOptions: changed from StorageOptions to github.com/lance-format/lance-go.StorageOptionsAccessor
 file: WriterOptions.StorageOptions: changed from *StorageOptions to *StorageOptions
+lance: (*Dataset).AddColumnsSQL: changed from func(context.Context, []SQLColumn, ...uint64) (*Dataset, error) to func(context.Context, []SQLColumn, ...AddColumnsOption) (*Dataset, error)
+lance: (*Dataset).AddColumnsStream: changed from func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...uint64) (*Dataset, error) to func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...AddColumnsOption) (*Dataset, error)
+lance: (*Fragment).AddColumnsSQL: changed from func(context.Context, []SQLColumn, ...uint64) (*Fragment, *NativeSchema, error) to func(context.Context, []SQLColumn, ...AddColumnsOption) (*Fragment, *NativeSchema, error)
+lance: (*Fragment).AddColumnsStream: changed from func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...uint64) (*Fragment, *NativeSchema, error) to func(context.Context, github.com/apache/arrow-go/v18/arrow/array.RecordReader, ...AddColumnsOption) (*Fragment, *NativeSchema, error)
+lance: BranchOption: changed from func(*branchOptions) error to interface{applyBranch(*branchOptions) error}
+lance: CommitOption: changed from func(*commitConfig) error to interface{applyCommit(*commitConfig) error}
+lance: OpenOption: changed from func(*openConfig) error to interface{applyOpen(*openConfig) error}
+lance: TransactionOption: changed from func(*transactionConfig) error to interface{applyTransaction(*transactionConfig) error}
+lance: WithBranchStorageOptions: removed
+lance: WithCommitLock: changed from func(*CommitLock) CommitOption to func(*CommitLock) *CommitLockOption
+lance: WithCommitSession: removed
+lance: WithCommitSkipAutoCleanup: removed
+lance: WithCommitStorageOptions: removed
+lance: WithCommitStorageOptionsAccessor: removed
+lance: WithOpenCommitLock: removed
+lance: WithSession: changed from func(*Session) OpenOption to func(*Session) *SessionOption
+lance: WithSkipAutoCleanup: changed from func(bool) WriteOption to func(bool) *SkipAutoCleanupOption
+lance: WithStorageOptions: changed from func(map[string]string) OpenOption to func(map[string]string) *StorageOptionsOption
+lance: WithStorageOptionsAccessor: changed from func(*StorageOptionsAccessor) OpenOption to func(*StorageOptionsAccessor) *StorageOptionsAccessorOption
+lance: WithTransactionProperties: changed from func(map[string]string) TransactionOption to func(map[string]string) *TransactionPropertiesOption
+lance: WithWriteCommitLock: removed
+lance: WithWriteSession: removed
+lance: WithWriteStorageOptions: removed
+lance: WithWriteStorageOptionsAccessor: removed
+lance: WithWriteTransactionProperties: removed
+lance: WriteOption: changed from func(*writeConfig) error to interface{applyWrite(*writeConfig) error}
