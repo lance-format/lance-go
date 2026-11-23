@@ -1358,17 +1358,64 @@ not with `==` or message strings. `ErrCommitConflict` also covers conflicting
 tag and branch operations.
 
 The `namespace` package has its own error code space. Namespace operations
-return `*namespace.NamespaceError` for native namespace failures,
-`*namespace.NativeError` for other native failures, `namespace.ErrClosed` for a
-closed handle, and `*namespace.ProtocolError` for malformed requests or
-responses. Use `namespace.IsNotFound` for the family of not-found codes. Code
-zero is `namespace.ErrorCodeUnsupported` and is still an error; never treat a
-zero code as success.
+return `*namespace.Error` for native namespace failures, `*namespace.NativeError`
+for other native failures, `namespace.ErrClosed` for a closed handle, and
+`*namespace.ProtocolError` for malformed requests or responses.
+`namespace.NamespaceError` and `namespace.NamespaceErrorCode` remain as
+deprecated aliases that name the same types, so existing `errors.As` targets
+and composite literals keep working. The reflected type name is `Error`
+(`reflect.Type.Name()`), `%T` prints `namespace.Error` (`*namespace.Error` for
+pointers), and `reflect.Type.PkgPath()` stays
+`github.com/lance-format/lance-go/namespace`; the aliases cannot restore the
+old reflected spelling.
 
-Root dataset operations that use a namespace wrap those failures into
-`*lance.Error` and the matching root sentinel, retaining the namespace code and
-message in the text. Handle namespace failures with `errors.As` before falling
-back to the root sentinel.
+`namespace.ErrorCode.String()` returns the native Lance Namespace name, and
+`namespace.Error` prints the code space, the name and the operation:
+
+```text
+namespace describe_table: namespace error TableNotFound: table users not found
+```
+
+Codes added by a newer native library keep their numeric value, as in
+`ErrorCode(99)`, and stay available through the `Code` field. `NativeError`
+prints its code as the `lance-c` enumerator, such as `LANCE_ERR_NOT_FOUND`, so
+the two code spaces never look alike. A `NativeError` carries a `lance-c` code,
+not a namespace code; match it with `errors.As` and compare `Code`. Use
+`errors.As` to recover the operation, the exact code and the native message:
+
+```go
+var namespaceErr *namespace.Error
+if errors.As(err, &namespaceErr) {
+    fmt.Println(namespaceErr.Operation, namespaceErr.Code, namespaceErr.Message)
+}
+```
+
+`errors.Is` matches a category sentinel: `namespace.ErrNotFound`,
+`ErrAlreadyExists`, `ErrInvalidInput`, `ErrPermissionDenied`,
+`ErrUnauthenticated`, `ErrConflict`, `ErrUnsupported`, `ErrThrottled`,
+`ErrUnavailable` and `ErrInternal`. The categories follow the native code
+meaning, and each code keeps its exact value. `namespace.IsNotFound`
+is shorthand for `errors.Is(err, namespace.ErrNotFound)` and includes
+`namespace.ErrorCodeTableColumnNotFound`, which the pinned native
+implementation reports as not found. Code zero is
+`namespace.ErrorCodeUnsupported` and is still an error; never treat a zero code
+as success.
+
+Root dataset operations that use a namespace, `OpenFromNamespace`,
+`WriteToNamespace` and `CommitTransactionToNamespace`, do not preserve the
+typed namespace failure: the pinned `lance-c` entry points lose the original
+`*namespace.Error`, so namespace sentinels never match a root error and the
+namespace code cannot be recovered from the root error.
+
+The root code depends on the native failure route. In the tested case,
+`OpenFromNamespace` on a directory namespace with a missing table returns
+`*lance.Error` with `CodeInternal` (`ErrInternal`). Other routes report other
+codes: creation through a managed manifest can verify a create-table-version
+conflict and return `CodeAlreadyExists` (`LANCE_ERR_DATASET_ALREADY_EXISTS`).
+Do not infer the namespace code from the root `Code` or by parsing the message
+text; call the `namespace` API directly when you need the namespace code and
+category. Preserving the typed code on the root C entry points is a `lance-c`
+prerequisite.
 
 ## Context cancellation
 

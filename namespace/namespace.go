@@ -9,6 +9,11 @@
 // call itself is synchronous and cannot be cancelled once it has started.
 // A nil request sends an empty JSON object. Operations that return data also
 // expose the raw Arrow IPC payload when the native protocol carries one.
+//
+// Namespace failures and non-namespace native failures use distinct error types
+// and code spaces. Error carries a namespace ErrorCode, prints its name and
+// matches category sentinels through errors.Is; NativeError carries a lance-c
+// code and is not classified into those categories.
 package namespace
 
 import (

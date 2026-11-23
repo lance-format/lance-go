@@ -244,7 +244,8 @@ func TestNativeCustomNamespaceTypedErrors(t *testing.T) {
 		name     string
 		response *namespace.DescribeTableResponse
 		err      error
-		code     namespace.NamespaceErrorCode
+		code     namespace.ErrorCode
+		category error
 		message  string
 	}{
 		{
@@ -252,48 +253,56 @@ func TestNativeCustomNamespaceTypedErrors(t *testing.T) {
 			response: &namespace.DescribeTableResponse{Location: ptr("must-not-be-used")},
 			err:      &namespace.CustomClientError{Code: namespace.CustomClientErrorNotFound, Message: "missing table"},
 			code:     namespace.ErrorCodeTableNotFound,
+			category: namespace.ErrNotFound,
 			message:  "missing table",
 		},
 		{
-			name:    "wrapped conflict",
-			err:     fmt.Errorf("remote: %w", &namespace.CustomClientError{Code: namespace.CustomClientErrorConflict, Message: "version changed"}),
-			code:    namespace.ErrorCodeConcurrentModification,
-			message: "version changed",
+			name:     "wrapped conflict",
+			err:      fmt.Errorf("remote: %w", &namespace.CustomClientError{Code: namespace.CustomClientErrorConflict, Message: "version changed"}),
+			code:     namespace.ErrorCodeConcurrentModification,
+			category: namespace.ErrConflict,
+			message:  "version changed",
 		},
 		{
-			name:    "already exists",
-			err:     &namespace.CustomClientError{Code: namespace.CustomClientErrorAlreadyExists, Message: "table exists"},
-			code:    namespace.ErrorCodeTableAlreadyExists,
-			message: "table exists",
+			name:     "already exists",
+			err:      &namespace.CustomClientError{Code: namespace.CustomClientErrorAlreadyExists, Message: "table exists"},
+			code:     namespace.ErrorCodeTableAlreadyExists,
+			category: namespace.ErrAlreadyExists,
+			message:  "table exists",
 		},
 		{
-			name:    "invalid input",
-			err:     &namespace.CustomClientError{Code: namespace.CustomClientErrorInvalidInput, Message: "bad request"},
-			code:    namespace.ErrorCodeInvalidInput,
-			message: "bad request",
+			name:     "invalid input",
+			err:      &namespace.CustomClientError{Code: namespace.CustomClientErrorInvalidInput, Message: "bad request"},
+			code:     namespace.ErrorCodeInvalidInput,
+			category: namespace.ErrInvalidInput,
+			message:  "bad request",
 		},
 		{
-			name:    "unsupported",
-			err:     &namespace.CustomClientError{Code: namespace.CustomClientErrorUnsupported, Message: "not implemented"},
-			code:    namespace.ErrorCodeUnsupported,
-			message: "not implemented",
+			name:     "unsupported",
+			err:      &namespace.CustomClientError{Code: namespace.CustomClientErrorUnsupported, Message: "not implemented"},
+			code:     namespace.ErrorCodeUnsupported,
+			category: namespace.ErrUnsupported,
+			message:  "not implemented",
 		},
 		{
-			name:    "io becomes internal",
-			err:     &namespace.CustomClientError{Code: namespace.CustomClientErrorIO, Message: "backend unavailable"},
-			code:    namespace.ErrorCodeInternal,
-			message: "backend unavailable",
+			name:     "io becomes internal",
+			err:      &namespace.CustomClientError{Code: namespace.CustomClientErrorIO, Message: "backend unavailable"},
+			code:     namespace.ErrorCodeInternal,
+			category: namespace.ErrInternal,
+			message:  "backend unavailable",
 		},
 		{
-			name:    "generic error",
-			err:     errors.New("backend exploded"),
-			code:    namespace.ErrorCodeInternal,
-			message: "backend exploded",
+			name:     "generic error",
+			err:      errors.New("backend exploded"),
+			code:     namespace.ErrorCodeInternal,
+			category: namespace.ErrInternal,
+			message:  "backend exploded",
 		},
 		{
-			name:    "nil response",
-			code:    namespace.ErrorCodeInternal,
-			message: "nil response",
+			name:     "nil response",
+			code:     namespace.ErrorCodeInternal,
+			category: namespace.ErrInternal,
+			message:  "nil response",
 		},
 	}
 	for _, test := range cases {
@@ -303,12 +312,15 @@ func TestNativeCustomNamespaceTypedErrors(t *testing.T) {
 			}}
 			ns := newCustomNamespace(t, client, "custom-errors")
 			_, err := ns.DescribeTable(ctx, &namespace.DescribeTableRequest{ID: &tableID})
-			var namespaceErr *namespace.NamespaceError
+			var namespaceErr *namespace.Error
 			if !errors.As(err, &namespaceErr) {
-				t.Fatalf("error type = %T (%v), want *namespace.NamespaceError", err, err)
+				t.Fatalf("error type = %T (%v), want *namespace.Error", err, err)
 			}
 			if namespaceErr.Code != test.code {
 				t.Fatalf("code = %d, want %d (message %q)", namespaceErr.Code, test.code, namespaceErr.Message)
+			}
+			if !errors.Is(err, test.category) {
+				t.Fatalf("errors.Is(%v) = false, want true for code %s", test.category, namespaceErr.Code)
 			}
 			if !strings.Contains(namespaceErr.Message, test.message) {
 				t.Fatalf("message = %q, want substring %q", namespaceErr.Message, test.message)
@@ -324,9 +336,12 @@ func TestNativeCustomNamespacePanicBecomesInternalError(t *testing.T) {
 	ns := newCustomNamespace(t, client, "custom-panic")
 	tableID := []string{"custom_events"}
 	_, err := ns.DescribeTable(context.Background(), &namespace.DescribeTableRequest{ID: &tableID})
-	var namespaceErr *namespace.NamespaceError
+	var namespaceErr *namespace.Error
 	if !errors.As(err, &namespaceErr) || namespaceErr.Code != namespace.ErrorCodeInternal {
 		t.Fatalf("DescribeTable = %v, want Internal", err)
+	}
+	if !errors.Is(err, namespace.ErrInternal) {
+		t.Fatalf("DescribeTable = %v, want namespace internal category", err)
 	}
 	if !strings.Contains(namespaceErr.Message, "custom backend panic") {
 		t.Fatalf("message = %q, want panic text", namespaceErr.Message)
@@ -652,5 +667,37 @@ func TestNativeCustomNamespaceManagedDataset(t *testing.T) {
 	}
 	if ids := scanManagedIDs(t, ctx, afterDelete); len(ids) != 3 || ids[0] != 2 || ids[2] != 4 {
 		t.Fatalf("ids after delete = %v, want [2 3 4]", ids)
+	}
+}
+
+func TestNativeCustomNamespaceRootErrorLosesTypedCode(t *testing.T) {
+	client := &customClient{describeTable: func(*namespace.DescribeTableRequest) (*namespace.DescribeTableResponse, error) {
+		return nil, &namespace.CustomClientError{Code: namespace.CustomClientErrorNotFound, Message: "missing root table"}
+	}}
+	ns := newCustomNamespace(t, client, "custom-root-errors")
+	ctx := context.Background()
+	tableID := []string{"missing"}
+
+	_, directErr := ns.DescribeTable(ctx, &namespace.DescribeTableRequest{ID: &tableID})
+	var namespaceErr *namespace.Error
+	if !errors.As(directErr, &namespaceErr) || namespaceErr.Code != namespace.ErrorCodeTableNotFound {
+		t.Fatalf("DescribeTable = %v, want *namespace.Error TableNotFound", directErr)
+	}
+	if !errors.Is(directErr, namespace.ErrNotFound) {
+		t.Fatalf("DescribeTable = %v, want namespace not found", directErr)
+	}
+
+	// The pinned lance-c dataset-open entry point reports the custom namespace
+	// failure on the generic TLS channel, so the root error has no typed code.
+	_, rootErr := lance.OpenFromNamespace(ctx, ns, tableID)
+	var lanceErr *lance.Error
+	if !errors.As(rootErr, &lanceErr) || lanceErr.Code != lance.CodeInternal {
+		t.Fatalf("OpenFromNamespace = %v, want *lance.Error CodeInternal", rootErr)
+	}
+	if errors.Is(rootErr, lance.ErrNotFound) || errors.Is(rootErr, namespace.ErrNotFound) || namespace.IsNotFound(rootErr) {
+		t.Fatalf("OpenFromNamespace matched not found: %v", rootErr)
+	}
+	if errors.As(rootErr, &namespaceErr) {
+		t.Fatalf("OpenFromNamespace preserved *namespace.Error: %v", rootErr)
 	}
 }

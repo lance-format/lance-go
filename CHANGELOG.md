@@ -14,6 +14,23 @@ notes.
 `v0.3.0` is the next minor release. It raises the module minimum to Go 1.26 and
 collects the minor-release API changes. No `v0.3.0` tag exists yet.
 
+### Added
+
+- `namespace.ErrorCode.String()` returns the native Lance Namespace name for
+  every pinned code, and `namespace.Error` prints that name with the operation
+  and code space, for example
+  `namespace describe_table: namespace error TableNotFound: table users not found`.
+  `namespace.NativeError` prints its `lance-c` enumerator, for example
+  `namespace open: native error LANCE_ERR_NOT_FOUND: dataset not found`, so the
+  two code spaces stay distinguishable. A code added by a newer native library
+  keeps its numeric value as `ErrorCode(N)` and stays available through `Code`.
+- `namespace.Error.Unwrap()` exposes category sentinels, so `errors.Is` works
+  without unpacking the value: `ErrNotFound`, `ErrAlreadyExists`,
+  `ErrInvalidInput`, `ErrPermissionDenied`, `ErrUnauthenticated`, `ErrConflict`,
+  `ErrUnsupported`, `ErrThrottled`, `ErrUnavailable` and `ErrInternal`. The
+  categories follow the native namespace code meaning, and every code keeps its
+  exact value for `errors.As`.
+
 ### Changed
 
 - `StorageOptionsAccessor.Close()` now returns an `error` and implements
@@ -42,6 +59,19 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   tools now live in the nested `internal/tools` module. Code that imported
   `github.com/ulikunitz/xz` only through the root module's graph must require it
   directly.
+- `namespace.Error` and `namespace.ErrorCode` are the canonical type names.
+  `namespace.NamespaceError` and `namespace.NamespaceErrorCode` remain as
+  deprecated aliases naming the same types, so existing `errors.As` targets,
+  composite literals and struct fields keep compiling. The reflected type name
+  is `Error`: `reflect.Type.Name()` returns `Error`, `%T` prints
+  `namespace.Error` (`*namespace.Error` for pointers), and
+  `reflect.Type.PkgPath()` stays `github.com/lance-format/lance-go/namespace`.
+  The aliases cannot restore the old reflected name.
+- Direct namespace calls name the code space and the code instead of printing
+  two different integers with the same `native error %d` format:
+  `namespace describe_table: namespace error TableNotFound: ...` for
+  `*namespace.Error`, and the `lance-c` enumerator for `*namespace.NativeError`.
+  Root namespace operations keep the native route's error; see below.
 
 ### Fixed
 
@@ -58,6 +88,19 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   `ErrInvalidArgument` for a nil provider, and
   `file.NewStorageOptionsFromAccessor` does the same for a nil accessor. A
   non-nil zero accessor is returned unchanged and behaves as already closed.
+- Direct namespace calls classify column-not-found as not found. The pinned
+  native implementation reports `TableColumnNotFound` (12) in the not-found
+  group, and `lance-c` maps it to `LANCE_ERR_NOT_FOUND`. `namespace.IsNotFound`
+  now returns true for code 12 and the error matches `namespace.ErrNotFound`;
+  in `v0.2.0` `IsNotFound` returned false and `namespace.ErrNotFound` did not
+  exist yet.
+- Root namespace operations are unchanged. `OpenFromNamespace` on a missing
+  table returns `*lance.Error` with `CodeInternal` (`ErrInternal`) in the
+  tested case; the root code depends on the native failure route, and creation
+  through a managed manifest can report `CodeAlreadyExists`
+  (`DatasetAlreadyExists`) after native conflict verification. In every route
+  the original `*namespace.Error` is unavailable, so namespace sentinels do not
+  match. This change does not infer a category from native message text.
 
 ### Migration from v0.2.0
 
@@ -88,6 +131,45 @@ collects the minor-release API changes. No `v0.3.0` tag exists yet.
   explicit; keep that distinction. Closing the accessor does not invalidate
   native readers, writers or sessions that already opened, and the provider
   stays caller-owned.
+- `namespace.ErrorCodeTableColumnNotFound` (12) now classifies as not found in
+  the `namespace` package: `namespace.IsNotFound` returns true and the error
+  matches `namespace.ErrNotFound`. In `v0.2.0` `IsNotFound` returned false and
+  `namespace.ErrNotFound` did not exist yet. Root namespace operations do not
+  observe this code at the pinned native library.
+- `namespace.Error` and `namespace.ErrorCode` are the canonical type names.
+  `namespace.NamespaceError` and `namespace.NamespaceErrorCode` are deprecated
+  aliases of the same types, so `errors.As` targets, composite literals and
+  struct fields keep compiling. The reflected name changes even when the old
+  spelling is used: `reflect.Type.Name()` returns `Error`, `%T` prints
+  `namespace.Error` (or `*namespace.Error`), and `reflect.Type.PkgPath()`
+  stays `github.com/lance-format/lance-go/namespace`. `go doc` indexes the
+  canonical names.
+- Namespace diagnostics for direct `namespace` calls name the code space and
+  the code. Compare with `errors.Is`/`errors.As`; the text is informational and
+  the root namespace path does not include a structured code name.
+- Namespace classification differs by layer. Direct `namespace` calls return
+  `*namespace.Error`, so `errors.As` into that type and `errors.Is` against the
+  namespace sentinels work there. Root namespace operations return
+  `*lance.Error` whose root code depends on the native failure route (the
+  tested missing-table `OpenFromNamespace` reports `CodeInternal`, while a
+  verified managed-manifest creation conflict can report `CodeAlreadyExists`)
+  and never expose the namespace value or code. Call the `namespace` API
+  directly when you need namespace-specific classification. Preserving the
+  typed code on the root C entry points is a `lance-c` prerequisite; do not
+  infer a category by parsing the native message text.
+- Code that already used `errors.As` to read `Operation`, `Code` and `Message`
+  from a direct namespace call needs no source change and can match categories
+  instead of switching over codes:
+
+```go
+var namespaceErr *namespace.Error
+if errors.As(err, &namespaceErr) {
+    fmt.Println(namespaceErr.Operation, namespaceErr.Code, namespaceErr.Message)
+}
+if errors.Is(err, namespace.ErrNotFound) {
+    // Covers the not-found codes, including TableColumnNotFound (12).
+}
+```
 
 ## [v0.2.0] - 2026-11-23
 
