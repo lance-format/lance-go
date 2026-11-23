@@ -61,6 +61,16 @@ func FuzzRecordBatchRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("ImportRecordBatch: %v", err)
 		}
+		defer func() {
+			imported.Release()
+			if t.Failed() {
+				return
+			}
+			if got := handle.Len(); got != before {
+				t.Errorf("round trip left %d exporter handles registered, want %d", got, before)
+			}
+		}()
+
 		if got, want := imported.NumRows(), batch.NumRows(); got != want {
 			t.Errorf("imported rows = %d, want %d", got, want)
 		}
@@ -69,11 +79,6 @@ func FuzzRecordBatchRoundTrip(f *testing.F) {
 		}
 		for i := 0; i < int(batch.NumCols()); i++ {
 			assertFuzzColumnEqual(t, batch.Schema().Field(i).Name, batch.Column(i), imported.Column(i))
-		}
-
-		imported.Release()
-		if got := handle.Len(); got != before {
-			t.Errorf("round trip left %d exporter handles registered, want %d", got, before)
 		}
 	})
 }
