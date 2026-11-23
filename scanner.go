@@ -316,12 +316,31 @@ func (r *scannerReader) Next() bool {
 		return false
 	}
 	r.nextMu.Lock()
-	defer r.nextMu.Unlock()
+	batch, done, err := r.pollNext()
+	r.nextMu.Unlock()
 
+	if err != nil {
+		return false
+	}
+	if done {
+		// Statistics callbacks run here, after end-of-stream state and both
+		// reader locks are released, so a callback may use this reader again.
+		r.scanner.notifyStatistics()
+		return false
+	}
+	return batch != nil
+}
+
+// pollNext performs one native poll. The caller owns nextMu. This method
+// acquires mu only for state transitions and never holds it across the native
+// call, so Release can close the scanner and wake a blocked poll. It reports
+// done instead of notifying statistics so the caller can run user callbacks
+// with nextMu released as well as mu.
+func (r *scannerReader) pollNext() (batch arrow.RecordBatch, done bool, err error) {
 	r.mu.Lock()
 	if r.released || r.done || r.err != nil {
 		r.mu.Unlock()
-		return false
+		return nil, false, nil
 	}
 	if r.current != nil {
 		r.current.Release()
@@ -329,33 +348,27 @@ func (r *scannerReader) Next() bool {
 	}
 	r.mu.Unlock()
 
-	batch, done, err := r.source.Next(r.ctx)
+	batch, done, err = r.source.Next(r.ctx)
 
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if err != nil {
 		r.err = r.scanner.scanError(err)
 		r.done = true
+		return nil, false, r.err
 	}
 	if r.released {
-		r.mu.Unlock()
 		if batch != nil {
 			batch.Release()
 		}
-		return false
-	}
-	if err != nil {
-		r.mu.Unlock()
-		return false
+		return nil, false, nil
 	}
 	if done {
 		r.done = true
-		r.mu.Unlock()
-		r.scanner.notifyStatistics()
-		return false
+		return nil, true, nil
 	}
 	r.current = batch
-	r.mu.Unlock()
-	return true
+	return batch, false, nil
 }
 
 func (r *scannerReader) RecordBatch() arrow.RecordBatch {

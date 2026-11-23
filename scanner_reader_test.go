@@ -3,14 +3,18 @@ package lance
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/lance-format/lance-go/internal/ffi"
+	"github.com/lance-format/lance-go/internal/loader"
 )
 
 // blockingScannerSource parks Next inside the native poll until Close is
@@ -143,5 +147,77 @@ func waitFor(t *testing.T, done <-chan struct{}, message string) {
 	case <-done:
 	case <-time.After(10 * time.Second):
 		t.Fatal(message)
+	}
+}
+
+func TestScannerReaderStatisticsCallbackCanReenterNext(t *testing.T) {
+	if _, err := loader.Load(); err != nil {
+		if errors.Is(err, loader.ErrNotFound) {
+			t.Skipf("lance-c is not available: %v", err)
+		}
+		t.Fatalf("load lance-c: %v", err)
+	}
+
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64, Nullable: false},
+	}, nil)
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	builder.Field(0).(*array.Int64Builder).Append(1)
+	record := builder.NewRecordBatch()
+	builder.Release()
+	source, err := array.NewRecordReader(schema, []arrow.RecordBatch{record})
+	if err != nil {
+		record.Release()
+		t.Fatalf("NewRecordReader: %v", err)
+	}
+	record.Release()
+
+	ctx := context.Background()
+	dataset, err := Create(ctx, filepath.Join(t.TempDir(), "data.lance"), source)
+	source.Release()
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	defer dataset.Close()
+
+	var reader *scannerReader
+	callbackRan := false
+	scanner, err := dataset.Scan(WithScanStatistics(func(ScanStatistics) {
+		callbackRan = true
+		if !reader.nextMu.TryLock() {
+			t.Error("statistics callback ran while nextMu was held")
+			return
+		}
+		reader.nextMu.Unlock()
+		if !reader.mu.TryLock() {
+			t.Error("statistics callback ran while mu was held")
+			return
+		}
+		reader.mu.Unlock()
+		if reader.Next() {
+			t.Error("Next from the statistics callback returned true")
+		}
+	}))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	recordReader, err := scanner.ToArrowReader(ctx)
+	if err != nil {
+		t.Fatalf("ToArrowReader: %v", err)
+	}
+	reader = recordReader.(*scannerReader)
+	defer recordReader.Release()
+
+	if !reader.Next() {
+		t.Fatalf("first Next = false: %v", reader.Err())
+	}
+	if reader.Next() {
+		t.Fatal("second Next = true, want end of stream")
+	}
+	if !callbackRan {
+		t.Fatal("statistics callback did not run at end of stream")
+	}
+	if err := reader.Err(); err != nil {
+		t.Fatalf("Err = %v, want nil", err)
 	}
 }
