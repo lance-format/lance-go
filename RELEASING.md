@@ -39,10 +39,13 @@ identity and cold runtime behavior. Static module publication is performed by
 `.github/workflows/publish-go-module-origin.yml`; use
 [scripts/go-module-origin/README.md](scripts/go-module-origin/README.md) for
 the exact identity and publication procedure. That workflow and its identity
-are pinned to the recorded `v0.2.0-preview.1` publication. A later native
-version requires new pinned candidate runs, a new reviewed identity file and
-updated workflow inputs; record results for the exact release candidate rather
-than copying an earlier status table.
+are pinned to the reviewed publication selected in its `ORIGIN_*` inputs. Before
+dispatch, confirm `ORIGIN_VERSION`, `ORIGIN_SOURCE_COMMIT`,
+`ORIGIN_SOURCE_RELEASE`, `ORIGIN_MANIFEST_SHA256`, the run IDs and the matching
+`scripts/go-module-origin/<version>.identity.json`. `v0.2.0-preview.1` remains
+the first recorded example. A later native version requires new pinned candidate
+runs, a new reviewed identity file and updated workflow inputs; record results
+for the exact release candidate rather than copying an earlier status table.
 
 ## Release units and order
 
@@ -435,8 +438,11 @@ formats or move the payload outside the module contract.
 
 Publish through the CI workflow
 `.github/workflows/publish-go-module-origin.yml` on authorized `main`, with the
-fixed first-release identity and `publish=true`. The staging job downloads the
-pinned same-repo candidate artifacts, verifies the identity manifest, regenerates
+reviewed workflow-selected identity and `publish=true`. Before dispatch,
+confirm the workflow's `ORIGIN_*` values and run IDs match the reviewed identity
+and candidate runs; do not assume the first-release values. The staging job
+downloads the pinned same-repo candidate artifacts, verifies the identity
+manifest, regenerates
 the origin, checks the exact manifest SHA-256, and uploads the staging tree. The
 protected `go-module-origin` publish job receives that exact tree and publishes
 only manifest-validated bytes. The local publisher procedure is documented in
