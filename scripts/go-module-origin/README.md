@@ -19,13 +19,15 @@ The discovery object contains `go-import` metadata with
 `go.lance.org/liblance/<target> mod https://go.lance.org/modules`. The query
 string is ignored by the static object; no Worker is required.
 
-The repository records the `v0.2.0-preview.1.identity.json` publication:
-version/time, SDK source commit, upstream `lance-c` release, workflow runs,
-candidate hashes, module h1 values, and the staged manifest SHA-256.
-`verify-candidate-identity.py` compares candidate files with a supplied identity
-file; it does not discover a new one. A later native version needs a new reviewed
-identity file from its hosted candidate runs and updated publish-workflow
-inputs; the recorded file does not describe later versions.
+The repository records each publication in
+`scripts/go-module-origin/<artifact-version>.identity.json`; the publish
+workflow inputs pin the active one. `v0.2.0-preview.1.identity.json` was the
+first recorded publication: version/time, SDK source commit, upstream `lance-c`
+release, workflow runs, candidate hashes, module h1 values, and the staged
+manifest SHA-256. `verify-candidate-identity.py` compares candidate files with a
+supplied identity file; it does not discover a new one. A later native version
+needs a new reviewed identity file from its hosted candidate runs and updated
+publish-workflow inputs; an identity file does not describe later versions.
 
 ## Local generation
 
@@ -64,12 +66,12 @@ Verify locally:
 ORIGIN_DIR=$OUT_DIR scripts/test-go-module-origin.sh
 ```
 
-This checks the Go module protocol, local HTTP discovery, the recorded
-`v0.2.0-preview.1` version, the five recorded library hashes, and the SDK
-roundtrip with `CGO_ENABLED=0` and no `LANCE_LIB_PATH`. The version and hash
-assertions are fixed to that publication; a later native version requires a
-reviewed update to this test, the identity file and the workflow inputs before
-the origin can be accepted.
+This checks the Go module protocol, local HTTP discovery, the version and
+library hashes pinned by the active workflow/identity, and the SDK roundtrip
+with `CGO_ENABLED=0` and no `LANCE_LIB_PATH`. The version and hash assertions are
+fixed to that active publication; a later native version requires a reviewed
+update to this test, the identity file and the workflow inputs before the origin
+can be accepted.
 
 ## Publisher
 
@@ -109,15 +111,14 @@ publish: true
 All other release inputs are fixed in the workflow and identity file. The
 workflow inputs (`ORIGIN_VERSION`, `ORIGIN_TIME`, `ORIGIN_SOURCE_COMMIT`,
 `ORIGIN_SOURCE_RELEASE`, `ORIGIN_MANIFEST_SHA256`, `UNIX_RUN_ID`,
-`WINDOWS_RUN_ID`) and the identity file describe the recorded
-`v0.2.0-preview.1` publication. The workflow checks out `main`, so its generator
-is whatever main contains at dispatch; the recorded manifest came from the
-publication-time generator (`9f3ba53`, go 1.23.0). A later native version
-requires a new reviewed identity file, new pinned candidate runs, updated inputs
-and a generator whose Go floor is the reviewed one; there is no generic publish
-path that discovers them. Do not dispatch the publisher, merge the PR, adopt
-modules, or create the root tag until the leader has reviewed and authorized it.
-The real R2 acceptance probe is performed after the handoff.
+`WINDOWS_RUN_ID`) and the identity file pin the active publication. The workflow
+checks out `main`, so its generator is whatever main contains at dispatch; the
+identity file and manifest hash pin the result. A later native version requires
+a new reviewed identity file, new pinned candidate runs, updated inputs and a
+generator whose Go floor is the reviewed one; there is no generic publish path
+that discovers them. Do not dispatch the publisher, merge the PR, adopt modules,
+or create the root tag until the leader has reviewed and authorized it. The real
+R2 acceptance probe is performed after the handoff.
 
 `.github/workflows/go-module-origin-checks.yml` runs generator unit tests,
 shell/Python syntax checks, and a local mock publisher test on PRs. It does not

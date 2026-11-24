@@ -384,19 +384,19 @@ scripts/build-go-module-origin.sh
 ORIGIN_DIR="$ORIGIN_OUT" scripts/test-go-module-origin.sh
 ```
 
-`scripts/build-go-module-origin.sh` defaults to the recorded
-`v0.2.0-preview.1` publication. `verify-candidate-identity.py` validates the
-recorded hosted candidate bytes against
-`scripts/go-module-origin/v0.2.0-preview.1.identity.json`
-(`SOURCE_COMMIT` records the candidate source commit, not the generator). The
-generator comes from the checkout you run: `v0.2.0-preview.1` reproduces, with
-the recorded manifest hash, from `9f3ba53` (go 1.23.0), while current main writes
-go 1.26.0 and produces a different manifest. A later native version needs a
+`scripts/build-go-module-origin.sh` defaults to the first recorded
+`v0.2.0-preview.1` publication. The repository records each publication in
+`scripts/go-module-origin/<artifact-version>.identity.json`; the publish
+workflow inputs pin the active one. `verify-candidate-identity.py` validates the
+hosted candidate bytes against the matching identity file (`SOURCE_COMMIT`
+records the candidate source commit, not the generator). The recorded
+`v0.2.0-preview.1` manifest was produced at `9f3ba53` (go 1.23.0); reproducing it
+from current main produces a different manifest, and the active publication's
+manifest is the one pinned in the workflow. A later native version needs a
 generator whose Go floor is the reviewed one, a new identity file from its
 hosted candidate runs, updated publish-workflow inputs, and a matching update
-to `test-go-module-origin.sh` (fixed to the recorded version and hashes). The
-current workflow is pinned to the recorded publication and is not a generic
-publisher.
+to `test-go-module-origin.sh` (fixed to the active version and hashes). The
+current workflow pins the active publication and is not a generic publisher.
 
 The generated module path, target, library name, compressed and uncompressed
 sizes and hashes, native commit, and header hash must match the build record.
