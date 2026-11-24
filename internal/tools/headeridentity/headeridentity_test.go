@@ -54,7 +54,7 @@ func TestScanIncludesTypeOnlyHeadersAndIgnoresHPP(t *testing.T) {
 	}
 }
 
-func TestScanRequiresUmbrellaAndIgnoresSubdirectories(t *testing.T) {
+func TestScanRequiresUmbrellaAndIgnoresDetailTree(t *testing.T) {
 	dir := t.TempDir()
 	writeHeader(t, dir, "error.h", "int lance_last_error_code(void);\n")
 	if _, err := Scan(dir); err == nil || !strings.Contains(err.Error(), "does not contain include/lance/lance.h") {
@@ -77,6 +77,14 @@ func TestScanRequiresUmbrellaAndIgnoresSubdirectories(t *testing.T) {
 		if strings.Contains(file.Path, "detail/") {
 			t.Fatalf("Scan included an implementation header: %s", file.Path)
 		}
+	}
+
+	dir = fixtureHeaders(t)
+	if err := os.Mkdir(filepath.Join(dir, "nested"), 0o755); err != nil {
+		t.Fatalf("create nested directory: %v", err)
+	}
+	if _, err := Scan(dir); err == nil || !strings.Contains(err.Error(), "unexpected directory") {
+		t.Fatalf("Scan with an unexpected directory error = %v", err)
 	}
 }
 

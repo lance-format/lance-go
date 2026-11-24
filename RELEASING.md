@@ -7,22 +7,24 @@ tag or publish.
 
 The native packages are published as ordinary Go modules at
 `go.lance.org/liblance/<target>@<artifact-version>`, not as Git tags, from an
-official `lance-c` release. The adopted native repository, commit, tag and
-canonical header SHA-256 are recorded in `internal/ffi/upstream.go`. All five
-active selectors and root requirements use those static module versions. The
-five release archives and checksums were verified, each module payload
+official `lance-c` release. `internal/ffi/upstream.go` is the native source pin;
+the companion module versions required in `go.mod` are a separate, SDK-selected
+immutable origin distribution, and a source pin bump does not name them. All
+five active selectors and root requirements use those static module versions.
+The five release archives and checksums were verified, each module payload
 decompresses byte-for-byte to the official archive library, and every module
 resolves through the public proxy and checksum database. Accepted exact-version
-evidence belongs to the release record. The adopted identities are in
-`internal/ffi/upstream.go`, `go.mod`, the generated `artifact.go` and the
-identity manifests; [docs/native-packages.md](docs/native-packages.md) describes
-the module design and validation.
+evidence belongs to the release record. The source pin and the selected
+companion identities are in `internal/ffi/upstream.go`, `go.mod`, the generated
+`artifact.go` and the identity manifests;
+[docs/native-packages.md](docs/native-packages.md) describes the module design
+and validation.
 
 Intel macOS is retired and has no module or selector. Each new tag still
 requires its own post-tag runs. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against the
-adopted pin; it does not claim commercial namespace-service or
+source pin; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
 for the claimed target. They must not claim completion of issue #1; the broader
 RTree/raw v2.2 official-core work remains outside this release.
@@ -136,11 +138,13 @@ because approved deltas predate the new tag.
 
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
 header hash. `upstreamRelease` is informational; it does not prove that a
-release archive, tag, and commit contain the same header. The adopted pin is the
-annotated `v0.2.1-beta.3` tag, peeled to
+release archive, tag, and commit contain the same header. The recorded
+`v0.2.0-preview.1` publication used the annotated `v0.2.1-beta.3` tag, peeled to
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`, with canonical header
-`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. Do not
-substitute another release archive for that pin. The selected `Cargo.toml`
+`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. For a new
+pin, the constants in `internal/ffi/upstream.go` are authoritative; the values
+above remain the historical v0.2.0-preview.1 example. Do not substitute another
+release archive for the pin you are verifying. The selected `Cargo.toml`
 declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`, `ci.yml`, and
 `unix-native.yml` reject older Rust toolchains before building.
 
@@ -225,9 +229,10 @@ independent composite identity through `-expected-header-identity`,
 `-expected-header-manifest`, or the optional `upstreamHeaderIdentitySHA256` pin
 constant. It also compares the library with `UncompressedSHA256` in the artifact
 module that this target's generated selector imports, resolved through the Go
-proxy and checksum database. After a pin bump the adopted modules still describe
-the previous commit, so that independent check is inactive until new modules are
-published and adopted; candidate packaging proceeds from the acquired bytes.
+proxy and checksum database. After a source pin bump the selected companion modules still
+describe the previous commit, so that independent check is inactive until new
+modules are published and adopted; candidate packaging proceeds from the
+acquired bytes.
 Release archives are already stripped, so pass the library directly to the
 generator in step 3. Build from source only when the pin has no matching release
 archive.
@@ -313,7 +318,7 @@ native export.
 The official `linux/amd64` and `linux/arm64` release packages are generic
 glibc 2.28 builds. The macOS package uses deployment target 11.0 and is tested
 on macOS 15.x hosts. The other supported targets use their own bundles; their
-accepted hosts and adopted payload facts are listed in
+accepted hosts and recorded payload facts are listed in
 [docs/native-packages.md](docs/native-packages.md). Older glibc/macOS floors and
 musl
 compatibility have not been established beyond the recorded package floors.
@@ -416,7 +421,8 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The adopted `linux/amd64` payload is 88,580,128 bytes compressed and 345,989,752
+The recorded `v0.2.0-preview.1` `linux/amd64` payload is 88,580,128 bytes
+compressed and 345,989,752
 bytes uncompressed; exact hashes are recorded in the generated `artifact.go` and
 the release notes. The published module ZIP is
 87,897,705 bytes and `scripts/verify-quickstart.sh` pins it separately. The raw
@@ -633,7 +639,7 @@ platform:         target, ABI/runtime/race/default/external results, floor and d
 gaps:             untested targets and storage paths
 ```
 
-The adopted `linux/amd64` package, native
+The recorded `v0.2.0-preview.1` `linux/amd64` package, native
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`, header
 `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`, payload
 `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and

@@ -44,9 +44,9 @@ type File struct {
 
 // Scan reads every regular *.h file directly under dir and returns the sorted
 // manifest entries. Paths use the include/lance/<name> form. Non-.h files,
-// including lance.hpp, are ignored. Subdirectories, such as the C++ detail/
-// tree, are outside the public C identity and are ignored as well; the public
-// C headers stay flat.
+// including lance.hpp, are ignored. The known C++ detail/ tree is outside the
+// public C identity and is ignored; any other subdirectory is rejected because
+// the public C headers stay flat.
 func Scan(dir string) ([]File, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -69,9 +69,13 @@ func Scan(dir string) ([]File, error) {
 			return nil, fmt.Errorf("inspect %s: %w", full, err)
 		}
 		if entryInfo.IsDir() {
-			// The C++ detail/ tree ships beside the flat C headers and is
-			// outside the public C identity.
-			continue
+			if name == "detail" {
+				// The C++ detail/ tree ships beside the flat C headers and
+				// is outside the public C identity. Any other directory is
+				// unexpected.
+				continue
+			}
+			return nil, fmt.Errorf("unexpected directory %s in the header set; public C headers must be files directly under %s", full, Dir)
 		}
 		if !entryInfo.Mode().IsRegular() {
 			return nil, fmt.Errorf("header %s is not a regular file", full)
