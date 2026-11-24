@@ -4,15 +4,15 @@ Notable user-facing changes to `lance-go`, the pure-Go Lance SDK that reads,
 writes and searches Lance datasets through the `lance-c` C ABI with
 `CGO_ENABLED=0`. Each release records the exact native bundle it carries: the
 `lance-c` release, its upstream commit, the canonical header hash and the
-per-target library checksums. Versions follow Semantic Versioning; within
-`0.2.x`, patch releases preserve source compatibility for published Go APIs,
+per-target library checksums. Versions follow Semantic Versioning; within a
+minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
-## [v0.3.0] - Unreleased
+## [v0.3.0] - 2026-11-24
 
-`v0.3.0` is the next minor release. It raises the module minimum to Go 1.26 and
-collects the minor-release API changes. No `v0.3.0` tag exists yet.
+`v0.3.0` is the stable minor release. It raises the module minimum to Go 1.26
+and collects the minor-release API changes.
 
 ### Added
 

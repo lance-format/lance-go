@@ -2,8 +2,9 @@
 
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
-This guide describes the `main` branch and the public Go APIs it contains. The
-latest stable tag is `v0.2.0`, which bundles `lance-c v0.2.1-beta.3`.
+This guide describes the `main` branch and the public Go APIs it contains.
+Each release's notes and [native packages](native-packages.md) record its
+exact native chain.
 
 Signatures, option fields, defaults and error contracts are documented on the
 symbols themselves, so this guide does not repeat them. The
@@ -927,9 +928,9 @@ materializes every blob column as binary payloads, while
 `BlobHandlingAllDescriptions` returns descriptors for every column carrying
 blob metadata. `file.Session.OpenPackedBlobWriter` and
 `file.Session.OpenDedicatedBlobWriter` write blob payload files and return
-prepared descriptors through `FinishArray`. The current default bundle
-supports raw v2.2 Blob reads, including projection and nested descriptors; the
-native reader remains authoritative for descriptor and projection semantics.
+prepared descriptors through `FinishArray`. The bundled native library supports
+raw v2.2 Blob reads, including projection and nested descriptors; the native
+reader remains authoritative for descriptor and projection semantics.
 
 ## Scalar indexes
 
@@ -939,15 +940,15 @@ plugin JSON; nil keeps native defaults. Use the returned dataset or reopen the
 source to query the new index; the receiver keeps its current version.
 
 RTree (`index.ScalarRTree`, native value 9) indexes a GeoArrow geometry
-column; the current SDK coverage exercises LineString. Its optional plugin
+column; the SDK coverage exercises LineString. Its optional plugin
 parameter is `page_size`; native code supplies the default and rejects values
 below 2. Filters use native geometry predicates, and native code owns candidate
 generation and exact intersection checks.
 
-The Go API and the native library are versioned separately. The current
-release bundles an RTree-capable native library, so the example below runs on
-the default bundle. Use an explicit RTree-capable `LANCE_LIB_PATH` library only
-when testing an older SDK or library. The README and the [native package
+The Go API and the native library are versioned separately. The bundled native
+library is RTree-capable, so the example below runs on the default bundle. Use
+an explicit RTree-capable `LANCE_LIB_PATH` library only when testing an older
+SDK or library. The README and the [native package
 record](native-packages.md) identify the exact native pin for the installed Go
 tag.
 
@@ -1120,10 +1121,10 @@ column name to restrict the query to that column. `NewFTSPhraseQuery`,
 reference to the query, so closing the query after attaching it does not affect
 the scan.
 
-On `main`, the FTS query constructors return `*lance.Error` matching
-`ErrInvalidArgument` for invalid arguments, including embedded NUL bytes,
-invalid operators and nil or closed subqueries. This typed-error normalization
-applies to every current release.
+The FTS query constructors return `*lance.Error` matching `ErrInvalidArgument`
+for invalid arguments, including embedded NUL bytes, invalid operators and nil
+or closed subqueries. This typed-error normalization is part of the public
+error contract.
 
 FTS and vector scans project `_score` or `_distance` automatically, even when a
 column projection is explicit. Call `WithoutScoringAutoprojection()` to disable

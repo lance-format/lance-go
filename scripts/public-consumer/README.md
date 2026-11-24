@@ -18,10 +18,11 @@ resolving a PR head through the proxy.
 
 ## Local invocation
 
-Run on the matching native host from the repository checkout:
+Run on the matching native host from the repository checkout. Set
+`ROOT_VERSION` to the published release tag:
 
 ```sh
-ROOT_REVISION=v0.2.0 \
+ROOT_REVISION="$ROOT_VERSION" \
 SOURCE_COMMIT=<optional-full-sha> \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \

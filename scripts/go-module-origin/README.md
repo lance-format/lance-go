@@ -19,9 +19,8 @@ The discovery object contains `go-import` metadata with
 `go.lance.org/liblance/<target> mod https://go.lance.org/modules`. The query
 string is ignored by the static object; no Worker is required.
 
-The first release inputs are pinned in
-`v0.2.0-preview.1.identity.json`: version/time, beta.3 source commit, Unix run
-`45123576018`, Windows run `45123578876`, candidate hashes, module h1 values,
+Each release's identity file (`<artifact-version>.identity.json`) pins
+version/time, source commit, workflow runs, candidate hashes, module h1 values,
 and the staged manifest SHA-256. Workflow publication uses these fixed values
 until a reviewed identity file replaces them.
 
@@ -30,11 +29,12 @@ until a reviewed identity file replaces them.
 Normalize the exact hosted extraction trees with `stage-candidates.sh` (Unix artifacts have `module/` at the artifact root; Windows artifacts have `<target>/module/`), then:
 
 ```sh
+: "${ARTIFACT_VERSION:?set to the candidate module version}"
 scripts/go-module-origin/stage-candidates.sh /path/to/downloads /path/to/candidates
 python3 scripts/go-module-origin/verify-candidate-identity.py \
-  scripts/go-module-origin/v0.2.0-preview.1.identity.json /path/to/candidates
+  "scripts/go-module-origin/${ARTIFACT_VERSION}.identity.json" /path/to/candidates
 CANDIDATES_DIR=/path/to/candidates \
-OUT_DIR=$HOME/Code/experiments/lance-go-module-origin/v0.2.0-preview.1 \
+OUT_DIR=$HOME/Code/experiments/lance-go-module-origin/$ARTIFACT_VERSION \
 scripts/build-go-module-origin.sh
 ```
 

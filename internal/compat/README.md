@@ -61,18 +61,19 @@ than changing that result's provenance.
 Run the suite on a host with all four toolchains. Do not run it on the Adam
 static-inspection host.
 
-- Go 1.26 or newer, with the repository's existing Arrow v18.4.1 dependency.
+- The Go minimum declared in `go.mod`, with the repository's existing Arrow
+  v18.4.1 dependency.
 - Python 3.10 or newer.
 - Java 11 or newer and Maven. Pass `--add-opens=java.base/java.nio=ALL-UNNAMED`
   to the JVM as shown below; Arrow requires access to direct buffers on JDK 17.
 - Rust 1.96.1 (the acceptance toolchain), with the lance core git revision above
   available to Cargo. The committed lockfile requires at least Rust 1.95;
   the core crate's lower MSRV alone does not satisfy this dependency graph.
-- The native library paired with the tested SDK revision. The current pin is
+- The native library paired with the tested SDK revision. The recorded pin is
   `lance-c v0.2.1-beta.3`, commit `a800fd5f28636bfff34778e3ad6663f3cf099a38`,
   header `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`;
   verify the selected library hash against [the native package
-  record](../docs/native-packages.md). Historical compatibility results do not
+  record](../../docs/native-packages.md). Historical compatibility results do not
   establish execution against a different library.
 
 ### Python

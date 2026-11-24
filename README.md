@@ -6,15 +6,11 @@ Arrow record batches. The package calls into Lance through the
 binary is built with `CGO_ENABLED=0`: no C toolchain, Rust toolchain or system
 Lance installation is needed to build or run a program that uses it.
 
-The current stable release is `v0.2.0`. It carries the official prebuilt
-`lance-c v0.2.1-beta.3` libraries, built against Lance `15.0.0-beta.28`, for
-Linux amd64 and arm64, macOS arm64, and Windows amd64 and arm64. Applications
-need Go 1.23 or newer.
-
-The development branch prepares `v0.3.0`, which requires Go 1.26 or newer. No
-`v0.3.0` release exists yet, so keep installing `v0.2.0` until it does. See
-[Go version support](#go-version-support) for the supported Go versions and
-the `v0.3.0` minimum.
+The module requires the Go minimum declared in [`go.mod`](go.mod) and carries
+official prebuilt `lance-c` libraries for Linux amd64 and arm64, macOS arm64,
+and Windows amd64 and arm64. Each release's notes record the exact native
+chain; [`docs/native-packages.md`](docs/native-packages.md) records the adopted
+pins and payload identity.
 
 ## What you can do
 
@@ -31,7 +27,7 @@ search, full-text search, mutations and versions, cloud storage and namespaces.
 ## Install
 
 ```sh
-go get github.com/lance-format/lance-go@v0.2.0
+go get github.com/lance-format/lance-go@latest
 ```
 
 ```go
@@ -47,7 +43,7 @@ so it needs neither a repository checkout nor a local installation of Lance.
 Run the bundled example straight from the published module:
 
 ```console
-$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@v0.2.0
+$ CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@latest
 Created, reopened and scanned 3 rows: [10 20 30]
 ```
 
@@ -131,11 +127,11 @@ after use.
 ## How the native library is delivered
 
 A default build compiles in one data-only Go module for its target. Those
-modules are published as ordinary Go modules at `go.lance.org/liblance/<target>`
-version `v0.2.0-preview.1`, not as Git tags, so the public Go proxy and checksum
-database pin the payload bytes that a build embeds. The first native call
-verifies the payload, extracts the shared library into a private per-user cache,
-verifies the extracted bytes, and loads them.
+modules are published as ordinary Go modules at `go.lance.org/liblance/<target>`,
+not as Git tags, so the public Go proxy and checksum database pin the payload
+bytes that a build embeds. The first native call verifies the payload, extracts
+the shared library into a private per-user cache, verifies the extracted bytes,
+and loads them.
 
 `LANCE_LIB_PATH` takes precedence over the bundle and is the only candidate when
 it is set. A build with `-tags lance_external_lib` excludes the payload and uses
@@ -176,19 +172,23 @@ and point `LANCE_LIB_PATH` at it. Build the application with
 Because `LANCE_LIB_PATH` is checked first, no extraction or cache write happens
 at runtime.
 
-For `v0.2.0` on `linux/amd64`, extract the published module payload:
+For `linux/amd64`, extract the native module payload for the release you are
+deploying. Set `ARTIFACT_VERSION` to the native module version recorded in that
+release's notes:
 
 ```console
+$ : "${ARTIFACT_VERSION:?set to the native module version in the release notes}"
 $ module=go.lance.org/liblance/linux-amd64
-$ version=v0.2.0-preview.1
-$ go mod download "$module@$version"
-$ src="$(go env GOMODCACHE)/$module@$version/liblance_c.so.zst"
+$ go mod download "$module@$ARTIFACT_VERSION"
+$ src="$(go env GOMODCACHE)/$module@$ARTIFACT_VERSION/liblance_c.so.zst"
 $ install -d -m 0755 /opt/lance-go
 $ zstd -d "$src" -o /opt/lance-go/liblance_c.so
 $ chmod 0555 /opt/lance-go/liblance_c.so
 $ sha256sum /opt/lance-go/liblance_c.so
-011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece  /opt/lance-go/liblance_c.so
 ```
+
+Compare the printed SHA-256 with the uncompressed library hash in that
+release's notes.
 
 Build the application without the embedded payload and run it against the
 extracted library:
@@ -198,17 +198,17 @@ $ CGO_ENABLED=0 go build -tags lance_external_lib -o app .
 $ LANCE_LIB_PATH=/opt/lance-go/liblance_c.so ./app
 ```
 
-The tag spelling is `lance_external_lib` (underscores). The staged file is the
-official `lance-c v0.2.1-beta.3` library for that target; do not mix libraries
+The tag spelling is `lance_external_lib` (underscores). The staged file must be
+the official `lance-c` library for that target and release; do not mix libraries
 from different SDK releases.
 
-The compressed payloads are 78.1–100.0 MB; the uncompressed libraries are
-291.5–405.4 MB. A default build embeds the payload for its own target and writes
-the uncompressed library to the cache on first use. An external build embeds
-nothing, but the staged library still occupies its uncompressed size in the
-image. The tag does not remove the artifact module from `go.mod`, so
-module-graph commands such as `go mod tidy` may still download the artifact
-archives.
+The exact compressed and uncompressed sizes and hashes are recorded in
+[docs/native-packages.md](docs/native-packages.md) and each release's notes. A
+default build embeds the payload for its own target and writes the uncompressed
+library to the cache on first use. An external build embeds nothing, but the
+staged library still occupies its uncompressed size in the image. The tag does
+not remove the artifact module from `go.mod`, so module-graph commands such as
+`go mod tidy` may still download the artifact archives.
 
 ### Cache behavior
 
@@ -229,24 +229,13 @@ shown above.
 
 ## Stability and compatibility
 
-`v0.2.0` is the current stable release of the 0.x line. It adds `Dataset.URI()`
-and declares `Session`, `CacheStats`, `StorageOptionsProvider`,
-`ForceStorageOptionsProvider` and `StorageOptionsAccessor` directly in the root
-`lance` package, so `go doc` and pkg.go.dev index their methods, fields and
-interface signatures. Source that names these types keeps compiling, but their
-reflection identity moves from `internal/session` and `internal/accessor` to the
-root package. Other published 0.1 Go APIs keep source compatibility. The earlier
-pre-releases keep their own published versions and release notes.
-
-The development branch prepares `v0.3.0`, which raises the module minimum to
-Go 1.26 and carries further minor-release changes. It is not tagged yet;
-`v0.2.0` stays published and installable with Go 1.23 until it is.
-
-The package follows Semantic Versioning for `v0.x`: `0.2.x` patch releases
-preserve source compatibility for published Go APIs, and necessary breaking
-changes move to the next minor release with migration notes. Each release
-records the `lance-c` release, native commit, canonical header hash and
-per-target library checksums it carries.
+The SDK follows Semantic Versioning for `v0.x`: within a minor line, patch
+releases preserve source compatibility for published Go APIs, and breaking
+changes move to a new minor release with migration notes. Each release records
+the `lance-c` release, native commit, canonical header hash and per-target
+library checksums it carries. See the [changelog](CHANGELOG.md) and
+[GitHub releases](https://github.com/lance-format/lance-go/releases) for the
+history and the migrations that apply to the version you use.
 
 The historical cross-language compatibility record covers Lance storage 2.1
 reads and appends across Go, Python, Java and Rust on Linux amd64. It was
@@ -255,21 +244,14 @@ pin only; see the [suite record](internal/compat/README.md#accepted-execution).
 
 ### Go version support
 
-`v0.3.0` requires Go 1.26 or newer. That minimum is the supported and tested
-floor: CI runs Go 1.26 and the current stable release, Go 1.27, on Linux and
-Windows, and the native and release lanes run the floor with
-`GOTOOLCHAIN=local`. Earlier Go releases are outside the tested set. `v0.2.0`
-keeps its published `go 1.23.0` directive and builds with Go 1.23 or newer.
-
-The `go` directive in `go.mod` enforces the minimum. With `GOTOOLCHAIN=local`,
-an older toolchain stops with `go.mod requires go >= 1.26.0`; with the default
-`GOTOOLCHAIN=auto`, Go downloads a toolchain that satisfies the directive
-instead.
-
-A future minimum change is a separate minor-release decision. It does not follow
-an automatic schedule from the upstream release calendar, and the release that
-makes it records the new floor in its migration notes. Patch releases do not
-change the minimum.
+The module's minimum is the `go` directive in [`go.mod`](go.mod) (currently
+`go 1.26.0`). CI runs that minimum and the `stable` Go channel on Linux
+and Windows, and the native and release lanes run the floor with
+`GOTOOLCHAIN=local`. The `go` directive is the enforced minimum: with
+`GOTOOLCHAIN=local`, an older toolchain stops with `go.mod requires go >= ...`;
+with the default `GOTOOLCHAIN=auto`, Go downloads a toolchain that satisfies the
+directive instead. Any change to the minimum is recorded in that release's
+migration notes.
 
 ## Troubleshooting
 
@@ -280,8 +262,8 @@ change the minimum.
 
 ## Documentation
 
-- [Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go@v0.2.0) and [usage guide](docs/api-guide.md) for scans, mutations, search and dataset maintenance.
+- [Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go) and [usage guide](docs/api-guide.md) for scans, mutations, search and dataset maintenance.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
 - [Native packages](docs/native-packages.md) for module versions, payload identity, platform scope and validation.
-- [Changelog](CHANGELOG.md) for user-facing changes by release.
+- [Changelog](CHANGELOG.md) and [GitHub releases](https://github.com/lance-format/lance-go/releases) for user-facing changes and the native chain by release.
 - [Development and testing](docs/development.md) and [release process](RELEASING.md) for contributors.
