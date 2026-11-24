@@ -3,8 +3,9 @@
 See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
 
 This guide describes the `main` branch and the public Go APIs it contains.
-Each release's notes and [native packages](native-packages.md) record its
-exact native chain.
+Each release's notes record its exact native chain; the checkout's `go.mod`,
+`internal/ffi/upstream.go` and generated artifact metadata are authoritative for
+that checkout.
 
 Signatures, option fields, defaults and error contracts are documented on the
 symbols themselves, so this guide does not repeat them. The
@@ -948,9 +949,9 @@ generation and exact intersection checks.
 The Go API and the native library are versioned separately. The bundled native
 library is RTree-capable, so the example below runs on the default bundle. Use
 an explicit RTree-capable `LANCE_LIB_PATH` library only when testing an older
-SDK or library. The README and the [native package
-record](native-packages.md) identify the exact native pin for the installed Go
-tag.
+SDK or library. The release notes and the checkout's `go.mod`,
+`internal/ffi/upstream.go` and generated artifact metadata identify the exact
+native pin for the installed Go tag.
 
 ```go
 indexed, err := ds.CreateScalarIndex(ctx, "geometry", index.ScalarRTree,
@@ -968,9 +969,9 @@ scan, err := indexed.Scan(
 RTree uses the generic scalar-index ABI. A native library that predates RTree
 still loads, but rejects the type with a native error. Scalar-index symbol
 presence is not proof that enum value 9 is supported; the SDK neither emulates
-RTree nor substitutes a different index. The README and the [native package
-record](native-packages.md) state the exact native requirement for the installed
-release.
+RTree nor substitutes a different index. The release notes and the checkout's
+`go.mod`, `internal/ffi/upstream.go` and generated artifact metadata state the
+exact native requirement for the installed release.
 
 ## Vector search
 

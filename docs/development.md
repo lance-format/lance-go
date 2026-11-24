@@ -264,8 +264,8 @@ CRT modules before and after native operations. On windows/amd64 it also runs
 the full external-tag suite with `-race`; the Go race detector has no
 windows/arm64 support, so that lane is recorded as unsupported rather than
 skipped. The CI workflow does not publish modules; published Windows modules and
-their cold public consumers are recorded in [native
-packages](../docs/native-packages.md).
+their cold public consumers are recorded in the release notes, and [native
+packages](../docs/native-packages.md) describes the validation lanes.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,

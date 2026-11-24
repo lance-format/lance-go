@@ -9,8 +9,9 @@ Lance installation is needed to build or run a program that uses it.
 The module requires the Go minimum declared in [`go.mod`](go.mod) and carries
 official prebuilt `lance-c` libraries for Linux amd64 and arm64, macOS arm64,
 and Windows amd64 and arm64. Each release's notes record the exact native
-chain; [`docs/native-packages.md`](docs/native-packages.md) records the adopted
-pins and payload identity.
+chain; [`docs/native-packages.md`](docs/native-packages.md) describes the module
+design and validation, while `go.mod`, `internal/ffi/upstream.go`, the generated
+artifact modules and each release's notes carry the exact values.
 
 ## What you can do
 
@@ -141,9 +142,10 @@ The loader itself never uses the network. Module downloads happen while Go
 resolves the build, so building from a warm module cache and running the
 resulting binary need no network access.
 
-[docs/native-packages.md](docs/native-packages.md) records the module version,
-payload sizes and checksums, native commit and canonical header for every
-target, together with the validation lanes that accept them.
+[docs/native-packages.md](docs/native-packages.md) describes the module design
+and the validation lanes that accept them; the exact versions, sizes, checksums,
+commit and header are in `go.mod`, `internal/ffi/upstream.go`, each generated
+artifact module and the release notes.
 
 ## Supported targets
 
@@ -160,8 +162,8 @@ search.
 
 RTree indices and raw storage 2.2 Blob reads work with the bundled library. The
 [API guide](docs/api-guide.md) describes their support boundaries, and
-[native packages](docs/native-packages.md) records the exact native pin and
-which lanes run those regressions.
+[native packages](docs/native-packages.md) describes the lanes that run those
+regressions.
 
 ## Read-only or no-cache deployment
 
@@ -202,8 +204,8 @@ The tag spelling is `lance_external_lib` (underscores). The staged file must be
 the official `lance-c` library for that target and release; do not mix libraries
 from different SDK releases.
 
-The exact compressed and uncompressed sizes and hashes are recorded in
-[docs/native-packages.md](docs/native-packages.md) and each release's notes. A
+The exact compressed and uncompressed sizes and hashes are recorded in each
+module's generated `artifact.go` and the release notes. A
 default build embeds the payload for its own target and writes the uncompressed
 library to the cache on first use. An external build embeds nothing, but the
 staged library still occupies its uncompressed size in the image. The tag does
@@ -264,6 +266,6 @@ migration notes.
 
 - [Go API reference](https://pkg.go.dev/github.com/lance-format/lance-go) and [usage guide](docs/api-guide.md) for scans, mutations, search and dataset maintenance.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
-- [Native packages](docs/native-packages.md) for module versions, payload identity, platform scope and validation.
+- [Native packages](docs/native-packages.md) for module design, platform scope and validation.
 - [Changelog](CHANGELOG.md) and [GitHub releases](https://github.com/lance-format/lance-go/releases) for user-facing changes and the native chain by release.
 - [Development and testing](docs/development.md) and [release process](RELEASING.md) for contributors.

@@ -9,9 +9,9 @@ loader actually mapped.
 
 The Windows modules are `go.lance.org/liblance/windows-<arch>` at the immutable
 companion module version recorded in the root `go.mod`; their native commit and
-header are recorded in [docs/native-packages.md](../../docs/native-packages.md).
-Each payload decompresses byte-for-byte to the matching official archive DLL;
-public acceptance is recorded against its release tag.
+header are recorded in [internal/ffi/upstream.go](../../internal/ffi/upstream.go)
+and the release notes. Each payload decompresses byte-for-byte to the matching
+official archive DLL; public acceptance is recorded against its release tag.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for

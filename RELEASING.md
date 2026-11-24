@@ -8,15 +8,15 @@ tag or publish.
 The native packages are published as ordinary Go modules at
 `go.lance.org/liblance/<target>@<artifact-version>`, not as Git tags, from an
 official `lance-c` release. The adopted native repository, commit, tag and
-canonical header SHA-256 are recorded in `internal/ffi/upstream.go` and
-[docs/native-packages.md](docs/native-packages.md). All five active selectors
-and root requirements use those static module versions. The five release
-archives and checksums were verified, each module payload decompresses
-byte-for-byte to the official archive library, and every module resolves
-through the public proxy and checksum database. Accepted exact-version evidence
-belongs to the release record, and
-[docs/native-packages.md](docs/native-packages.md) records the adopted
-identities.
+canonical header SHA-256 are recorded in `internal/ffi/upstream.go`. All five
+active selectors and root requirements use those static module versions. The
+five release archives and checksums were verified, each module payload
+decompresses byte-for-byte to the official archive library, and every module
+resolves through the public proxy and checksum database. Accepted exact-version
+evidence belongs to the release record. The adopted identities are in
+`internal/ffi/upstream.go`, `go.mod`, the generated `artifact.go` and the
+identity manifests; [docs/native-packages.md](docs/native-packages.md) describes
+the module design and validation.
 
 Intel macOS is retired and has no module or selector. Each new tag still
 requires its own post-tag runs. Real AWS S3 refresh passed in both
@@ -74,24 +74,31 @@ REPO_ROOT=$(pwd)
 ## Documentation handoff
 
 Version-specific consumer documentation belongs to the same release handoff as
-the root version and native input. Do not derive it from an unversioned `main`
-checkout or publish it before the exact modules exist. Update together:
+the root version and native input, but its durable home is the immutable GitHub
+release notes and the tag-pinned `CHANGELOG.md`. Evergreen docs must not repeat
+the current release's tag, native chain, sizes or hashes. Do not derive the
+release notes from an unversioned `main` checkout or publish them before the
+exact modules exist.
 
-- README install command, quickstart tag, native release and Lance version
-  sentence, supported target table, and the read-only deployment recipe's
-  module, version and library hash;
-- [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
-  boundaries. Keep the exact native mapping in the README, the
-  [native package record](docs/native-packages.md) and the release record, not
-  duplicated in the guide;
-- [`docs/development.md`](docs/development.md) "Building liblance_c" Rust
-  requirement and matching native build guards, "Pinned ABI" reproducible
-  command, and the "Testing" section's RTree command;
-- [`docs/native-packages.md`](docs/native-packages.md) module versions, payload
-  sizes and hashes, native pin, platform scope and validation states;
+- README and [`docs/api-guide.md`](docs/api-guide.md): evergreen install and
+  quickstart (`@latest`), the unversioned pkg.go.dev reference, and links to the
+  release notes and changelog. Do not add a release tag, native release
+  sentence, exact native mapping or library hash to the README or guide; those
+  live in the release notes, changelog, `go.mod`, `internal/ffi/upstream.go`
+  and the generated artifact metadata.
+- [`docs/development.md`](docs/development.md): the "Building liblance_c" Rust
+  requirement and matching native build guards, the "Pinned ABI" reproducible
+  command, and the "Testing" section's RTree command when those contracts
+  change.
+- [`docs/native-packages.md`](docs/native-packages.md): module architecture,
+  target and runtime scope, formats and validation lanes. Point to the release
+  notes, changelog, `go.mod`, `internal/ffi/upstream.go`, generated
+  `artifact.go` and identity manifests for checkout-specific values; do not
+  duplicate their versions or hashes.
 - `scripts/verify-quickstart.sh` version, module and version pins, published
   module archive size, and expected library size and SHA-256. Keep the module
-  archive size separate from the compressed native payload.
+  archive size separate from the compressed native payload. These are
+  functional test pins, not user-facing documentation.
 - Go version declarations when the supported minimum changes: `go.mod`, the Go
   matrices in `.github/workflows/ci.yml` and `windows.yml`, the artifact module
   generators, the public-consumer toolchain assertions, and the version support
@@ -377,8 +384,8 @@ do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
 The adopted `linux/amd64` payload is 88,580,128 bytes compressed and 345,989,752
-bytes uncompressed; exact hashes are recorded in
-[docs/native-packages.md](docs/native-packages.md). The published module ZIP is
+bytes uncompressed; exact hashes are recorded in the generated `artifact.go` and
+the release notes. The published module ZIP is
 87,897,705 bytes and `scripts/verify-quickstart.sh` pins it separately. The raw
 library is never committed. GitHub rejects ordinary Git blobs over 100 MiB, and
 warns above 50 MiB; static module publications do not add Git blobs, but the
@@ -460,9 +467,10 @@ fi
 
 The command should produce no matches. Also confirm there is no `replace`
 directive for the root or artifact module, and that `go.sum` contains the
-recorded `Sum` and `GoModSum`. Update
-[docs/native-packages.md](docs/native-packages.md) with the same target, payload
-sizes and hashes, native commit, header hash, and published requirement.
+recorded `Sum` and `GoModSum`. Do not duplicate the target, payload sizes and
+hashes, native commit, header hash and published requirement in
+`docs/native-packages.md`; the generated `artifact.go`,
+`internal/ffi/upstream.go` and the release notes carry them.
 
 Commit and push the activation commit, then verify that exact head with the
 checkout/local-source mode below. Before the root tag exists, do not try to
@@ -598,8 +606,8 @@ The adopted `linux/amd64` package, native
 `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and
 uncompressed library
 `011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are
-recorded in [docs/native-packages.md](docs/native-packages.md) together with
-the published module path and version. Published versions, payload sizes,
+recorded in `internal/ffi/upstream.go`, `go.mod`, the generated `artifact.go`,
+the identity manifest and the release notes. Published versions, payload sizes,
 hashes and accepted exact-version consumer runs are listed there and in the
 release evidence. The authorized root tag requires the gates above.
 
@@ -674,32 +682,64 @@ a fixed current release.
 Pre-tag:
 
 ```sh
-# Review every hit, including the intended machine pins and migration notes.
-grep -RnE 'v0\.[0-9]+\.[0-9]+|current stable|latest release|next (minor|release)|Unreleased' \
-  README.md docs RELEASING.md scripts/*/README.md examples/README.md
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+for path in README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md examples/README.md; do
+  test -e "$path" || { echo "missing documentation path: $path" >&2; exit 1; }
+done
+# Review every hit. Version-pinned machine records, historical migration notes
+# and this checklist may keep a number; install/quickstart references may not.
+grep -RnE 'v[0-9]+\.[0-9]+\.[0-9]+|current stable|latest release|next (minor|release)|Unreleased' \
+  README.md docs RELEASING.md scripts/*/README.md examples/README.md || true
 # Install and quickstart commands must use @latest.
-grep -RnE 'go (get|run) .*@v[0-9]' README.md docs/api-guide.md examples/README.md
+if grep -RnE 'go (get|run) .*@v[0-9]' README.md docs/api-guide.md examples/README.md; then
+  echo "documented install/quickstart uses a fixed release tag" >&2
+  exit 1
+fi
 # The documented minimum must match go.mod.
 grep -n '^go ' go.mod
 # The current release section must not still be marked Unreleased.
-grep -n 'Unreleased' CHANGELOG.md
+if grep -n 'Unreleased' CHANGELOG.md; then
+  echo "changelog still marks the current release Unreleased" >&2
+  exit 1
+fi
+# The local-source consumer path must still pass before the tag exists.
+CGO_ENABLED=0 LANCE_GO_QUICKSTART_SOURCE_DIR="$PWD" ./scripts/verify-quickstart.sh
 ```
 
 Post-publication:
 
 ```sh
-# @latest resolves to the new stable tag.
-GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-  go list -m github.com/lance-format/lance-go@latest
-# The documented quickstart runs from the public module and prints its expected output.
-CGO_ENABLED=0 GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-  go run github.com/lance-format/lance-go/examples/roundtrip@latest
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+: "${ROOT_VERSION:?set to the published release tag}"
+
+# Evergreen install: the documented commands resolve and run without a pin.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+(
+  cd "$work"
+  go mod init docs-check >/dev/null
+  go get github.com/lance-format/lance-go@latest
+  CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@latest
+)
+
+# Reproducible evidence: @latest resolves to the authorized tag and the exact
+# tag runs the same documented example.
+resolved=$(cd "$work" && go list -m -f '{{.Version}}' github.com/lance-format/lance-go@latest)
+test "$resolved" = "$ROOT_VERSION" || {
+  echo "@latest resolves to $resolved, want $ROOT_VERSION" >&2
+  exit 1
+}
+(cd "$work" && CGO_ENABLED=0 go run "github.com/lance-format/lance-go/examples/roundtrip@$ROOT_VERSION")
+
 # The unversioned package reference and release destinations resolve.
 curl -fsSI https://pkg.go.dev/github.com/lance-format/lance-go >/dev/null
 curl -fsSI https://github.com/lance-format/lance-go/releases >/dev/null
+curl -fsSI "https://github.com/lance-format/lance-go/blob/$ROOT_VERSION/CHANGELOG.md" >/dev/null
 ```
 
-Record the grep results, the resolved `@latest` version, the quickstart output,
+Record the grep results, the resolved `@latest` version, both roundtrip outputs,
 and the checked URLs in the release evidence. A fixed `@vX.Y.Z` install tag,
 "current stable" wording, a "next release" promise, or an `Unreleased` heading
 in user-facing docs fails the check.
