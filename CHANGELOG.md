@@ -9,7 +9,7 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
-## [v0.3.1-preview.1] - Unreleased
+## [v0.3.1-preview.1] - 2026-11-25
 
 `v0.3.1-preview.1` is a preview of the next 0.3.x release. It moves the bundled
 native library to `lance-c v0.2.1-beta.4` (annotated tag
