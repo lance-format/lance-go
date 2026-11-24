@@ -1197,7 +1197,15 @@ try {
 	$headerText = ($headerFiles | ForEach-Object { Get-Content -Raw -LiteralPath $_.FullName }) -join "`n"
 	$headerText = [regex]::Replace($headerText, "(?s)/\*.*?\*/", "")
 	$headerText = [regex]::Replace($headerText, "//[^\n]*", "")
+	# Declaration attributes precede the return type on the same line.
+	# LANCE_DEPRECATED carries a quoted message that may contain spaces and
+	# parentheses; strip the attributes before the line-anchored declaration
+	# match. The attributes are not part of the function signature.
+	$headerText = [regex]::Replace($headerText, 'LANCE_DEPRECATED\s*\(\s*"(?:[^"\\]|\\.)*"\s*\)', ' ')
+	$headerText = [regex]::Replace($headerText, '\bLANCE_NODISCARD\b', ' ')
+	$headerText = [regex]::Replace($headerText, '\bLANCE_API\b', ' ')
 	$headerPattern = "(?m)^[ \t]*(?!typedef\b|struct\b|enum\b|union\b|#)(?:[A-Za-z_][A-Za-z0-9_]*[ \t*]+)+?(lance_[A-Za-z0-9_]+)[ \t]*\("
+
 	$headerMatches = [regex]::Matches($headerText, $headerPattern)
 	$headerNames = @($headerMatches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
 	if ($headerNames.Count -eq 0) {
