@@ -99,12 +99,15 @@ jobs:
             echo "bundled public path test did not pass; it must not skip or use another library" >&2
             exit 1
           fi
-          cache_file="$cache_dir/lance-go/011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece/liblance_c.so"
+          # Pinned from the independently verified linux-amd64
+          # v0.3.1-preview.1 companion artifact, not from the extracted cache.
+          expected_sha256=b960378ec4392f094ce5eb5a0fc7e654d04abb7f9f2ce036c94cfa9da7c92f08
+          cache_file="$cache_dir/lance-go/$expected_sha256/liblance_c.so"
           if [[ ! -f "$cache_file" ]]; then
             echo "bundled library was not extracted to $cache_file" >&2
             exit 1
           fi
-          echo "011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece  $cache_file" | sha256sum -c -
+          echo "$expected_sha256  $cache_file" | sha256sum -c -
 
       - name: Verify local quickstart and read-only deployment
         if: matrix.go-version == '1.26.x'
