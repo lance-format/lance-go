@@ -369,7 +369,7 @@ func readRecord(path string) (string, error) {
 // readPin reads the provenance constants from internal/ffi/upstream.go.
 // upstreamHeaderIdentitySHA256 is optional and is used for a split header set.
 // acquiredHeaderSet is the verified public C header set extracted from one
-// release archive. split distinguishes the eight-header layout from a legacy
+// release archive. split distinguishes a multi-header layout from a legacy
 // archive that ships only include/lance/lance.h.
 type acquiredHeaderSet struct {
 	dir                 string

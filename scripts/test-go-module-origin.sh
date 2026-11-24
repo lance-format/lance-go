@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verify a generated origin tree with the real Go protocol, a local HTTP
-# discovery/proxy, the five official beta.3 library hashes, and the SDK
+# discovery/proxy, the five recorded library hashes, and the SDK
 # roundtrip.
 set -euo pipefail
 
@@ -14,14 +14,14 @@ import pathlib
 import sys
 manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert manifest["module_prefix"] == "go.lance.org/liblance", manifest["module_prefix"]
-assert manifest["version"] == "v0.2.0-preview.1", manifest["version"]
+assert manifest["version"] == "v0.3.1-preview.1", manifest["version"]
 objects = manifest["objects"]
 assert len(objects) == 25, len(objects)
 keys = {obj["key"] for obj in objects}
 for target in ("linux-amd64", "linux-arm64", "darwin-arm64", "windows-amd64", "windows-arm64"):
     assert f"liblance/{target}" in keys
     module = f"go.lance.org/liblance/{target}"
-    for suffix in ("list", "v0.2.0-preview.1.info", "v0.2.0-preview.1.mod", "v0.2.0-preview.1.zip"):
+    for suffix in ("list", "v0.3.1-preview.1.info", "v0.3.1-preview.1.mod", "v0.3.1-preview.1.zip"):
         assert f"modules/{module}/@v/{suffix}" in keys, (target, suffix)
 print("manifest keys: ok")
 PY
@@ -60,16 +60,16 @@ print(sys.argv[4], "file-proxy h1: ok")
 PY
 done < "$work/modules.tsv"
 
-# Verify the exact official beta.3 libraries from the ZIP payloads.
+# Verify the recorded library hashes from the ZIP payloads.
 declare -A library_sha=(
-  [linux-amd64]='011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece'
-  [linux-arm64]='752c5d8d8c90b873a4158b0001399b0460dccb0a7e19d7392131582e32daaa40'
-  [darwin-arm64]='1e1502fec5c7d7e02b02ab1ce2f28e3ade263faf8058076ac25178abe6263816'
-  [windows-amd64]='49544bd8d9d5bf2069a53cd3c43ccd0643a6a3767c2510058b13bc21ca2990d5'
-  [windows-arm64]='091179ddb272c47d426fe1a334c4059fc1c17072874dc600a7e6696509a243f8'
+  [linux-amd64]='b960378ec4392f094ce5eb5a0fc7e654d04abb7f9f2ce036c94cfa9da7c92f08'
+  [linux-arm64]='9094bfc27dca63b3cbd457f78833ec5ae4016a253e28c3eb014994234ba5f7cc'
+  [darwin-arm64]='580235babb62b5da85b17ea3cc51562ce68d96f180090ad2d8685ba46691ed06'
+  [windows-amd64]='c902ff0495a79d78ee83563d612410dff45142e33633609d9c3ed21da60b1bc9'
+  [windows-arm64]='d7fc1af022779a894960de843affdbab7b3104fba4a9e7e78ed53739f5ddd462'
 )
 for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
-  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.2.0-preview.1.zip"
+  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.3.1-preview.1.zip"
   payload=$(unzip -Z1 "$zip" | grep '\.zst$' | head -1)
   [[ -n $payload ]] || { echo "$target: no payload in zip" >&2; exit 1; }
   unzip -p "$zip" "$payload" > "$work/$target.zst"
@@ -87,16 +87,16 @@ sleep 1
 curl -fsS "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" > "$work/discovery.html"
 grep -F 'content="go.lance.org/liblance/linux-amd64 mod https://go.lance.org/modules"' "$work/discovery.html" >/dev/null
 curl -fsSI "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" | grep -qi '^Content-type: text/html'
-curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.2.0-preview.1' >/dev/null
+curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.3.1-preview.1' >/dev/null
 http_cache="$work/http-modcache"
 GOPROXY="http://127.0.0.1:18888/modules" GOSUMDB=off GOMODCACHE="$http_cache" GOCACHE="$work/http-gocache" \
-  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.2.0-preview.1" > "$work/http.json"
+  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.3.1-preview.1" > "$work/http.json"
 python3 - "$work/http.json" <<'PY'
 import json
 import sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert not data.get("Error"), data
-assert data["Sum"] == "h1:sgIOynaAxkn3GW2PTJyXY67hwt7OzJDowK4vg5LLapI=", data["Sum"]
+assert data["Sum"] == "h1:ZkFLYB5H4yXJY1EEAuhFnd5q54FKKLAo0m+zPx9UyFE=", data["Sum"]
 print("http proxy and discovery: ok")
 PY
 kill "$server_pid" 2>/dev/null || true

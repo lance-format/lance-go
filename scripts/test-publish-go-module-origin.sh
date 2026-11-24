@@ -26,6 +26,30 @@ export AWS_DEFAULT_REGION=auto
 export AWS_EC2_METADATA_DISABLED=true
 publish=( "$repo_root/scripts/publish-go-module-origin.sh" --bucket test-bucket --endpoint http://127.0.0.1:18790 )
 
+# Derive the immutable object and list identities from the manifest under test.
+read -r current_version test_version test_module test_target zip_key list_key < <(
+python3 - "$origin/manifest.json" <<'PY'
+import json
+import re
+import sys
+
+manifest = json.load(open(sys.argv[1], encoding="utf-8"))
+zips = [obj for obj in manifest["objects"] if obj["key"].endswith(".zip")]
+zip_obj = next((obj for obj in zips if obj.get("target") == "linux-amd64"), zips[0])
+version = zip_obj["version"]
+match = re.match(r"^(.*?)([0-9]+)$", version)
+test_version = match.group(1) + str(int(match.group(2)) + 1) if match else version + "-test"
+print("\t".join([
+    version,
+    test_version,
+    zip_obj["module"],
+    zip_obj["target"],
+    zip_obj["key"],
+    "modules/" + zip_obj["module"] + "/@v/list",
+]))
+PY
+)
+
 "${publish[@]}" --manifest "$origin/manifest.json" > "$work/first.log" 2>&1
 grep -F 'publication verified' "$work/first.log" >/dev/null
 first_puts=$(grep -c '^PUT ' "$log")
@@ -38,7 +62,6 @@ second_puts=$(grep -c '^PUT ' "$log")
 
 # Conflict: mutate an immutable object in the store. The publisher must abort
 # and must not overwrite it.
-zip_key="modules/go.lance.org/liblance/linux-amd64/@v/v0.2.0-preview.1.zip"
 zip_path="$store/$zip_key"
 printf 'conflict bytes\n' > "$zip_path"
 before_put=$(grep -c '^PUT ' "$log")
@@ -55,26 +78,28 @@ after_put=$(grep -c '^PUT ' "$log")
 # Restore the immutable object for the list-only merge test.
 cp "$origin/$zip_key" "$zip_path"
 
-list_key="modules/go.lance.org/liblance/linux-amd64/@v/list"
 list_prefix="$work/list-prefix"
-mkdir -p "$list_prefix/modules/go.lance.org/liblance/linux-amd64/@v"
-printf 'v0.2.0-preview.2\n' > "$list_prefix/$list_key"
-list_size=$(wc -c < "$list_prefix/$list_key" | tr -d ' ')
-list_hash=$(sha256sum "$list_prefix/$list_key" | awk '{print $1}')
-cat > "$list_prefix/manifest.json" <<EOF
+mkdir -p "$list_prefix/$(dirname "$list_key")"
+list_file="$list_prefix/$list_key"
+write_list_manifest() {
+  local version=$1 size hash
+  printf '%s\n' "$version" > "$list_file"
+  size=$(wc -c < "$list_file" | tr -d ' ')
+  hash=$(sha256sum "$list_file" | awk '{print $1}')
+  cat > "$list_prefix/manifest.json" <<EOF
 {
-  "version": "v0.2.0-preview.2",
+  "version": "$version",
   "module_prefix": "go.lance.org/liblance",
   "base_url": "https://go.lance.org",
   "objects": [
     {
       "key": "$list_key",
       "kind": "list",
-      "module": "go.lance.org/liblance/linux-amd64",
-      "version": "v0.2.0-preview.2",
-      "target": "linux-amd64",
-      "sha256": "$list_hash",
-      "size": $list_size,
+      "module": "$test_module",
+      "version": "$version",
+      "target": "$test_target",
+      "sha256": "$hash",
+      "size": $size,
       "content_type": "text/plain; charset=utf-8",
       "cache_control": "public, max-age=60",
       "immutable": false
@@ -82,6 +107,11 @@ cat > "$list_prefix/manifest.json" <<EOF
   ]
 }
 EOF
+}
+
+# Forward: a list containing the newer test version is merged with the store's
+# current version.
+write_list_manifest "$test_version"
 "${publish[@]}" --manifest "$list_prefix/manifest.json" > "$work/list-forward.log" 2>&1
 grep -F 'publication verified' "$work/list-forward.log" >/dev/null
 grep -E "PUT .*@v/list 200 .*if-match=\"" "$log" >/dev/null || {
@@ -89,57 +119,29 @@ grep -E "PUT .*@v/list 200 .*if-match=\"" "$log" >/dev/null || {
   exit 1
 }
 mapfile -t versions < <(cat "$store/$list_key")
-[[ ${versions[*]} == 'v0.2.0-preview.1 v0.2.0-preview.2' ]] || {
+[[ ${versions[*]} == "$current_version $test_version" ]] || {
   printf 'forward list merge: %s\n' "${versions[*]}" >&2
   exit 1
 }
 
-# Reversed order: a later manifest that only mentions the older version must
-# not remove the newer one.
-printf 'v0.2.0-preview.1\n' > "$list_prefix/$list_key"
-list_size=$(wc -c < "$list_prefix/$list_key" | tr -d ' ')
-list_hash=$(sha256sum "$list_prefix/$list_key" | awk '{print $1}')
-python3 - "$list_prefix/manifest.json" "$list_hash" "$list_size" <<'PY'
-import json
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["version"] = "v0.2.0-preview.1"
-data["objects"][0]["version"] = "v0.2.0-preview.1"
-data["objects"][0]["sha256"] = sys.argv[2]
-data["objects"][0]["size"] = int(sys.argv[3])
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+# Reverse: a manifest that only mentions the current version must not remove
+# the newer test version.
+write_list_manifest "$current_version"
 "${publish[@]}" --manifest "$list_prefix/manifest.json" > "$work/list-reverse.log" 2>&1
 grep -F 'publication verified' "$work/list-reverse.log" >/dev/null
 mapfile -t versions < <(cat "$store/$list_key")
-[[ ${versions[*]} == 'v0.2.0-preview.1 v0.2.0-preview.2' ]] || {
+[[ ${versions[*]} == "$current_version $test_version" ]] || {
   printf 'reverse list merge lost a version: %s\n' "${versions[*]}" >&2
   exit 1
 }
 
-# Replacement update: a later manifest that mentions only the newer version
-# must still leave both versions present.
-printf 'v0.2.0-preview.2\n' > "$list_prefix/$list_key"
-list_size=$(wc -c < "$list_prefix/$list_key" | tr -d ' ')
-list_hash=$(sha256sum "$list_prefix/$list_key" | awk '{print $1}')
-python3 - "$list_prefix/manifest.json" "$list_hash" "$list_size" <<'PY'
-import json
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-data = json.loads(path.read_text())
-data["version"] = "v0.2.0-preview.2"
-data["objects"][0]["version"] = "v0.2.0-preview.2"
-data["objects"][0]["sha256"] = sys.argv[2]
-data["objects"][0]["size"] = int(sys.argv[3])
-path.write_text(json.dumps(data, indent=2) + "\n")
-PY
+# Replacement: a manifest that only mentions the newer test version must still
+# leave the current version present.
+write_list_manifest "$test_version"
 "${publish[@]}" --manifest "$list_prefix/manifest.json" > "$work/list-replacement.log" 2>&1
 grep -F 'publication verified' "$work/list-replacement.log" >/dev/null
 mapfile -t versions < <(cat "$store/$list_key")
-[[ ${versions[*]} == 'v0.2.0-preview.1 v0.2.0-preview.2' ]] || {
+[[ ${versions[*]} == "$current_version $test_version" ]] || {
   printf 'replacement list merge lost a version: %s\n' "${versions[*]}" >&2
   exit 1
 }

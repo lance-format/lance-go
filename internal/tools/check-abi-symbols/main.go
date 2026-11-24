@@ -1,10 +1,16 @@
 // Command check-abi-symbols verifies the purego bindings in internal/ffi
 // against the lance-c C header from the commit pinned in that package.
 //
-// The header is not vendored. Export it from the pinned upstream checkout:
+// The header is not vendored. Export it from the pinned upstream checkout.
+// A split release needs the include/lance directory:
 //
 //	PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 //	test -n "$PINNED_COMMIT"
+//	git -C /path/to/lance-c archive "$PINNED_COMMIT" include/lance | tar -x
+//	LANCE_C_HEADER="$PWD/include/lance" go -C internal/tools run ./check-abi-symbols
+//
+// A legacy single-header release still works with the extracted lance.h:
+//
 //	git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
 //	LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
 //
@@ -117,6 +123,9 @@ func run(root string, input headerInput) error {
 	}
 
 	headerHint := fmt.Sprintf("git -C /path/to/lance-c show %s:include/lance/lance.h > lance.h", upstream.commit)
+	if upstream.headerIdentitySHA != "" {
+		headerHint = fmt.Sprintf("git -C /path/to/lance-c archive %s include/lance | tar -x; pass the include/lance directory with -header or LANCE_C_HEADER", upstream.commit)
+	}
 	if input.path == "" {
 		return fmt.Errorf("no header supplied; export the pinned header and pass it with -header or LANCE_C_HEADER:\n  %s", headerHint)
 	}
