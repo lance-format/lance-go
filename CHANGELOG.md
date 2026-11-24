@@ -9,6 +9,42 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.1-preview.1] - Unreleased
+
+`v0.3.1-preview.1` is a preview of the next 0.3.x release. It moves the bundled
+native library to `lance-c v0.2.1-beta.4` (annotated tag
+`557d3a864a91bd1930c0b39c093c2ca6a85f2c15`, peeled to
+`2f80f2aa0c7fdb955e8cdc799c827c011617e05b`) on Lance `15.0.0-beta.29`
+(`ded121cd9a99dc83040cf41049dc2bd3963241b9`). The five companions are
+`go.lance.org/liblance/<target>@v0.3.1-preview.1`; the Go 1.26.0 module minimum
+is unchanged.
+
+### Fixed
+
+- `MergeInsert` no longer fails when the source supplies a nested subset and the
+  table also has fragments the index does not cover.
+- IVF_HNSW partitions load through the fragment-reuse index, so deferred index
+  remap works after compaction with deletions. Cleanup releases settled
+  fragment-reuse transitions.
+- `CreateVectorIndex` and its progress variant reject an out-of-range native
+  index type or metric with `ErrInvalidArgument` instead of constructing an
+  invalid native enum.
+- Native S3 reads use per-operation AIMD settings with a higher default read
+  ceiling and retry bodyless 503 responses.
+- Scalar index results on stable-row-ID datasets are normalized to the
+  row-address domain before the scanner prefilter; stable row IDs, allow/block
+  and NULL semantics and exact results are unchanged.
+
+### Changed
+
+- Tracked-files progress reports an optional total that may be absent (zero) for
+  some or all updates, including the last one. `index.Progress.Total` remains
+  zero when the native producer omits it.
+- The public C ABI is unchanged: the shared libraries export the same 890
+  `lance_*` names as the v0.2.0 baseline. The installed C headers are split into
+  domain headers; this is a packaging change for C/C++ consumers, and the Go
+  bindings and ABI checks were updated without a Go API change.
+
 ## [v0.3.0] - 2026-11-24
 
 `v0.3.0` is the stable minor release. It raises the module minimum to Go 1.26
