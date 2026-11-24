@@ -125,7 +125,9 @@ selects it and falls back to `header=` for historical records.
 
 - upstream repository and the latest release at pin time,
 - the exact commit (`upstreamCommit`),
-- the SHA-256 of `include/lance/lance.h` at that commit.
+- the SHA-256 of `include/lance/lance.h` at that commit,
+- the composite SHA-256 of the `include/lance/*.h` header set
+  (`upstreamHeaderIdentitySHA256`) when the release ships a split header set.
 
 The Go package does not bind lance-c's `lance_c_version`, which reports only
 the binding release, so the SDK does not report or check a loaded library's
@@ -134,9 +136,12 @@ version at runtime. Provenance is checked at build time instead:
 ```console
 PINNED_COMMIT=$(sed -n 's/^[[:space:]]*upstreamCommit[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' internal/ffi/upstream.go)
 test -n "$PINNED_COMMIT"
-git -C /path/to/lance-c show "$PINNED_COMMIT:include/lance/lance.h" > lance.h
-LANCE_C_HEADER="$PWD/lance.h" go -C internal/tools run ./check-abi-symbols
+git -C /path/to/lance-c archive "$PINNED_COMMIT" include/lance | tar -x -C .
+LANCE_C_HEADER="$PWD/include/lance" go -C internal/tools run ./check-abi-symbols
 ```
+
+For a legacy single-header release, extracting only `include/lance/lance.h` and
+passing it as `LANCE_C_HEADER` still works.
 
 Packaging verifies the header against this pin; a library built from a different
 commit is not detected by the SDK at runtime. When the pin changes, all five
@@ -149,10 +154,12 @@ verification sequence.
 For a single legacy header, the checker refuses bytes whose SHA-256 differs from
 `upstreamHeaderSHA256`. For a split release, pass the `include/lance` directory
 with `-header` and supply `-header-manifest` or `-header-identity` (the pin's
-optional `upstreamHeaderIdentitySHA256` is another source). The directory check
-reports missing, changed and unexpected headers before parsing the union of all
-files. Type-only headers such as `fwd.h` may contain no `lance_*` function
-declarations but remain part of the manifest. The checker then verifies that every bound
+`upstreamHeaderIdentitySHA256` defaults the check when recorded). The directory
+check reports missing, changed and unexpected headers before parsing the union
+of all files. The C++ `lance.hpp`, the `detail/` implementation tree and other
+non-`.h` files are outside the public C header identity. Type-only headers such
+as `fwd.h` may contain no `lance_*` function declarations but remain part of the
+manifest. The checker then verifies that every bound
 symbol is declared, that C and Go agree on arity, and that parameters and return
 values are pointer or integer classes that `purego` maps compatibly. It does not
 model struct layout or distinguish same-width integer types beyond their

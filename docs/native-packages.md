@@ -44,6 +44,11 @@ a selector or requirement at a candidate that is not yet public.
 
 ## Payload identity
 
+The public C header identity covers the flat `*.h` files directly under
+`include/lance`. The C++ `lance.hpp`, the `detail/` implementation tree and
+other non-`.h` files are outside it; a split release still has one composite
+identity from the sorted header manifest.
+
 The payload sizes and hashes are the values `artifact.go` declares and the loader
 verifies. They are not maintained as a second copy in this page.
 

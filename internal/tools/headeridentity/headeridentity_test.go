@@ -54,7 +54,7 @@ func TestScanIncludesTypeOnlyHeadersAndIgnoresHPP(t *testing.T) {
 	}
 }
 
-func TestScanRejectsMissingUmbrellaAndSubdirectories(t *testing.T) {
+func TestScanRequiresUmbrellaAndIgnoresSubdirectories(t *testing.T) {
 	dir := t.TempDir()
 	writeHeader(t, dir, "error.h", "int lance_last_error_code(void);\n")
 	if _, err := Scan(dir); err == nil || !strings.Contains(err.Error(), "does not contain include/lance/lance.h") {
@@ -62,11 +62,21 @@ func TestScanRejectsMissingUmbrellaAndSubdirectories(t *testing.T) {
 	}
 
 	dir = fixtureHeaders(t)
-	if err := os.Mkdir(filepath.Join(dir, "nested"), 0o755); err != nil {
-		t.Fatalf("create nested directory: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, "detail", "inline"), 0o755); err != nil {
+		t.Fatalf("create detail directory: %v", err)
 	}
-	if _, err := Scan(dir); err == nil || !strings.Contains(err.Error(), "unexpected directory") {
-		t.Fatalf("Scan with a nested directory error = %v", err)
+	writeHeader(t, filepath.Join(dir, "detail"), "declarations.hpp", "// C++ only\n")
+	files, err := Scan(dir)
+	if err != nil {
+		t.Fatalf("Scan with detail/: %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("Scan with detail/ returned %d files, want 3: %+v", len(files), files)
+	}
+	for _, file := range files {
+		if strings.Contains(file.Path, "detail/") {
+			t.Fatalf("Scan included an implementation header: %s", file.Path)
+		}
 	}
 }
 
