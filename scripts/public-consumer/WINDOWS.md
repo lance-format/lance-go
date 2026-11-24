@@ -7,11 +7,11 @@ pseudo-version. It is deliberately separate from `run.sh`: Windows has a
 different cache contract, needs a PE check, and can report the module that the
 loader actually mapped.
 
-The Windows modules are `go.lance.org/liblance/windows-<arch>` at
-`v0.2.0-preview.1`, built from the official `lance-c v0.2.1-beta.3` release at
-`a800fd5f28636bfff34778e3ad6663f3cf099a38`. Each payload decompresses
-byte-for-byte to the matching official archive DLL; public acceptance is
-recorded against its release tag.
+The Windows modules are `go.lance.org/liblance/windows-<arch>` at the immutable
+companion module version recorded in the root `go.mod`; their native commit and
+header are recorded in [internal/ffi/upstream.go](../../internal/ffi/upstream.go)
+and the release notes. Each payload decompresses byte-for-byte to the matching
+official archive DLL; public acceptance is recorded against its release tag.
 The default and namespace consumers must load the published DLL from a cold
 cache; the external consumer must load that verified DLL without artifact
 linkage or extraction. This exact-revision acceptance does not substitute for

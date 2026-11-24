@@ -225,7 +225,8 @@ evidence.
 
 Standard Go benchmarks cover the Arrow C Data export, import and borrowed-batch
 copy paths, handle registration, `Scanner.Records` streaming and both loader
-phases. They use the Go 1.26 minimum with `b.Loop()` and normal public inputs:
+phases. They use the module's Go minimum (see `go.mod`) with `b.Loop()` and
+normal public inputs:
 
 ```console
 CGO_ENABLED=0 go test -run '^$' -bench . -benchmem ./...
@@ -263,8 +264,8 @@ CRT modules before and after native operations. On windows/amd64 it also runs
 the full external-tag suite with `-race`; the Go race detector has no
 windows/arm64 support, so that lane is recorded as unsupported rather than
 skipped. The CI workflow does not publish modules; published Windows modules and
-their cold public consumers are recorded in [native
-packages](../docs/native-packages.md).
+their cold public consumers are recorded in the release notes, and [native
+packages](../docs/native-packages.md) describes the validation lanes.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -299,25 +300,29 @@ Go SDK suite against the pinned release DLL on both hosted runners, with a
 
 ## Go version support
 
-The module declares and tests an explicit Go floor; there is no automatic bump
-schedule. As of 2026-11-24 the approved floor is Go 1.26, with Go 1.27 as the
-current stable release. CI sets `GOTOOLCHAIN=local` so each lane runs the floor
-or the exact installed stable toolchain instead of silently switching.
+The module's floor is the `go` directive in `go.mod`, and the nested
+`internal/tools` module declares the same floor. CI sets `GOTOOLCHAIN=local` so
+each lane runs the declared floor or the exact installed stable toolchain instead
+of silently switching.
 
-- `.github/workflows/ci.yml` and `windows.yml` test `1.26.x` and `stable`.
+- `.github/workflows/ci.yml` and `windows.yml` test the floor and `stable`.
 - Lanes with `go-version-file: go.mod` (native, cross, module-origin and
   public-consumer workflows) run the floor.
-- `scripts/public-consumer/run.sh` and `run-windows.ps1` require `go1.26.x` from
-  `GOTOOLCHAIN=local`, and their fixture modules declare `go 1.26.0`.
+- `scripts/public-consumer/run.sh` and `run-windows.ps1` assert the expected
+  toolchain explicitly (the driver holds `go1.26.x` for this checkout), require
+  the downloaded root module to declare that expected version, and accept an
+  immutable companion module whose directive is not newer than the SDK floor.
+  The Unix driver also writes a `cache-probe` fixture that declares the expected
+  floor; the Windows driver creates its consumer modules with the running
+  toolchain. Both drivers implement the contract separately, so a floor bump
+  updates their assertions and the Unix fixture as well as `go.mod`.
 - `internal/tools/artifactgen` and `scripts/go-module-origin/generator` write
-  the same directive into newly published artifact modules. Published artifact
-  modules are immutable and keep the directive they were published with.
+  the floor into newly published artifact modules. Published artifact modules
+  are immutable and keep the directive they were published with.
 - `internal/tools` is a nested module and declares the same floor; CI runs its
   tidy, vet, build and tests with the matrix toolchains.
 
-A future floor change is a separate minor-release decision, not a consequence
-of an upstream Go release. When one is approved, update these declarations
-together:
+When the floor changes, update these declarations together:
 
 - the `go` directive in `go.mod` and `internal/tools/go.mod`;
 - the Go matrices and their minimum-version conditionals in the CI workflows;
@@ -325,8 +330,8 @@ together:
 - the public-consumer drivers, fixtures and toolchain assertions;
 - README, this document and RELEASING.md.
 
-Patch releases do not change the floor. The minor release's migration notes
-state the new minimum and the toolchain behavior change.
+The release notes and migration notes record the new minimum and the toolchain
+behavior change.
 
 ## Layout
 
@@ -350,9 +355,9 @@ scripts/          build-lance-c.sh, verify-quickstart.sh, shell/PS/Python harnes
 ```
 
 `internal/tools` is a nested Go module
-(`github.com/lance-format/lance-go/internal/tools`), so its dependencies —
-currently `github.com/klauspost/compress` and `github.com/ulikunitz/xz` — never
-enter the root module graph or the published root module ZIP. Run its commands
+(`github.com/lance-format/lance-go/internal/tools`), so its dependencies, such
+as `github.com/klauspost/compress` and `github.com/ulikunitz/xz`, never enter
+the root module graph or the published root module ZIP. Run its commands
 from the repository root with `go -C internal/tools run ./<command>`; the tools
 locate the repository root from their working directory, and `-root` or `-pin`
 still override it. `go -C` makes `internal/tools` the tool process's working

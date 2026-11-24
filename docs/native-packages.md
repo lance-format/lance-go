@@ -1,8 +1,10 @@
 # Native packages
 
 The SDK ships its native library as five immutable data-only Go modules, one per
-supported target. This page records what those modules contain, which bytes they
-carry, and how a release is validated. Publication mechanics live in
+supported target. This page describes the module design, target and runtime
+scope, and validation lanes. The checkout-specific versions, bytes and hashes
+live in the sources of truth linked below; this page does not duplicate them.
+Publication mechanics live in
 [RELEASING.md](../RELEASING.md) and
 [scripts/go-module-origin/README.md](../scripts/go-module-origin/README.md).
 
@@ -19,37 +21,39 @@ published as Git tags, and the root module requires each of them. A published
 version is immutable: never replace the bytes behind a version, and never point
 a selector or requirement at a candidate that is not yet public.
 
-| Target | Module | Version | Library |
-| --- | --- | --- | --- |
-| `linux/amd64` | `go.lance.org/liblance/linux-amd64` | `v0.2.0-preview.1` | `liblance_c.so` |
-| `linux/arm64` | `go.lance.org/liblance/linux-arm64` | `v0.2.0-preview.1` | `liblance_c.so` |
-| `darwin/arm64` | `go.lance.org/liblance/darwin-arm64` | `v0.2.0-preview.1` | `liblance_c.dylib` |
-| `windows/amd64` | `go.lance.org/liblance/windows-amd64` | `v0.2.0-preview.1` | `lance_c.dll` |
-| `windows/arm64` | `go.lance.org/liblance/windows-arm64` | `v0.2.0-preview.1` | `lance_c.dll` |
+| Target | Module | Library |
+| --- | --- | --- |
+| `linux/amd64` | `go.lance.org/liblance/linux-amd64` | `liblance_c.so` |
+| `linux/arm64` | `go.lance.org/liblance/linux-arm64` | `liblance_c.so` |
+| `darwin/arm64` | `go.lance.org/liblance/darwin-arm64` | `liblance_c.dylib` |
+| `windows/amd64` | `go.lance.org/liblance/windows-amd64` | `lance_c.dll` |
+| `windows/arm64` | `go.lance.org/liblance/windows-arm64` | `lance_c.dll` |
+
+## Where the values live
+
+- Companion module versions required by this checkout: [`go.mod`](../go.mod).
+- Native repository, release, commit and canonical header hash:
+  [`internal/ffi/upstream.go`](../internal/ffi/upstream.go).
+- Payload and library sizes, SHA-256 values, commit and header: the generated
+  `artifact.go` in each companion module.
+- Publication identity (version/time, source commit, workflow runs, candidate
+  hashes, module h1 values, manifest SHA-256):
+  `scripts/go-module-origin/<artifact-version>.identity.json`.
+- Published chain and evidence: the immutable GitHub release notes and the
+  tag-pinned `CHANGELOG.md`.
 
 ## Payload identity
 
-All five modules come from the annotated `lance-c v0.2.1-beta.3` tag, peeled to
-`a800fd5f28636bfff34778e3ad6663f3cf099a38`, with canonical header SHA-256
-`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. The payload
-sizes and hashes below are the values `artifact.go` declares and the loader
-verifies.
+The payload sizes and hashes are the values `artifact.go` declares and the loader
+verifies. They are not maintained as a second copy in this page.
 
-| Target | Payload | Compressed size | Compressed SHA-256 | Library size | Library SHA-256 |
-| --- | --- | --- | --- | --- | --- |
-| `linux/amd64` | `liblance_c.so.zst` | 88,580,128 | `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231` | 345,989,752 | `011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` |
-| `linux/arm64` | `liblance_c.so.zst` | 84,254,349 | `5315893c2987c2998ddd87e84999e0770fc079b844d484613c05f4c5e1e7b3d8` | 309,833,920 | `752c5d8d8c90b873a4158b0001399b0460dccb0a7e19d7392131582e32daaa40` |
-| `darwin/arm64` | `liblance_c.dylib.zst` | 78,140,628 | `6e4971c0f150a5db0e2fd6f0b7f4c432ecf663f73e3cb87135516fd08c2ee0a8` | 291,530,320 | `1e1502fec5c7d7e02b02ab1ce2f28e3ade263faf8058076ac25178abe6263816` |
-| `windows/amd64` | `lance_c.dll.zst` | 99,988,834 | `d4c51d7f6bd7fba506b64d7569bcd99dd7a30351c9320b59b771ccba450c75cd` | 405,414,912 | `49544bd8d9d5bf2069a53cd3c43ccd0643a6a3767c2510058b13bc21ca2990d5` |
-| `windows/arm64` | `lance_c.dll.zst` | 90,011,278 | `4b3f3e87f02c90bfdb47d89536416d8ed9c3ecbded8243d2f35e359ce16c62b1` | 331,538,432 | `091179ddb272c47d426fe1a334c4059fc1c17072874dc600a7e6696509a243f8` |
-
-`lance-c` reports its binding release through `lance_c_version()`, which returns
-`0.2.1-beta.3` for this pin, but that string does not identify the Git commit,
-the header or the built bytes. The commit and header hash in `artifact.go` are
-packaging claims made by the release pipeline; the Go package does not bind or
-check them at runtime. What is verifiable is that the payload decompresses to
-those bytes, that the module version resolves through the public proxy and
-checksum database, and that the bytes match the official release archive:
+`lance-c` reports its binding release through `lance_c_version()`, but that
+string does not identify the Git commit, the header or the built bytes. The
+commit and header hash in `artifact.go` are packaging claims made by the release
+pipeline; the Go package does not bind or check them at runtime. What is
+verifiable is that the payload decompresses to those bytes, that the module
+version resolves through the public proxy and checksum database, and that the
+bytes match the official release archive:
 
 - `fetch-lance-c-release` in the `internal/tools` module acquires the archive
   for the pinned release, verifies the published per-asset checksum and the
@@ -73,9 +77,10 @@ checksum database, and that the bytes match the official release archive:
   directory; the directory form checks the manifest and parses the union,
   including type-only headers.
 
-The pinned `lance-c v0.2.1-beta.3` library exports 890 `lance_*` symbols; the Go
-bindings bind 608 of them. The ABI check covers that bound subset and does not
-establish runtime coverage of every export.
+The ABI check reports the bound subset of `lance_*` exports declared by the
+pinned header; the exact counts are generated from the pin at verification time
+and are not maintained here. The ABI check does not establish runtime coverage
+of every export.
 
 ## Platform and runtime scope
 

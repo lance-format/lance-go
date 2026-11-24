@@ -6,24 +6,23 @@ contracts; it does not add release infrastructure. It is not authorization to
 tag or publish.
 
 The native packages are published as ordinary Go modules at
-`go.lance.org/liblance/<target>@v0.2.0-preview.1`, not as Git tags, from the
-official `lance-c v0.2.1-beta.3` release. The annotated C tag
-`cff1c32dc03ac144f798b37953e2aba651711924` peels to
-`a800fd5f28636bfff34778e3ad6663f3cf099a38`; the canonical header SHA-256 is
-`6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. All five
+`go.lance.org/liblance/<target>@<artifact-version>`, not as Git tags, from an
+official `lance-c` release. The adopted native repository, commit, tag and
+canonical header SHA-256 are recorded in `internal/ffi/upstream.go`. All five
 active selectors and root requirements use those static module versions. The
 five release archives and checksums were verified, each module payload
 decompresses byte-for-byte to the official archive library, and every module
 resolves through the public proxy and checksum database. Accepted exact-version
-evidence belongs to the release record, and
-[docs/native-packages.md](docs/native-packages.md) records the current
-identities.
+evidence belongs to the release record. The adopted identities are in
+`internal/ffi/upstream.go`, `go.mod`, the generated `artifact.go` and the
+identity manifests; [docs/native-packages.md](docs/native-packages.md) describes
+the module design and validation.
 
 Intel macOS is retired and has no module or selector. Each new tag still
 requires its own post-tag runs. Real AWS S3 refresh passed in both
 direct-accessor and operator-owned namespace modes at `59a427e` through PR #37.
 That is historical evidence against the `native88` library, not against the
-current pin; it does not claim commercial namespace-service or
+adopted pin; it does not claim commercial namespace-service or
 production-account support. Release notes may claim only the evidence recorded
 for the claimed target. They must not claim completion of issue #1; the broader
 RTree/raw v2.2 official-core work remains outside this release.
@@ -37,16 +36,19 @@ also pass. The separate public-consumer workflow verifies published module
 identity and cold runtime behavior. Static module publication is performed by
 `.github/workflows/publish-go-module-origin.yml`; use
 [scripts/go-module-origin/README.md](scripts/go-module-origin/README.md) for
-the exact identity and publication procedure. Record results for the exact
-release candidate rather than copying an earlier status table.
+the exact identity and publication procedure. That workflow and its identity
+are pinned to the recorded `v0.2.0-preview.1` publication. A later native
+version requires new pinned candidate runs, a new reviewed identity file and
+updated workflow inputs; record results for the exact release candidate rather
+than copying an earlier status table.
 
 ## Release units and order
 
 ```text
-root module          $ROOT_MODULE                         tag v0.2.0
-linux/amd64 module   go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
+root module          $ROOT_MODULE                         tag <root-tag>
+linux/amd64 module   go.lance.org/liblance/linux-amd64      <artifact-version>
 selector             internal/bundled/lance_bundle_linux_amd64.go
-root requirement     go.lance.org/liblance/linux-amd64      v0.2.0-preview.1
+root requirement     go.lance.org/liblance/linux-amd64      <artifact-version>
 ```
 
 Repeat the artifact/selector/requirement rows for each published target.
@@ -75,59 +77,66 @@ REPO_ROOT=$(pwd)
 ## Documentation handoff
 
 Version-specific consumer documentation belongs to the same release handoff as
-the root version and native input. Do not derive it from an unversioned `main`
-checkout or publish it before the exact modules exist. Update together:
+the root version and native input, but its durable home is the immutable GitHub
+release notes and the tag-pinned `CHANGELOG.md`. Evergreen docs must not repeat
+the current release's tag, native chain, sizes or hashes. Do not derive the
+release notes from an unversioned `main` checkout or publish them before the
+exact modules exist.
 
-- README install command, quickstart tag, native release and Lance version
-  sentence, supported target table, and the read-only deployment recipe's
-  module, version and library hash;
-- [`docs/api-guide.md`](docs/api-guide.md) versioned Blob v2 and RTree support
-  boundaries. Keep the exact native mapping in the README, the
-  [native package record](docs/native-packages.md) and the release record, not
-  duplicated in the guide;
-- [`docs/development.md`](docs/development.md) "Building liblance_c" Rust
-  requirement and matching native build guards, "Pinned ABI" reproducible
-  command, and "Testing" current RTree command;
-- [`docs/native-packages.md`](docs/native-packages.md) module versions, payload
-  sizes and hashes, native pin, platform scope and validation states;
+- README and [`docs/api-guide.md`](docs/api-guide.md): evergreen install and
+  quickstart (`@latest`), the unversioned pkg.go.dev reference, and links to the
+  release notes and changelog. Do not add a release tag, native release
+  sentence, exact native mapping or library hash to the README or guide; those
+  live in the release notes, changelog, `go.mod`, `internal/ffi/upstream.go`
+  and the generated artifact metadata.
+- [`docs/development.md`](docs/development.md): the "Building liblance_c" Rust
+  requirement and matching native build guards, the "Pinned ABI" reproducible
+  command, and the "Testing" section's RTree command when those contracts
+  change.
+- [`docs/native-packages.md`](docs/native-packages.md): module architecture,
+  target and runtime scope, formats and validation lanes. Point to the release
+  notes, changelog, `go.mod`, `internal/ffi/upstream.go`, generated
+  `artifact.go` and identity manifests for checkout-specific values; do not
+  duplicate their versions or hashes.
 - `scripts/verify-quickstart.sh` version, module and version pins, published
   module archive size, and expected library size and SHA-256. Keep the module
-  archive size separate from the compressed native payload.
+  archive size separate from the compressed native payload. These are
+  functional test pins, not user-facing documentation.
 - Go version declarations when the supported minimum changes: `go.mod`, the Go
   matrices in `.github/workflows/ci.yml` and `windows.yml`, the artifact module
   generators, the public-consumer toolchain assertions, and the version support
   text in README and `docs/development.md`. State the minimum and the tested Go
   versions in the release notes and migration notes.
-- `apidiff/v0.2.0.txt` and the v0.3.0 migration notes when the release carries
-  reviewed API changes. Confirm the allowlist matches the exported API and the
-  notes cover every caller-visible migration.
+- `apidiff/<base-tag>.txt` and the new release's migration notes when the
+  release carries reviewed API changes. Confirm the allowlist matches the
+  exported API and the notes cover every caller-visible migration.
 
 The release handoff owns the beta/preview version wording; a docs-only change
 does not weaken the runtime acceptance requirements below.
 
 ### API compatibility review
 
-`v0.3.0` intentionally carries reviewed Go API changes. `apidiff/v0.2.0.txt`
-records the 89 incompatible entries against the published `v0.2.0` tag. The
-review material is the v0.3.0 migration notes and the guide's "Options",
-"Optional values", "Scan statistics", "Resource lifetime" and "Migrating
-accessor ownership from v0.2.0" sections. Before the stable decision:
+When a minor release carries reviewed Go API changes, `apidiff/<base-tag>.txt`
+records the incompatible entries against the previous stable tag. The review
+material is the release's migration notes and the relevant API guide sections.
+Before the stable decision:
 
 ```sh
-./scripts/check-api-compat.sh v0.2.0
+: "${BASE_TAG:?set to the previous stable tag}"
+./scripts/check-api-compat.sh "$BASE_TAG"
 ```
 
 Confirm every entry still matches the exported API and every caller-visible
-migration is documented. The allowlist is scoped to `v0.2.0`; the new stable
+migration is documented. The allowlist is scoped to its base tag; the new stable
 tag becomes the next comparison base. A patch line must not add an allowlist.
 CI runs this gate on pull requests and manual dispatch, not on main pushes,
-because the approved deltas predate the new tag.
+because approved deltas predate the new tag.
 
 ## 1. Choose and verify the native input
 
 `internal/ffi/upstream.go` is the pin for the native repository, commit, and
 header hash. `upstreamRelease` is informational; it does not prove that a
-release archive, tag, and commit contain the same header. The current pin is the
+release archive, tag, and commit contain the same header. The adopted pin is the
 annotated `v0.2.1-beta.3` tag, peeled to
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`, with canonical header
 `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`. Do not
@@ -166,11 +175,11 @@ Git tags. The following is syntax only, not a chosen release version:
 
 ```bash
 REPO_ROOT=$(pwd)
-ROOT_VERSION=v0.2.0                  # example root tag
+ROOT_VERSION=vX.Y.Z                  # placeholder root tag
 TARGET=linux/amd64                  # example
 SLUG=${TARGET//\//-}
 ARTIFACT_MODULE="go.lance.org/liblance/$SLUG"
-ARTIFACT_VERSION=v0.2.0-preview.1   # example static module version
+ARTIFACT_VERSION=vX.Y.Z-preview.N   # placeholder static module version
 ```
 
 A Go-only release may reuse the existing immutable artifact module versions
@@ -184,9 +193,9 @@ ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
 ```
 
 The root module, the nested `internal/tools` module and the generated artifact
-module use Go 1.26.0. The artifact module declares no requirements and contains
-only `embed` data. Already published artifact modules keep the directive they
-were published with.
+module use the Go floor declared in `go.mod`. The artifact module declares no
+requirements and contains only `embed` data. Already published artifact modules
+keep the directive they were published with.
 
 ## 2. Build, check, and record native acceptance
 
@@ -304,7 +313,7 @@ native export.
 The official `linux/amd64` and `linux/arm64` release packages are generic
 glibc 2.28 builds. The macOS package uses deployment target 11.0 and is tested
 on macOS 15.x hosts. The other supported targets use their own bundles; their
-accepted hosts and current payload facts are listed in
+accepted hosts and adopted payload facts are listed in
 [docs/native-packages.md](docs/native-packages.md). Older glibc/macOS floors and
 musl
 compatibility have not been established beyond the recorded package floors.
@@ -343,17 +352,46 @@ scripts/sync-lance-c.sh \
 The output contains a data-only `module/` (with `go.mod`, `artifact.go`, and the
 compressed payload) and a `selector/` file for `internal/bundled`.
 
-For the beta.3 candidate set, the static-origin generator packages all five
-modules and writes the standard proxy files, discovery HTML, and identity
-manifest:
+For a candidate set, the static-origin generator packages all five modules and
+writes the standard proxy files, discovery HTML, and identity manifest. Set the
+roles explicitly; `SOURCE_COMMIT` is the SDK commit the candidates were built
+from, not the upstream native commit, and `SOURCE_RELEASE` is the upstream
+`lance-c` release:
 
 ```sh
+: "${ARTIFACT_VERSION:?new companion module version}"
+: "${SDK_SOURCE_COMMIT:?SDK commit the candidates were built from}"
+: "${NATIVE_SOURCE_RELEASE:?upstream lance-c release}"
+: "${RELEASE_TIME:?origin .info time in RFC3339}"
+: "${CANDIDATES:?normalized candidates directory}"
+: "${ORIGIN_OUT:?origin output directory}"
+
 scripts/go-module-origin/stage-candidates.sh "$DOWNLOADS" "$CANDIDATES"
 python3 scripts/go-module-origin/verify-candidate-identity.py \
-  scripts/go-module-origin/v0.2.0-preview.1.identity.json "$CANDIDATES"
-CANDIDATES_DIR="$CANDIDATES" OUT_DIR="$ORIGIN_OUT" scripts/build-go-module-origin.sh
+  "scripts/go-module-origin/${ARTIFACT_VERSION}.identity.json" "$CANDIDATES"
+VERSION="$ARTIFACT_VERSION" \
+SOURCE_COMMIT="$SDK_SOURCE_COMMIT" \
+SOURCE_RELEASE="$NATIVE_SOURCE_RELEASE" \
+RELEASE_TIME="$RELEASE_TIME" \
+CANDIDATES_DIR="$CANDIDATES" \
+OUT_DIR="$ORIGIN_OUT" \
+scripts/build-go-module-origin.sh
 ORIGIN_DIR="$ORIGIN_OUT" scripts/test-go-module-origin.sh
 ```
+
+`scripts/build-go-module-origin.sh` defaults to the recorded
+`v0.2.0-preview.1` publication. `verify-candidate-identity.py` validates the
+recorded hosted candidate bytes against
+`scripts/go-module-origin/v0.2.0-preview.1.identity.json`
+(`SOURCE_COMMIT` records the candidate source commit, not the generator). The
+generator comes from the checkout you run: `v0.2.0-preview.1` reproduces, with
+the recorded manifest hash, from `9f3ba53` (go 1.23.0), while current main writes
+go 1.26.0 and produces a different manifest. A later native version needs a
+generator whose Go floor is the reviewed one, a new identity file from its
+hosted candidate runs, updated publish-workflow inputs, and a matching update
+to `test-go-module-origin.sh` (fixed to the recorded version and hashes). The
+current workflow is pinned to the recorded publication and is not a generic
+publisher.
 
 The generated module path, target, library name, compressed and uncompressed
 sizes and hashes, native commit, and header hash must match the build record.
@@ -378,9 +416,9 @@ If the verifier is missing from the release branch, stop and fix the branch;
 do not substitute an ad hoc layout check or accept the candidate without this
 verification.
 
-The current `linux/amd64` payload is 88,580,128 bytes compressed and 345,989,752
-bytes uncompressed; exact hashes are recorded in
-[docs/native-packages.md](docs/native-packages.md). The published module ZIP is
+The adopted `linux/amd64` payload is 88,580,128 bytes compressed and 345,989,752
+bytes uncompressed; exact hashes are recorded in the generated `artifact.go` and
+the release notes. The published module ZIP is
 87,897,705 bytes and `scripts/verify-quickstart.sh` pins it separately. The raw
 library is never committed. GitHub rejects ordinary Git blobs over 100 MiB, and
 warns above 50 MiB; static module publications do not add Git blobs, but the
@@ -462,9 +500,10 @@ fi
 
 The command should produce no matches. Also confirm there is no `replace`
 directive for the root or artifact module, and that `go.sum` contains the
-recorded `Sum` and `GoModSum`. Update
-[docs/native-packages.md](docs/native-packages.md) with the same target, payload
-sizes and hashes, native commit, header hash, and published requirement.
+recorded `Sum` and `GoModSum`. Do not duplicate the target, payload sizes and
+hashes, native commit, header hash and published requirement in
+`docs/native-packages.md`; the generated `artifact.go`,
+`internal/ffi/upstream.go` and the release notes carry them.
 
 Commit and push the activation commit, then verify that exact head with the
 checkout/local-source mode below. Before the root tag exists, do not try to
@@ -545,7 +584,7 @@ Run the Unix driver locally on the matching native host against a tag:
 
 ```sh
 cd "$REPO_ROOT"
-ROOT_REVISION=v0.2.0 \
+ROOT_REVISION="$ROOT_VERSION" \
 TARGET_GOOS=linux TARGET_GOARCH=amd64 \
 EXPECTED_UNAME=x86_64 LIBRARY_NAME=liblance_c.so \
 EVIDENCE_DIR=/tmp/public-consumer-evidence \
@@ -594,17 +633,16 @@ platform:         target, ABI/runtime/race/default/external results, floor and d
 gaps:             untested targets and storage paths
 ```
 
-The current `linux/amd64` package, native
+The adopted `linux/amd64` package, native
 `a800fd5f28636bfff34778e3ad6663f3cf099a38`, header
 `6bab6899ce240b93cf47a1c93f7fb4c8bb2b20ba0a82e3c4a0ec04e7bfc915ad`, payload
 `48c83c5ded9f376b3aecfd6bb6b1994de6a1d7790031df9134d8749405aa9231`, and
 uncompressed library
-`011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are the
-v0.2.0 adoption values. The published module is
-`go.lance.org/liblance/linux-amd64@v0.2.0-preview.1`. Published versions,
-payload sizes, hashes and accepted exact-version consumer runs are listed in
-[docs/native-packages.md](docs/native-packages.md) and the release evidence. The
-v0.2.0 root tag requires the gates above.
+`011c3bcc207ff5dd4ee0376d63338d9d05a76083ef45c616f7047978c4c59ece` are
+recorded in `internal/ffi/upstream.go`, `go.mod`, the generated `artifact.go`,
+the identity manifest and the release notes. Published versions, payload sizes,
+hashes and accepted exact-version consumer runs are listed there and in the
+release evidence. The authorized root tag requires the gates above.
 
 Include the artifact version, payload sizes and hashes, evidence location,
 supported bundle target and runtime floor, the default and external behavior,
@@ -666,3 +704,79 @@ State the reused evidence, its commit, and its coverage limits instead.
 Cross-compilation is not runtime acceptance. Source review is not binary
 acceptance. A public archive check is not a native runtime check. Keep those
 states separate in the release record.
+
+## 8. Documentation checks
+
+The broad wording review is manual: a grep cannot tell a legitimate machine pin
+or historical migration note from a stale current-release claim. The automated
+steps below fail on a fixed `@vX` install command and a leftover `Unreleased`
+heading; every other grep hit is reviewed and either fixed or justified.
+Prefer linking to the `go` directive in `go.mod` over copying the minimum into
+user-facing prose.
+
+Pre-tag:
+
+```sh
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+for path in README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md \
+  examples/README.md internal/benchmarks/soak/README.md internal/compat/README.md; do
+  test -e "$path" || { echo "missing documentation path: $path" >&2; exit 1; }
+done
+
+# Manual review: inspect every hit. Machine pins, historical migration notes and
+# this checklist may keep a version; install/quickstart references must not.
+grep -RnE 'v[0-9]+\.[0-9]+\.[0-9]+|current stable|latest release|next (minor|release)|Unreleased' \
+  README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md examples/README.md \
+  internal/benchmarks/soak/README.md internal/compat/README.md || true
+
+# Automated: the current release section must not still be marked Unreleased.
+if grep -n 'Unreleased' CHANGELOG.md; then
+  echo "changelog still marks the current release Unreleased" >&2
+  exit 1
+fi
+# Automated: documented install and quickstart must use @latest.
+if grep -RnE 'go (get|run) .*@v[0-9]' README.md docs/api-guide.md examples/README.md; then
+  echo "documented install/quickstart uses a fixed release tag" >&2
+  exit 1
+fi
+# Automated: the local-source consumer path must still pass before the tag exists.
+CGO_ENABLED=0 LANCE_GO_QUICKSTART_SOURCE_DIR="$PWD" ./scripts/verify-quickstart.sh
+```
+
+Post-publication. The evergreen smoke and the exact release evidence are
+separate: `@latest` may legitimately resolve to a later stable or a maintenance
+patch and must not be asserted equal to `ROOT_VERSION`.
+
+```sh
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+: "${ROOT_VERSION:?set to the published release tag}"
+
+# Evergreen smoke: the documented install and quickstart work against @latest.
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+(
+  cd "$work"
+  go mod init docs-check >/dev/null
+  go get github.com/lance-format/lance-go@latest
+  CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@latest
+)
+echo "latest resolved to: $(cd "$work" && go list -m -f '{{.Version}}' github.com/lance-format/lance-go@latest)"
+
+# Exact release evidence: always resolve and run the authorized tag itself.
+(cd "$work" && go list -m -f '{{.Version}}' "github.com/lance-format/lance-go@$ROOT_VERSION")
+(cd "$work" && CGO_ENABLED=0 go run "github.com/lance-format/lance-go/examples/roundtrip@$ROOT_VERSION")
+
+# The unversioned package reference and release destinations resolve.
+curl -fsSI https://pkg.go.dev/github.com/lance-format/lance-go >/dev/null
+curl -fsSI https://github.com/lance-format/lance-go/releases >/dev/null
+curl -fsSI "https://github.com/lance-format/lance-go/blob/$ROOT_VERSION/CHANGELOG.md" >/dev/null
+```
+
+Record the manual grep results, the resolved `@latest` version, the exact-tag
+resolution and roundtrip output, and the checked URLs in the release evidence.
+A fixed `@vX.Y.Z` install tag or an `Unreleased` heading fails the automated
+checks; stale current/next wording or a copied Go minimum is a manual-review
+finding to fix or justify. `@latest` differing from `ROOT_VERSION` is recorded,
+not a failure.
