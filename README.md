@@ -246,8 +246,8 @@ pin only; see the [suite record](internal/compat/README.md#accepted-execution).
 
 ### Go version support
 
-The module's minimum is the `go` directive in [`go.mod`](go.mod) (currently
-`go 1.26.0`). CI runs that minimum and the `stable` Go channel on Linux
+The module's minimum is the `go` directive in [`go.mod`](go.mod). CI runs that
+minimum and the `stable` Go channel on Linux
 and Windows, and the native and release lanes run the floor with
 `GOTOOLCHAIN=local`. The `go` directive is the enforced minimum: with
 `GOTOOLCHAIN=local`, an older toolchain stops with `go.mod requires go >= ...`;

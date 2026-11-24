@@ -36,8 +36,11 @@ also pass. The separate public-consumer workflow verifies published module
 identity and cold runtime behavior. Static module publication is performed by
 `.github/workflows/publish-go-module-origin.yml`; use
 [scripts/go-module-origin/README.md](scripts/go-module-origin/README.md) for
-the exact identity and publication procedure. Record results for the exact
-release candidate rather than copying an earlier status table.
+the exact identity and publication procedure. That workflow and its identity
+are pinned to the recorded `v0.2.0-preview.1` publication. A later native
+version requires new pinned candidate runs, a new reviewed identity file and
+updated workflow inputs; record results for the exact release candidate rather
+than copying an earlier status table.
 
 ## Release units and order
 
@@ -190,9 +193,9 @@ ROOT_MODULE=$(sed -n 's/^module[[:space:]]*//p' go.mod)
 ```
 
 The root module, the nested `internal/tools` module and the generated artifact
-module use Go 1.26.0. The artifact module declares no requirements and contains
-only `embed` data. Already published artifact modules keep the directive they
-were published with.
+module use the Go floor declared in `go.mod`. The artifact module declares no
+requirements and contains only `embed` data. Already published artifact modules
+keep the directive they were published with.
 
 ## 2. Build, check, and record native acceptance
 
@@ -350,15 +353,45 @@ The output contains a data-only `module/` (with `go.mod`, `artifact.go`, and the
 compressed payload) and a `selector/` file for `internal/bundled`.
 
 For a candidate set, the static-origin generator packages all five modules and
-writes the standard proxy files, discovery HTML, and identity manifest:
+writes the standard proxy files, discovery HTML, and identity manifest. Set the
+roles explicitly; `SOURCE_COMMIT` is the SDK commit the candidates were built
+from, not the upstream native commit, and `SOURCE_RELEASE` is the upstream
+`lance-c` release:
 
 ```sh
+: "${ARTIFACT_VERSION:?new companion module version}"
+: "${SDK_SOURCE_COMMIT:?SDK commit the candidates were built from}"
+: "${NATIVE_SOURCE_RELEASE:?upstream lance-c release}"
+: "${RELEASE_TIME:?origin .info time in RFC3339}"
+: "${CANDIDATES:?normalized candidates directory}"
+: "${ORIGIN_OUT:?origin output directory}"
+
 scripts/go-module-origin/stage-candidates.sh "$DOWNLOADS" "$CANDIDATES"
 python3 scripts/go-module-origin/verify-candidate-identity.py \
   "scripts/go-module-origin/${ARTIFACT_VERSION}.identity.json" "$CANDIDATES"
-CANDIDATES_DIR="$CANDIDATES" OUT_DIR="$ORIGIN_OUT" scripts/build-go-module-origin.sh
+VERSION="$ARTIFACT_VERSION" \
+SOURCE_COMMIT="$SDK_SOURCE_COMMIT" \
+SOURCE_RELEASE="$NATIVE_SOURCE_RELEASE" \
+RELEASE_TIME="$RELEASE_TIME" \
+CANDIDATES_DIR="$CANDIDATES" \
+OUT_DIR="$ORIGIN_OUT" \
+scripts/build-go-module-origin.sh
 ORIGIN_DIR="$ORIGIN_OUT" scripts/test-go-module-origin.sh
 ```
+
+`scripts/build-go-module-origin.sh` defaults to the recorded
+`v0.2.0-preview.1` publication. `verify-candidate-identity.py` validates the
+recorded hosted candidate bytes against
+`scripts/go-module-origin/v0.2.0-preview.1.identity.json`
+(`SOURCE_COMMIT` records the candidate source commit, not the generator). The
+generator comes from the checkout you run: `v0.2.0-preview.1` reproduces, with
+the recorded manifest hash, from `9f3ba53` (go 1.23.0), while current main writes
+go 1.26.0 and produces a different manifest. A later native version needs a
+generator whose Go floor is the reviewed one, a new identity file from its
+hosted candidate runs, updated publish-workflow inputs, and a matching update
+to `test-go-module-origin.sh` (fixed to the recorded version and hashes). The
+current workflow is pinned to the recorded publication and is not a generic
+publisher.
 
 The generated module path, target, library name, compressed and uncompressed
 sizes and hashes, native commit, and header hash must match the build record.
@@ -674,47 +707,53 @@ states separate in the release record.
 
 ## 8. Documentation checks
 
-Run these before tagging and again after the release is public. Machine pins,
-adopted native identities and historical migration notes may keep a concrete
-version; install commands, quickstart tags and package references must not carry
-a fixed current release.
+The broad wording review is manual: a grep cannot tell a legitimate machine pin
+or historical migration note from a stale current-release claim. The automated
+steps below fail on a fixed `@vX` install command and a leftover `Unreleased`
+heading; every other grep hit is reviewed and either fixed or justified.
+Prefer linking to the `go` directive in `go.mod` over copying the minimum into
+user-facing prose.
 
 Pre-tag:
 
 ```sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-for path in README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md examples/README.md; do
+for path in README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md \
+  examples/README.md internal/benchmarks/soak/README.md internal/compat/README.md; do
   test -e "$path" || { echo "missing documentation path: $path" >&2; exit 1; }
 done
-# Review every hit. Version-pinned machine records, historical migration notes
-# and this checklist may keep a number; install/quickstart references may not.
+
+# Manual review: inspect every hit. Machine pins, historical migration notes and
+# this checklist may keep a version; install/quickstart references must not.
 grep -RnE 'v[0-9]+\.[0-9]+\.[0-9]+|current stable|latest release|next (minor|release)|Unreleased' \
-  README.md docs RELEASING.md scripts/*/README.md examples/README.md || true
-# Install and quickstart commands must use @latest.
-if grep -RnE 'go (get|run) .*@v[0-9]' README.md docs/api-guide.md examples/README.md; then
-  echo "documented install/quickstart uses a fixed release tag" >&2
-  exit 1
-fi
-# The documented minimum must match go.mod.
-grep -n '^go ' go.mod
-# The current release section must not still be marked Unreleased.
+  README.md CHANGELOG.md docs RELEASING.md scripts/*/README.md examples/README.md \
+  internal/benchmarks/soak/README.md internal/compat/README.md || true
+
+# Automated: the current release section must not still be marked Unreleased.
 if grep -n 'Unreleased' CHANGELOG.md; then
   echo "changelog still marks the current release Unreleased" >&2
   exit 1
 fi
-# The local-source consumer path must still pass before the tag exists.
+# Automated: documented install and quickstart must use @latest.
+if grep -RnE 'go (get|run) .*@v[0-9]' README.md docs/api-guide.md examples/README.md; then
+  echo "documented install/quickstart uses a fixed release tag" >&2
+  exit 1
+fi
+# Automated: the local-source consumer path must still pass before the tag exists.
 CGO_ENABLED=0 LANCE_GO_QUICKSTART_SOURCE_DIR="$PWD" ./scripts/verify-quickstart.sh
 ```
 
-Post-publication:
+Post-publication. The evergreen smoke and the exact release evidence are
+separate: `@latest` may legitimately resolve to a later stable or a maintenance
+patch and must not be asserted equal to `ROOT_VERSION`.
 
 ```sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 : "${ROOT_VERSION:?set to the published release tag}"
 
-# Evergreen install: the documented commands resolve and run without a pin.
+# Evergreen smoke: the documented install and quickstart work against @latest.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 (
@@ -723,14 +762,10 @@ trap 'rm -rf "$work"' EXIT
   go get github.com/lance-format/lance-go@latest
   CGO_ENABLED=0 go run github.com/lance-format/lance-go/examples/roundtrip@latest
 )
+echo "latest resolved to: $(cd "$work" && go list -m -f '{{.Version}}' github.com/lance-format/lance-go@latest)"
 
-# Reproducible evidence: @latest resolves to the authorized tag and the exact
-# tag runs the same documented example.
-resolved=$(cd "$work" && go list -m -f '{{.Version}}' github.com/lance-format/lance-go@latest)
-test "$resolved" = "$ROOT_VERSION" || {
-  echo "@latest resolves to $resolved, want $ROOT_VERSION" >&2
-  exit 1
-}
+# Exact release evidence: always resolve and run the authorized tag itself.
+(cd "$work" && go list -m -f '{{.Version}}' "github.com/lance-format/lance-go@$ROOT_VERSION")
 (cd "$work" && CGO_ENABLED=0 go run "github.com/lance-format/lance-go/examples/roundtrip@$ROOT_VERSION")
 
 # The unversioned package reference and release destinations resolve.
@@ -739,7 +774,9 @@ curl -fsSI https://github.com/lance-format/lance-go/releases >/dev/null
 curl -fsSI "https://github.com/lance-format/lance-go/blob/$ROOT_VERSION/CHANGELOG.md" >/dev/null
 ```
 
-Record the grep results, the resolved `@latest` version, both roundtrip outputs,
-and the checked URLs in the release evidence. A fixed `@vX.Y.Z` install tag,
-"current stable" wording, a "next release" promise, or an `Unreleased` heading
-in user-facing docs fails the check.
+Record the manual grep results, the resolved `@latest` version, the exact-tag
+resolution and roundtrip output, and the checked URLs in the release evidence.
+A fixed `@vX.Y.Z` install tag or an `Unreleased` heading fails the automated
+checks; stale current/next wording or a copied Go minimum is a manual-review
+finding to fix or justify. `@latest` differing from `ROOT_VERSION` is recorded,
+not a failure.

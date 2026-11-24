@@ -300,18 +300,22 @@ Go SDK suite against the pinned release DLL on both hosted runners, with a
 
 ## Go version support
 
-The module's floor is the `go` directive in `go.mod` (currently `go 1.26.0`),
-and the nested `internal/tools` module declares the same floor. CI sets
-`GOTOOLCHAIN=local` so each lane runs the declared floor or the exact installed
-stable toolchain instead of silently switching.
+The module's floor is the `go` directive in `go.mod`, and the nested
+`internal/tools` module declares the same floor. CI sets `GOTOOLCHAIN=local` so
+each lane runs the declared floor or the exact installed stable toolchain instead
+of silently switching.
 
-- `.github/workflows/ci.yml` and `windows.yml` test the floor (`1.26.x` today)
-  and `stable`.
+- `.github/workflows/ci.yml` and `windows.yml` test the floor and `stable`.
 - Lanes with `go-version-file: go.mod` (native, cross, module-origin and
   public-consumer workflows) run the floor.
-- `scripts/public-consumer/run.sh` and `run-windows.ps1` check the running
-  toolchain against the floor from `go.mod`; their fixture modules declare the
-  same directive.
+- `scripts/public-consumer/run.sh` and `run-windows.ps1` assert the expected
+  toolchain explicitly (the driver holds `go1.26.x` for this checkout), require
+  the downloaded root module to declare that expected version, and accept an
+  immutable companion module whose directive is not newer than the SDK floor.
+  The Unix driver also writes a `cache-probe` fixture that declares the expected
+  floor; the Windows driver creates its consumer modules with the running
+  toolchain. Both drivers implement the contract separately, so a floor bump
+  updates their assertions and the Unix fixture as well as `go.mod`.
 - `internal/tools/artifactgen` and `scripts/go-module-origin/generator` write
   the floor into newly published artifact modules. Published artifact modules
   are immutable and keep the directive they were published with.
