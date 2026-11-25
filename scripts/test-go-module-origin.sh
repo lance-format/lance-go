@@ -103,6 +103,10 @@ kill "$server_pid" 2>/dev/null || true
 server_pid=""
 
 # SDK roundtrip with the unchanged import path, no CGO, no LANCE_LIB_PATH.
+# This resolves the repository's current root requirements. It is a protocol
+# and runtime sanity check, not preview.2 verification: the preview companions
+# are checked above by ZIP h1 and library digest, and the root repin PR exercises
+# preview.2 end to end.
 runtime_cache="$work/runtime-cache"
 (
   cd "$repo_root"
@@ -116,5 +120,5 @@ grep -F 'created 3-row' "$work/roundtrip.log" >/dev/null 2>&1 || true
 cache_entry=$(find "$runtime_cache" -type f -name 'liblance_c.so' -o -name 'liblance_c.dylib' -o -name 'lance_c.dll' | head -1)
 [[ -n $cache_entry ]] || { echo "no runtime library cache entry" >&2; exit 1; }
 echo "runtime cache: $cache_entry"
-echo "sdk roundtrip: ok"
+echo "sdk roundtrip (current root requirements): ok"
 echo "verification: PASS"
