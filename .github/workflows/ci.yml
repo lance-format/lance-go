@@ -100,8 +100,9 @@ jobs:
             exit 1
           fi
           # Pinned from the independently verified linux-amd64
-          # v0.3.1-preview.1 companion artifact, not from the extracted cache.
-          expected_sha256=b960378ec4392f094ce5eb5a0fc7e654d04abb7f9f2ce036c94cfa9da7c92f08
+          # v0.3.1-preview.2 companion (lance-c v0.2.1-beta.5), not from the
+          # extracted cache.
+          expected_sha256=4d04cf8464f570d2e971c805f5065f3ae5af6de78235be126673472294cf0256
           cache_file="$cache_dir/lance-go/$expected_sha256/liblance_c.so"
           if [[ ! -f "$cache_file" ]]; then
             echo "bundled library was not extracted to $cache_file" >&2
