@@ -9,6 +9,63 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.1-preview.2] - 2026-11-26
+
+`v0.3.1-preview.2` is a preview of the next 0.3.x release. It moves the bundled
+native library to `lance-c v0.2.1-beta.5` (annotated tag
+`28e096139bbffb719ef260e9e4ab1d768a438543`, peeled to
+`7482a15c57da79bc138e221a1c122701f7304205`) on Lance `15.0.0-rc.1`
+(annotated `d45f68de294c80c0f5dd825c9de2ec3f92d2ad11`, peeled to
+`2e7eb3156b2fd962352a41d62e24a80369f0724a`). The five companions are
+`go.lance.org/liblance/<target>@v0.3.1-preview.2`; the Go 1.26.0 module minimum
+is unchanged. The public C ABI is unchanged: the shared libraries export the
+same 890 `lance_*` names as the v0.2.0 baseline, and the installed header set
+and archive layout are unchanged from `v0.3.1-preview.1`.
+
+### Fixed
+
+- Namespace writes and namespace URI transaction commits run their publication
+  futures on a scoped 8 MiB thread, so `WriteToNamespace` and
+  `CommitTransactionToNamespace` no longer depend on the caller's stack size.
+  This fixes debug namespace appends and URI commits from Windows programs whose
+  main thread has the default 1 MiB stack.
+- `MergeInsert` rejects a source that supplies a partial `list<struct>` item
+  schema with `ErrInvalidArgument` instead of accepting the incomplete value.
+- Searching an `IVF_HNSW_PQ` index reads PQ metadata written by Lance 0.17–0.24,
+  so 0.20–0.24 datasets no longer silently skip the index. Indices written by
+  0.10–0.16 (the v0,2 format) remain unsupported and report that a rebuild is
+  required.
+- A commit that has started is no longer cancelled by the retry budget. It runs
+  to completion and returns its real result, so a landed non-idempotent update
+  is not retried and applied twice after spurious write contention.
+- Remote streaming reads share the configured download retry budget across
+  request and body failures and resume at the first undelivered byte. They use
+  an identity condition where the store supports one (ETag preferred, GCS
+  `if_match`) and validate identity, size and range before yielding more data;
+  providers without a safe condition still return the original error.
+- `Dataset.Cleanup` measures the seven-day unverified-file protection from the
+  start of manifest discovery, so a file cannot age into eligibility while the
+  run inspects manifests.
+- `OptimizeIndices` reports IVF_RQ merge failures with the differing field
+  (`fast_rotation_signs` or `query_estimator`) instead of printing identical
+  structures.
+
+### Changed
+
+- Vector search over datasets with deletions filters deleted candidates before
+  the top-k heap update. IVF and flat results are unchanged; HNSW remains
+  approximate and can return different neighbours.
+- v1 ZoneMap write seeds require explicit opt-in, and writes default to v0
+  seeds so Lance versions before 15 keep reading and writing the dataset.
+- Namespace `ListTableVersions` requests with ascending order now paginate and
+  return `PageToken` when more versions remain.
+
+### Migration from v0.3.1-preview.1
+
+Update all five companion requirements to `v0.3.1-preview.2`. There is no Go API
+migration; the Go 1.26.0 module minimum, import paths, `CGO_ENABLED=0` default
+bundle and `LANCE_LIB_PATH` external-library behavior are unchanged.
+
 ## [v0.3.1-preview.1] - 2026-11-25
 
 `v0.3.1-preview.1` is a preview of the next 0.3.x release. It moves the bundled
