@@ -17,13 +17,16 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ORIGIN_VERSION: v0.3.1-preview.1
-  ORIGIN_TIME: 2026-11-24T22:17:13Z
-  ORIGIN_SOURCE_COMMIT: 831bdc8fd58327a1753ae6853da635ca7e396e14
-  ORIGIN_SOURCE_RELEASE: v0.2.1-beta.4
-  ORIGIN_MANIFEST_SHA256: b3e5de24beea4761b4af82d4f2dd074fea2d82c6b648dbceb2ee33f5bb211873
-  UNIX_RUN_ID: "45496415384"
-  WINDOWS_RUN_ID: "45496415608"
+  ORIGIN_VERSION: v0.3.1-preview.2
+  ORIGIN_TIME: 2026-11-25T19:49:46Z
+  ORIGIN_SOURCE_COMMIT: 09460162a9b1be8947dbee374b4845f2a3f75788
+  ORIGIN_SOURCE_RELEASE: v0.2.1-beta.5
+  ORIGIN_MANIFEST_SHA256: 498211034756eb0628e22898c70bd16e1e20ddcfac6e91e4789564a22630a96f
+  UNIX_RUN_ID: "45686875160"
+  WINDOWS_RUN_ID: "45686875180"
+  # The Windows producer embeds the run attempt in each candidate artifact
+  # name. Keep this paired with WINDOWS_RUN_ID when repinning.
+  WINDOWS_ATTEMPT: "1"
   GOTOOLCHAIN: local
   GOWORK: "off"
 
@@ -90,7 +93,7 @@ jobs:
       - name: Download Windows amd64 candidate artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-native-candidate-amd64-45496415608-1
+          name: windows-native-candidate-amd64-${{ env.WINDOWS_RUN_ID }}-${{ env.WINDOWS_ATTEMPT }}
           path: ${{ runner.temp }}/downloads/windows-amd64
           run-id: ${{ env.WINDOWS_RUN_ID }}
           github-token: ${{ github.token }}
@@ -98,7 +101,7 @@ jobs:
       - name: Download Windows arm64 candidate artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: windows-native-candidate-arm64-45496415608-1
+          name: windows-native-candidate-arm64-${{ env.WINDOWS_RUN_ID }}-${{ env.WINDOWS_ATTEMPT }}
           path: ${{ runner.temp }}/downloads/windows-arm64
           run-id: ${{ env.WINDOWS_RUN_ID }}
           github-token: ${{ github.token }}
@@ -113,7 +116,7 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          IDENTITY: scripts/go-module-origin/v0.3.1-preview.1.identity.json
+          IDENTITY: scripts/go-module-origin/v0.3.1-preview.2.identity.json
           CANDIDATES: ${{ runner.temp }}/candidates
         run: |
           set -euo pipefail
@@ -132,7 +135,7 @@ jobs:
 
       - name: Verify exact manifest and identity
         env:
-          IDENTITY: scripts/go-module-origin/v0.3.1-preview.1.identity.json
+          IDENTITY: scripts/go-module-origin/v0.3.1-preview.2.identity.json
           ORIGIN: ${{ runner.temp }}/origin
         run: |
           set -euo pipefail

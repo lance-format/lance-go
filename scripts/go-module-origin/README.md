@@ -68,10 +68,13 @@ ORIGIN_DIR=$OUT_DIR scripts/test-go-module-origin.sh
 
 This checks the Go module protocol, local HTTP discovery, the version and
 library hashes pinned by the active workflow/identity, and the SDK roundtrip
-with `CGO_ENABLED=0` and no `LANCE_LIB_PATH`. The version and hash assertions are
-fixed to that active publication; a later native version requires a reviewed
-update to this test, the identity file and the workflow inputs before the origin
-can be accepted.
+with `CGO_ENABLED=0` and no `LANCE_LIB_PATH`. The SDK roundtrip resolves the
+current root requirements; before the repin it may exercise the previous
+published companions, so preview-version verification is the per-ZIP h1 and
+library digest above, and the repin PR tests the new root end to end. The
+version and hash assertions are fixed to that active publication; a later native
+version requires a reviewed update to this test, the identity file and the
+workflow inputs before the origin can be accepted.
 
 ## Publisher
 
@@ -111,7 +114,10 @@ publish: true
 All other release inputs are fixed in the workflow and identity file. The
 workflow inputs (`ORIGIN_VERSION`, `ORIGIN_TIME`, `ORIGIN_SOURCE_COMMIT`,
 `ORIGIN_SOURCE_RELEASE`, `ORIGIN_MANIFEST_SHA256`, `UNIX_RUN_ID`,
-`WINDOWS_RUN_ID`) and the identity file pin the active publication. The workflow
+`WINDOWS_RUN_ID`, `WINDOWS_ATTEMPT`) and the identity file pin the active
+publication. Windows candidate artifact names include the producer run attempt;
+update `WINDOWS_ATTEMPT` together with `WINDOWS_RUN_ID` and verify both against
+the hosted artifact inventory. The workflow
 checks out `main`, so its generator is whatever main contains at dispatch; the
 identity file and manifest hash pin the result. A later native version requires
 a new reviewed identity file, new pinned candidate runs, updated inputs and a

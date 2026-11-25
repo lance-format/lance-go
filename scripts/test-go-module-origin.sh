@@ -14,14 +14,14 @@ import pathlib
 import sys
 manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert manifest["module_prefix"] == "go.lance.org/liblance", manifest["module_prefix"]
-assert manifest["version"] == "v0.3.1-preview.1", manifest["version"]
+assert manifest["version"] == "v0.3.1-preview.2", manifest["version"]
 objects = manifest["objects"]
 assert len(objects) == 25, len(objects)
 keys = {obj["key"] for obj in objects}
 for target in ("linux-amd64", "linux-arm64", "darwin-arm64", "windows-amd64", "windows-arm64"):
     assert f"liblance/{target}" in keys
     module = f"go.lance.org/liblance/{target}"
-    for suffix in ("list", "v0.3.1-preview.1.info", "v0.3.1-preview.1.mod", "v0.3.1-preview.1.zip"):
+    for suffix in ("list", "v0.3.1-preview.2.info", "v0.3.1-preview.2.mod", "v0.3.1-preview.2.zip"):
         assert f"modules/{module}/@v/{suffix}" in keys, (target, suffix)
 print("manifest keys: ok")
 PY
@@ -62,14 +62,14 @@ done < "$work/modules.tsv"
 
 # Verify the recorded library hashes from the ZIP payloads.
 declare -A library_sha=(
-  [linux-amd64]='b960378ec4392f094ce5eb5a0fc7e654d04abb7f9f2ce036c94cfa9da7c92f08'
-  [linux-arm64]='9094bfc27dca63b3cbd457f78833ec5ae4016a253e28c3eb014994234ba5f7cc'
-  [darwin-arm64]='580235babb62b5da85b17ea3cc51562ce68d96f180090ad2d8685ba46691ed06'
-  [windows-amd64]='c902ff0495a79d78ee83563d612410dff45142e33633609d9c3ed21da60b1bc9'
-  [windows-arm64]='d7fc1af022779a894960de843affdbab7b3104fba4a9e7e78ed53739f5ddd462'
+  [linux-amd64]='4d04cf8464f570d2e971c805f5065f3ae5af6de78235be126673472294cf0256'
+  [linux-arm64]='0b3aaf7afeb0337617cace4771ed6e58104875648b68ab86268f9d793b1275df'
+  [darwin-arm64]='d632ee8cde78f01e80ac1ae628e9a865c9c2f745f08e7511c73ad05a194acdab'
+  [windows-amd64]='0cda1f7ea08e79e464138fbe3c2478fcedab821e32fc2f4da09f230e019c3311'
+  [windows-arm64]='342acdde9c3066b079d4c47f935a91eca9bd330e86e02f4b8fa2f1a0459aca74'
 )
 for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
-  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.3.1-preview.1.zip"
+  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.3.1-preview.2.zip"
   payload=$(unzip -Z1 "$zip" | grep '\.zst$' | head -1)
   [[ -n $payload ]] || { echo "$target: no payload in zip" >&2; exit 1; }
   unzip -p "$zip" "$payload" > "$work/$target.zst"
@@ -87,22 +87,26 @@ sleep 1
 curl -fsS "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" > "$work/discovery.html"
 grep -F 'content="go.lance.org/liblance/linux-amd64 mod https://go.lance.org/modules"' "$work/discovery.html" >/dev/null
 curl -fsSI "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" | grep -qi '^Content-type: text/html'
-curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.3.1-preview.1' >/dev/null
+curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.3.1-preview.2' >/dev/null
 http_cache="$work/http-modcache"
 GOPROXY="http://127.0.0.1:18888/modules" GOSUMDB=off GOMODCACHE="$http_cache" GOCACHE="$work/http-gocache" \
-  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.3.1-preview.1" > "$work/http.json"
+  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.3.1-preview.2" > "$work/http.json"
 python3 - "$work/http.json" <<'PY'
 import json
 import sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert not data.get("Error"), data
-assert data["Sum"] == "h1:ZkFLYB5H4yXJY1EEAuhFnd5q54FKKLAo0m+zPx9UyFE=", data["Sum"]
+assert data["Sum"] == "h1:qPVSzYuLPzH8sZkRHFeiH9wO+a/T6u3F2PhY6G6lMKo=", data["Sum"]
 print("http proxy and discovery: ok")
 PY
 kill "$server_pid" 2>/dev/null || true
 server_pid=""
 
 # SDK roundtrip with the unchanged import path, no CGO, no LANCE_LIB_PATH.
+# This resolves the repository's current root requirements. It is a protocol
+# and runtime sanity check, not preview.2 verification: the preview companions
+# are checked above by ZIP h1 and library digest, and the root repin PR exercises
+# preview.2 end to end.
 runtime_cache="$work/runtime-cache"
 (
   cd "$repo_root"
@@ -116,5 +120,5 @@ grep -F 'created 3-row' "$work/roundtrip.log" >/dev/null 2>&1 || true
 cache_entry=$(find "$runtime_cache" -type f -name 'liblance_c.so' -o -name 'liblance_c.dylib' -o -name 'lance_c.dll' | head -1)
 [[ -n $cache_entry ]] || { echo "no runtime library cache entry" >&2; exit 1; }
 echo "runtime cache: $cache_entry"
-echo "sdk roundtrip: ok"
+echo "sdk roundtrip (current root requirements): ok"
 echo "verification: PASS"
