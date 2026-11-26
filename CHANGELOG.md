@@ -42,8 +42,9 @@ and archive layout are unchanged from `v0.3.1-preview.2`.
   still apply.
 - IVF_PQ index builds use faster sample reads, partition assignment and
   encoding. The index format is unchanged.
-- Building `lance-c` from source now requires Rust 1.98.0 or newer. The
-  prebuilt companions and the Go 1.26.0 module minimum are unchanged.
+- Building `lance-c` from source now requires Rust 1.98.0 or newer. Prebuilt
+  users need no Rust; all five companion binaries are updated, and the Go
+  1.26.0 module minimum remains unchanged.
 
 ### Migration from v0.3.1-preview.2
 

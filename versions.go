@@ -77,10 +77,14 @@ func (d *Dataset) VersionRefs(ctx context.Context) ([]uint64, error) {
 // Restore commits a new dataset version whose content is version and returns
 // an independent dataset at that new commit. It never rewinds the receiver.
 //
-// Restore always commits, including when version is already the latest
-// version. The committed version is reported as success even if ctx is
-// canceled while the synchronous native restore is running, because the new
-// commit cannot be rolled back safely. version must be greater than zero.
+// A successful restore always creates a new commit, including when version is
+// already the latest version. If either the current version or the requested
+// version has a MemWAL, Restore returns an error matching
+// errors.Is(err, ErrNotSupported).
+//
+// The committed version is reported as success even if ctx is canceled while
+// the synchronous native restore is running, because the new commit cannot be
+// rolled back safely. version must be greater than zero.
 func (d *Dataset) Restore(ctx context.Context, version uint64) (*Dataset, error) {
 	if err := checkContext(ctx); err != nil {
 		return nil, err
