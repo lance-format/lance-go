@@ -5,8 +5,8 @@ supported target. This page describes the module design, target and runtime
 scope, and validation lanes. The checkout-specific versions, bytes and hashes
 live in the sources of truth linked below; this page does not duplicate them.
 Publication mechanics live in
-[RELEASING.md](../RELEASING.md) and
-[scripts/go-module-origin/README.md](../scripts/go-module-origin/README.md).
+[RELEASING.md](https://github.com/lance-format/lance-go/blob/main/RELEASING.md) and
+[scripts/go-module-origin/README.md](https://github.com/lance-format/lance-go/blob/main/scripts/go-module-origin/README.md).
 
 ## Modules
 
@@ -31,9 +31,9 @@ a selector or requirement at a candidate that is not yet public.
 
 ## Where the values live
 
-- Companion module versions required by this checkout: [`go.mod`](../go.mod).
+- Companion module versions required by this checkout: [`go.mod`](https://github.com/lance-format/lance-go/blob/main/go.mod).
 - Native repository, release, commit and canonical header hash:
-  [`internal/ffi/upstream.go`](../internal/ffi/upstream.go).
+  [`internal/ffi/upstream.go`](https://github.com/lance-format/lance-go/blob/main/internal/ffi/upstream.go).
 - Payload and library sizes, SHA-256 values, commit and header: the generated
   `artifact.go` in each companion module.
 - Publication identity (version/time, source commit, workflow runs, candidate

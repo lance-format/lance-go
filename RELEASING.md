@@ -94,6 +94,10 @@ exact modules exist.
   sentence, exact native mapping or library hash to the README or guide; those
   live in the release notes, changelog, `go.mod`, `internal/ffi/upstream.go`
   and the generated artifact metadata.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md): the contributor entry point for build,
+  test, ABI, consumer and handoff expectations. Keep it evergreen and link to
+  the detailed documents instead of copying versions, native mappings or
+  release values.
 - [`docs/development.md`](docs/development.md): the "Building liblance_c" Rust
   requirement and matching native build guards, the "Pinned ABI" reproducible
   command, and the "Testing" section's RTree command when those contracts
