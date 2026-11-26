@@ -1,8 +1,10 @@
 # Development and testing
 
-The [consumer installation](../README.md#supported-targets) uses official
+The [consumer installation](https://github.com/lance-format/lance-go/blob/main/README.md#supported-targets) uses official
 prebuilt libraries. The source-build and ABI checks below are for binding
-development.
+development. [CONTRIBUTING.md](https://github.com/lance-format/lance-go/blob/main/CONTRIBUTING.md) is the contributor entry
+point; this page is the detailed development reference, and
+[RELEASING.md](https://github.com/lance-format/lance-go/blob/main/RELEASING.md) covers release handoff.
 
 ## How loading works
 
@@ -150,7 +152,7 @@ commit is not detected by the SDK at runtime. When the pin changes, all five
 modules (`linux/amd64`, `linux/arm64`, `darwin/arm64`, `windows/amd64`,
 `windows/arm64`) must be regenerated, published as new immutable module
 versions, and adopted in the selectors and root requirements together. Follow
-[RELEASING.md](../RELEASING.md) for the exact source, package, publication and
+[RELEASING.md](https://github.com/lance-format/lance-go/blob/main/RELEASING.md) for the exact source, package, publication and
 verification sequence.
 
 For a single legacy header, the checker refuses bytes whose SHA-256 differs from
@@ -226,7 +228,7 @@ the bundled library.
 `internal/benchmarks/soak` is an opt-in Linux RSS and lifecycle benchmark for
 long-running repeated use of the public API. CI compiles the package and runs
 its tests, but does not execute the long benchmark.
-See [`internal/benchmarks/soak/README.md`](../internal/benchmarks/soak/README.md)
+See [`internal/benchmarks/soak/README.md`](https://github.com/lance-format/lance-go/blob/main/internal/benchmarks/soak/README.md)
 for build and run commands, the measurement contract and the limits of RSS
 evidence.
 
@@ -274,7 +276,7 @@ the full external-tag suite with `-race`; the Go race detector has no
 windows/arm64 support, so that lane is recorded as unsupported rather than
 skipped. The CI workflow does not publish modules; published Windows modules and
 their cold public consumers are recorded in the release notes, and [native
-packages](../docs/native-packages.md) describes the validation lanes.
+packages](native-packages.md) describes the validation lanes.
 
 Native tests exercise create/close/reopen, metadata, scans, projection/filter/
 ordering, row selection, retained batches, write modes, nullable sliced data,
@@ -287,7 +289,7 @@ The race lane also enables Go's pointer checks; native Rust internals are outsid
 Go's race detector.
 
 The CI workflow runs on pull requests and pushes to `main`. It also runs
-[`scripts/verify-quickstart.sh`](../scripts/verify-quickstart.sh) in local-source
+[`scripts/verify-quickstart.sh`](https://github.com/lance-format/lance-go/blob/main/scripts/verify-quickstart.sh) in local-source
 mode with `LANCE_GO_QUICKSTART_SOURCE_DIR`, which builds a consumer module that
 replaces the root module with the checkout, checks the roundtrip output and
 the selected artifact module, then reruns the example with the exact native

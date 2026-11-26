@@ -1,6 +1,6 @@
 # Go API guide
 
-See the [quickstart](../README.md#quickstart) to install Lance and create a sample dataset.
+See the [quickstart](https://github.com/lance-format/lance-go/blob/main/README.md#quickstart) to install Lance and create a sample dataset.
 
 This guide describes the `main` branch and the public Go APIs it contains.
 Each release's notes record its exact native chain; the checkout's `go.mod`,

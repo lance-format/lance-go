@@ -462,7 +462,7 @@ moves the bundled native library to lance-c `v0.2.1-beta.1` on Lance
   shared libraries, which are built against Lance `v15.0.0-beta.26`. The five
   supported targets are unchanged, and each companion module is published at
   `v0.1.1-preview.1`. The native commit, canonical header hash, payload sizes
-  and checksums are new; see [artifacts/README.md](artifacts/README.md).
+  and checksums are new; see [artifacts/README.md](https://github.com/lance-format/lance-go/blob/v0.1.1-preview.1/artifacts/README.md).
 - `Fragment.Take` with an explicit empty column list now returns one
   zero-column batch with the requested row count. The previous native library
   rejected the same call with `LANCE_ERR_NOT_FOUND`. Passing no columns still
@@ -524,7 +524,7 @@ go get github.com/lance-format/lance-go@v0.1.1-preview.1
 - The API guide gained runnable examples for vector search, full-text search,
   mutations and versions, cloud storage and namespaces, and documents the
   runtime, scanner-plan and error contracts above.
-- The preview preparation notes moved to [docs/PREVIEW.md](docs/PREVIEW.md) and
+- The preview preparation notes moved to [docs/PREVIEW.md](https://github.com/lance-format/lance-go/blob/v0.1.0/docs/PREVIEW.md) and
   remain a historical record.
 
 ### Upgrade from v0.1.0-preview.2
@@ -548,7 +548,7 @@ companion library and its new checksum. No Go source changes are required.
   its published preview module and tags remain available.
 - Linux companions are generic glibc 2.28+ builds and there is no musl
   companion. The macOS companion uses deployment target 11.0. The README and
-  [artifacts/README.md](artifacts/README.md) record which runtime evidence
+  [artifacts/README.md](https://github.com/lance-format/lance-go/blob/v0.1.0/artifacts/README.md) record which runtime evidence
   exists for each target and what remains unclaimed.
 
 See the [v0.1.0 release notes](https://github.com/lance-format/lance-go/releases/tag/v0.1.0)

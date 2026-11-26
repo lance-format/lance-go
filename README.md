@@ -268,4 +268,4 @@ migration notes.
 - [Runnable workflow examples](examples/) for vector search, full-text search, mutations and versions, cloud storage and namespaces.
 - [Native packages](docs/native-packages.md) for module design, platform scope and validation.
 - [Changelog](CHANGELOG.md) and [GitHub releases](https://github.com/lance-format/lance-go/releases) for user-facing changes and the native chain by release.
-- [Development and testing](docs/development.md) and [release process](RELEASING.md) for contributors.
+- [Contributing](CONTRIBUTING.md) for the contributor entry point, [development and testing](docs/development.md) for build, ABI and test details, and [release process](RELEASING.md) for release handoff.
