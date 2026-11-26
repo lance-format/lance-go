@@ -17,13 +17,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ORIGIN_VERSION: v0.3.1-preview.2
-  ORIGIN_TIME: 2026-11-25T19:49:46Z
-  ORIGIN_SOURCE_COMMIT: 09460162a9b1be8947dbee374b4845f2a3f75788
-  ORIGIN_SOURCE_RELEASE: v0.2.1-beta.5
-  ORIGIN_MANIFEST_SHA256: 498211034756eb0628e22898c70bd16e1e20ddcfac6e91e4789564a22630a96f
-  UNIX_RUN_ID: "45686875160"
-  WINDOWS_RUN_ID: "45686875180"
+  ORIGIN_VERSION: v0.3.1-preview.3
+  ORIGIN_TIME: 2026-11-26T06:52:57Z
+  ORIGIN_SOURCE_COMMIT: 6a4413f0477697c4a99882d0531f5079ccdfa0d6
+  ORIGIN_SOURCE_RELEASE: v0.2.1-beta.6
+  ORIGIN_MANIFEST_SHA256: 88bf1200b54bf2505f01e7ac9fee285a557ce4b41008d4a7dd2ef0a94617ae18
+  UNIX_RUN_ID: "45768408222"
+  WINDOWS_RUN_ID: "45768408275"
   # The Windows producer embeds the run attempt in each candidate artifact
   # name. Keep this paired with WINDOWS_RUN_ID when repinning.
   WINDOWS_ATTEMPT: "1"
@@ -116,7 +116,7 @@ jobs:
 
       - name: Verify candidate identity
         env:
-          IDENTITY: scripts/go-module-origin/v0.3.1-preview.2.identity.json
+          IDENTITY: scripts/go-module-origin/v0.3.1-preview.3.identity.json
           CANDIDATES: ${{ runner.temp }}/candidates
         run: |
           set -euo pipefail
@@ -135,7 +135,7 @@ jobs:
 
       - name: Verify exact manifest and identity
         env:
-          IDENTITY: scripts/go-module-origin/v0.3.1-preview.2.identity.json
+          IDENTITY: scripts/go-module-origin/v0.3.1-preview.3.identity.json
           ORIGIN: ${{ runner.temp }}/origin
         run: |
           set -euo pipefail
