@@ -15,8 +15,8 @@ package ffi
 // scripts/build-lance-c.sh a single source of truth.
 const (
 	upstreamRepo                 = "https://github.com/lance-format/lance-c"
-	upstreamRelease              = "v0.2.1-beta.6"
-	upstreamCommit               = "7d9922bdfee9d42e90ec2fdea8d4fba6bb7fe437"
+	upstreamRelease              = "v0.2.1-beta.7"
+	upstreamCommit               = "b7c10e3df23d3596eddb5e7c2b0cffef442c2fce"
 	upstreamHeaderSHA256         = "652d14311b97bfee28adb910a544551ef315d875c8dcaf0ef3c709d26ef728ac"
-	upstreamHeaderIdentitySHA256 = "91aa1b5f59054032875a05bbce65300d04148de9113c5b8fb51cf9a4d0301e6b"
+	upstreamHeaderIdentitySHA256 = "68b4f0108cf5d537db51814d0b3fefd46ce5f100789d8e2ac8f049f1f62d15fa"
 )
