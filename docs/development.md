@@ -92,11 +92,13 @@ and installs into `dist/lance-c`. The output directory must not already exist.
 Use `--out DIR` to choose another prefix and `LANCE_C_WORK_DIR` to move the
 checkout/build cache. Build intermediates are reused across runs.
 
-Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.95.0 or newer
+Requirements: git, CMake 3.22+, a C compiler, Cargo with Rust 1.98.0 or newer
 (the pinned `lance-c` `Cargo.toml` declares this minimum and
 `scripts/build-lance-c.sh` rejects older toolchains), network access for crates
 and CMake's Corrosion dependency. The first build compiles all of Lance and
-takes a long time.
+takes a long time. This Rust floor applies only to source builds; the prebuilt
+companions and native CI checks do not compile Rust, and the Go module minimum
+remains Go 1.26.0.
 
 CI and release packaging do not use this path. They acquire the official release
 archive for `upstreamRelease` through `internal/tools/fetch-lance-c-release`,

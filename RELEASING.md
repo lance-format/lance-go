@@ -148,8 +148,10 @@ release archive, tag, and commit contain the same header. The recorded
 pin, the constants in `internal/ffi/upstream.go` are authoritative; the values
 above remain the historical v0.2.0-preview.1 example. Do not substitute another
 release archive for the pin you are verifying. The selected `Cargo.toml`
-declares `rust-version = "1.95.0"`; `scripts/build-lance-c.sh`, `ci.yml`, and
-`unix-native.yml` reject older Rust toolchains before building.
+declares `rust-version = "1.98.0"`. `scripts/build-lance-c.sh` rejects older
+toolchains before a source build; `ci.yml` and `unix-native.yml` consume the
+prebuilt release archives through `fetch-lance-c-release` and do not compile
+Rust. The Go module minimum remains Go 1.26.0.
 
 Version selection is a maintainer decision tracked by issue #1. Check the
 actual native release, tag, and commit alignment before choosing a version. Do
