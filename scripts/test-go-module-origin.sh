@@ -14,14 +14,14 @@ import pathlib
 import sys
 manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
 assert manifest["module_prefix"] == "go.lance.org/liblance", manifest["module_prefix"]
-assert manifest["version"] == "v0.3.1-preview.3", manifest["version"]
+assert manifest["version"] == "v0.3.1-preview.4", manifest["version"]
 objects = manifest["objects"]
 assert len(objects) == 25, len(objects)
 keys = {obj["key"] for obj in objects}
 for target in ("linux-amd64", "linux-arm64", "darwin-arm64", "windows-amd64", "windows-arm64"):
     assert f"liblance/{target}" in keys
     module = f"go.lance.org/liblance/{target}"
-    for suffix in ("list", "v0.3.1-preview.3.info", "v0.3.1-preview.3.mod", "v0.3.1-preview.3.zip"):
+    for suffix in ("list", "v0.3.1-preview.4.info", "v0.3.1-preview.4.mod", "v0.3.1-preview.4.zip"):
         assert f"modules/{module}/@v/{suffix}" in keys, (target, suffix)
 print("manifest keys: ok")
 PY
@@ -62,14 +62,14 @@ done < "$work/modules.tsv"
 
 # Verify the recorded library hashes from the ZIP payloads.
 declare -A library_sha=(
-  [linux-amd64]='9de34815800173121e739ec2cdf019d7c3043998bf93b1e0a74e265900487f41'
-  [linux-arm64]='103b099355757cb0f19e39297563419cc5c972dca8c967632b5a0888e947bbda'
-  [darwin-arm64]='220c91489bfa83cc983648d640ef3ef53222a9bcb4e57a93412af722172af941'
-  [windows-amd64]='2d5f813ff64c5ef8333595cdb5acce6d33bb9ec5a57d6a50668357c3fe65d855'
-  [windows-arm64]='ecc85bafd3d44bf9eb4f40274aa5ba34e9ab33745fa2276f743ce7756183aab7'
+  [linux-amd64]='75db3f757b78af60f164d59e530460a507a0c9574ed01a637ca663b4e6046d65'
+  [linux-arm64]='c4eaacebd75eaf021f4a41cfbdb79e5ddae271a666345da0cdfbfb0dad3e2d42'
+  [darwin-arm64]='e5821b5912cd1a22921215151b90bce323a0e890e68f079bbb2611bcb7791b2e'
+  [windows-amd64]='bd72abf8a6fc26c8e3422c93f95caced6b94e6d53f81f6e433240e22e5c6d349'
+  [windows-arm64]='9e6e8b7a1735b2540f45b36d32728e1f6f87d277c1f83b652603ef2c5a176081'
 )
 for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64 windows-arm64; do
-  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.3.1-preview.3.zip"
+  zip="$origin/modules/go.lance.org/liblance/$target/@v/v0.3.1-preview.4.zip"
   payload=$(unzip -Z1 "$zip" | grep '\.zst$' | head -1)
   [[ -n $payload ]] || { echo "$target: no payload in zip" >&2; exit 1; }
   unzip -p "$zip" "$payload" > "$work/$target.zst"
@@ -87,26 +87,25 @@ sleep 1
 curl -fsS "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" > "$work/discovery.html"
 grep -F 'content="go.lance.org/liblance/linux-amd64 mod https://go.lance.org/modules"' "$work/discovery.html" >/dev/null
 curl -fsSI "http://127.0.0.1:18888/liblance/linux-amd64?go-get=1" | grep -qi '^Content-type: text/html'
-curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.3.1-preview.3' >/dev/null
+curl -fsS "http://127.0.0.1:18888/modules/go.lance.org/liblance/linux-amd64/@v/list" | grep -Fx 'v0.3.1-preview.4' >/dev/null
 http_cache="$work/http-modcache"
 GOPROXY="http://127.0.0.1:18888/modules" GOSUMDB=off GOMODCACHE="$http_cache" GOCACHE="$work/http-gocache" \
-  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.3.1-preview.3" > "$work/http.json"
+  GOFLAGS=-mod=mod "$GO" mod download -json "go.lance.org/liblance/linux-amd64@v0.3.1-preview.4" > "$work/http.json"
 python3 - "$work/http.json" <<'PY'
 import json
 import sys
 data = json.load(open(sys.argv[1], encoding="utf-8"))
 assert not data.get("Error"), data
-assert data["Sum"] == "h1:inbH3D3vYqU1MYU6S5fo6zqnrvIRFNZLNgBP1hlSAEs=", data["Sum"]
+assert data["Sum"] == "h1:00Df3QeKY/Y6bx7frtYZfkoRDB60tQPBuUrxQXMFumc=", data["Sum"]
 print("http proxy and discovery: ok")
 PY
 kill "$server_pid" 2>/dev/null || true
 server_pid=""
 
 # SDK roundtrip with the unchanged import path, no CGO, no LANCE_LIB_PATH.
-# This resolves the repository's current root requirements. It is a protocol
-# and runtime sanity check, not preview.3 verification: the preview companions
-# are checked above by ZIP h1 and library digest, and the root repin PR exercises
-# preview.3 end to end.
+# This resolves the repository's current root requirements. The per-ZIP h1
+# and library digest checks above verify the staged companions. The root repin
+# PR exercises the new companions end to end.
 runtime_cache="$work/runtime-cache"
 (
   cd "$repo_root"
