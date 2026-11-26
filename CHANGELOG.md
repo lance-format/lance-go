@@ -9,6 +9,49 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.1-preview.3] - 2026-11-26
+
+`v0.3.1-preview.3` is a preview of the next 0.3.x release. It moves the bundled
+native library to `lance-c v0.2.1-beta.6` (annotated tag
+`f63dd087a380a78a56b1e4411210924c280e0a9e`, peeled to
+`7d9922bdfee9d42e90ec2fdea8d4fba6bb7fe437`) on Lance `15.1.0-beta.2`
+(annotated `31d917614e1456f2dba3652bb8bd21fa7ed227b6`, peeled to
+`fc8f59e53233a46f0d73604d66254142802389c9`). The five companions are
+`go.lance.org/liblance/<target>@v0.3.1-preview.3`; the Go 1.26.0 module minimum
+is unchanged. The public C ABI is unchanged: the shared libraries export the
+same 890 `lance_*` names as the v0.2.0 baseline, and the installed header set
+and archive layout are unchanged from `v0.3.1-preview.2`.
+
+### Fixed
+
+- `Dataset.Restore` returns `ErrNotSupported` when either the current version
+  or the requested version has a MemWAL. Restoring the table manifest cannot
+  roll back writes or garbage collection in the shards. Restore between
+  versions without a MemWAL is unchanged.
+- LabelList index builds and updates skip values stored under a null list
+  parent, so those child values no longer produce postings. An existing
+  LabelList index built over this shape must be rebuilt to remove old postings;
+  the dataset itself needs no rewrite.
+- Constructing deletion masks for multi-range batches near `u32::MAX` no
+  longer overflows, so reads with deletions at high offsets remain correct.
+
+### Changed
+
+- Segment-scoped ANN scans can skip per-row filtering when every row in a
+  partition passes a deletion-only mask; segment ownership and user filters
+  still apply.
+- IVF_PQ index builds use faster sample reads, partition assignment and
+  encoding. The index format is unchanged.
+- Building `lance-c` from source now requires Rust 1.98.0 or newer. Prebuilt
+  users need no Rust; all five companion binaries are updated, and the Go
+  1.26.0 module minimum remains unchanged.
+
+### Migration from v0.3.1-preview.2
+
+Update all five companion requirements to `v0.3.1-preview.3`. There is no Go API
+migration; the Go 1.26.0 module minimum, import paths, `CGO_ENABLED=0` default
+bundle and `LANCE_LIB_PATH` external-library behavior are unchanged.
+
 ## [v0.3.1-preview.2] - 2026-11-26
 
 `v0.3.1-preview.2` is a preview of the next 0.3.x release. It moves the bundled
