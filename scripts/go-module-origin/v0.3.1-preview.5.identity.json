@@ -1,0 +1,46 @@
+{
+ "manifest_sha256": "ddb5f15d475f514cf0ca9952ca8e53a29aa24b4ce201cf672c6f3848c7302f34",
+ "source_commit": "09e19d9f63f00326e86e01e555f9e72a24162863",
+ "source_release": "v0.2.1-beta.8",
+ "targets": {
+  "darwin-arm64": {
+   "candidate_artifact_go_sha256": "172a3d593c5357299aeddc92359a02d640462aba6f74df869588ec0c376e3418",
+   "candidate_go_mod_sha256": "f98e6e1c98b27cc05189637a0e3052a4fa22740454920f509d1e627be661a683",
+   "candidate_payload_sha256": "40907b7e4fc1d4c4167e8db7b4ff7c70ff8fb5f5485ee65acd2043e47bcb1791",
+   "module_gomod_h1": "h1:fhF7lkTnCERXsQn/1sFlCCq0xFtLHWBb+9MJhxM1CjA=",
+   "module_zip_h1": "h1:ioeBKTveu/EmDnGsiU1+XdgeH8jsNVWlBuFkXMWrmrU="
+  },
+  "linux-amd64": {
+   "candidate_artifact_go_sha256": "5f2eae5b246faa29ee4bf56db8b7896e0bfe926842ca90eaac59762df8486253",
+   "candidate_go_mod_sha256": "5c610dfb2fb25d34c730725523c3aa35266b19b4e3ce9fe9edb79d9b865944f8",
+   "candidate_payload_sha256": "fd81c1ed9ed762986ac9b1deebfaf19776b3939972c9ce03235477e120cd9ce3",
+   "module_gomod_h1": "h1:AmB71lUYh/wUVbiWPP+aBLNPji6Ap3EUAf5RBlMV74o=",
+   "module_zip_h1": "h1:UWC30MuUFW2u2HWFls9g5dveB8Y6Mj1aa1buALvER3Y="
+  },
+  "linux-arm64": {
+   "candidate_artifact_go_sha256": "89ac3e6f16333a220b6faeeab87a349e7b137413145d27163fe0a8a77a744b93",
+   "candidate_go_mod_sha256": "238e8397574a455e1108592a46e8586e34b4d514b3a93dce9843a7798571a006",
+   "candidate_payload_sha256": "2115e2cf528d4810b29aff0e9cb4043df3b0deca1cea6e45bd8f19a3d999e8d0",
+   "module_gomod_h1": "h1:W0gkyHDHsSY/lwiTvUxwBy+rgd+AA3ZoDuEKG+jdNYU=",
+   "module_zip_h1": "h1:LBT2mLP+cRf36zLUQwU5yrAXvl4iexfSHV764p72IRU="
+  },
+  "windows-amd64": {
+   "candidate_artifact_go_sha256": "c90297069d48a0d78aa7cf930de7e4feae26b8e6325b1b1ac25644505851859d",
+   "candidate_go_mod_sha256": "dddc22b41715294daccf1d1d6b54313c38eaf6c7171a5c72eea6a06d5c2fe207",
+   "candidate_payload_sha256": "72648ecbf7d9f31fa69d1c1ab4fe1604bad0fcbb985ecc3ae7b1921e8b480283",
+   "module_gomod_h1": "h1:QNbYGEqU8BxX6DTuGZHVoZ2supg494MuPBDcy7VUYvQ=",
+   "module_zip_h1": "h1:3LtZgSmIxEYNl/5SsIV4orp8x22TZvs9Rlru9QxISAk="
+  },
+  "windows-arm64": {
+   "candidate_artifact_go_sha256": "e50741c8ec87585f43895e79d9175cbe88543cc9c749a89dc2831f1b0479eda8",
+   "candidate_go_mod_sha256": "29afc9da046a3c121fe95e67c432080c77f7d9fa9cd3d268f9ef5b33e5dc14d5",
+   "candidate_payload_sha256": "ef114aaf3215c5fbf10ad1b950734516f79d1134f936d8d4b1462d059a2299b7",
+   "module_gomod_h1": "h1:we+xCKYZoJJWYnq+Hos041PTOxuG2Hg6eP1wILiknrg=",
+   "module_zip_h1": "h1:PRJXL9hUPmoJN6Q7gE5N+lZ64qmCR8hJR9IKJ2trJOE="
+  }
+ },
+ "time": "2026-11-27T16:42:27Z",
+ "unix_run_id": 46036179281,
+ "version": "v0.3.1-preview.5",
+ "windows_run_id": 46036179190
+}
