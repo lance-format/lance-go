@@ -12,7 +12,7 @@
 #   public proxy.
 # - published module: leave LANCE_GO_QUICKSTART_SOURCE_DIR unset.
 #   LANCE_GO_QUICKSTART_VERSION defaults to the root release being verified
-#   (currently v0.3.1-preview.3) and must be an exact release tag. Release
+#   (currently v0.3.1-preview.4) and must be an exact release tag. Release
 #   verification uses tags only; it never resolves a commit SHA or
 #   pseudo-version.
 #
@@ -21,12 +21,12 @@
 set -euo pipefail
 
 ROOT_MODULE=github.com/lance-format/lance-go
-VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.3.1-preview.3}
+VERSION=${LANCE_GO_QUICKSTART_VERSION:-v0.3.1-preview.4}
 ARTIFACT_MODULE=go.lance.org/liblance/linux-amd64
-ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.3.1-preview.3}
-COMPANION_BYTES=86074602
-LIBRARY_BYTES=340124488
-LIBRARY_SHA256=9de34815800173121e739ec2cdf019d7c3043998bf93b1e0a74e265900487f41
+ARTIFACT_VERSION=${LANCE_GO_QUICKSTART_ARTIFACT_VERSION:-v0.3.1-preview.4}
+COMPANION_BYTES=86480993
+LIBRARY_BYTES=340935496
+LIBRARY_SHA256=75db3f757b78af60f164d59e530460a507a0c9574ed01a637ca663b4e6046d65
 EXPECTED_OUTPUT='Created, reopened and scanned 3 rows: [10 20 30]'
 
 if [[ "$(go env GOOS)/$(go env GOARCH)" != linux/amd64 ]]; then

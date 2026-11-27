@@ -99,10 +99,9 @@ jobs:
             echo "bundled public path test did not pass; it must not skip or use another library" >&2
             exit 1
           fi
-          # Pinned from the independently verified linux-amd64
-          # v0.3.1-preview.3 companion (lance-c v0.2.1-beta.6), not from the
-          # extracted cache.
-          expected_sha256=9de34815800173121e739ec2cdf019d7c3043998bf93b1e0a74e265900487f41
+          # Pinned from the verified linux-amd64 v0.3.1-preview.4 companion
+          # (lance-c v0.2.1-beta.7).
+          expected_sha256=75db3f757b78af60f164d59e530460a507a0c9574ed01a637ca663b4e6046d65
           cache_file="$cache_dir/lance-go/$expected_sha256/liblance_c.so"
           if [[ ! -f "$cache_file" ]]; then
             echo "bundled library was not extracted to $cache_file" >&2

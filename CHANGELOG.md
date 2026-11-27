@@ -9,6 +9,38 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.1-preview.4] - 2026-11-27
+
+This preview bundles `lance-c v0.2.1-beta.7` (tag peeled to
+`b7c10e3df23d3596eddb5e7c2b0cffef442c2fce`) on Lance `v16.0.0-beta.3` (tag
+peeled to `a93690c0a82ad8ea5e0dd621e3a311a5fce9a487`). The five companions use
+`go.lance.org/liblance/<target>@v0.3.1-preview.4` for Linux amd64 and arm64, macOS
+arm64, and Windows amd64 and arm64. The SDK still requires Go 1.26.0, and the
+shared libraries export the same 890 `lance_*` names in the public C ABI.
+[Companion identities](scripts/go-module-origin/v0.3.1-preview.4.identity.json)
+
+### Native behavior
+
+This preview carries forward these fixes and index improvements from
+`v0.3.1-preview.3`.
+
+- `Dataset.Restore` returns `ErrNotSupported` when the current or requested
+  version has a MemWAL.
+- LabelList index builds and updates skip values under null lists. Rebuild
+  affected LabelList indexes to remove old postings.
+- Deletion masks handle multi-range batches near `u32::MAX` without overflow.
+- Segment-scoped ANN scans can skip per-row checks when a partition passes
+  the deletion-only mask in full. Segment ownership and user filters still
+  apply.
+- IVF_PQ index builds use faster sample reads, partition assignment, and
+  encoding with the existing index format.
+
+### Migration from v0.3.1-preview.3
+
+Update all five companion requirements to `v0.3.1-preview.4`. No Go API migration
+is required. The default bundle loads offline with `CGO_ENABLED=0` after the
+Go modules are cached. `LANCE_LIB_PATH` selects a deployed library.
+
 ## [v0.3.1-preview.3] - 2026-11-26
 
 `v0.3.1-preview.3` is a preview of the next 0.3.x release. It moves the bundled
