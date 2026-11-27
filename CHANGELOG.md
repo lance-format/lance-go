@@ -9,6 +9,31 @@ minor line, patch releases preserve source compatibility for published Go APIs,
 and necessary breaking changes move to the next minor release with migration
 notes.
 
+## [v0.3.1-preview.5] - 2026-11-28
+
+This preview bundles `lance-c v0.2.1-beta.8` (tag peeled to
+`f62bf8b1d3a91ac1e92a7383577206fdada0aeaa`) on Lance `v16.0.0-beta.5` (tag
+peeled to `0ea718506941b3e4c8dd0aee279a8ea1b7c7b076`). The five companions use
+`go.lance.org/liblance/<target>@v0.3.1-preview.5` for Linux amd64 and arm64, macOS
+arm64, and Windows amd64 and arm64. The SDK still requires Go 1.26.0, and the
+shared libraries export the same 890 `lance_*` names in the public C ABI.
+[Companion identities](scripts/go-module-origin/v0.3.1-preview.5.identity.json)
+
+### Native behavior
+
+- Scans that use a Bitmap index can reuse cached unions for ranges that select
+  the same keys. Scalar filters combine exact row masks once per `AND` or
+  `OR` and account for NULLs when required, including under `NOT`.
+- On ordered S3, directory namespace `ListTableVersions` can seek directly to
+  contiguous V2 manifests when continuing an ascending listing with a positive
+  limit. Pass the returned `PageToken` to fetch the next page.
+
+### Migration from v0.3.1-preview.4
+
+Update all five companion requirements to `v0.3.1-preview.5`. No Go API migration
+is required. With `CGO_ENABLED=0`, the default bundle loads offline after the
+Go modules are cached. Set `LANCE_LIB_PATH` to use a deployed library.
+
 ## [v0.3.1-preview.4] - 2026-11-27
 
 This preview bundles `lance-c v0.2.1-beta.7` (tag peeled to
